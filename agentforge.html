@@ -1353,13 +1353,49 @@ async function sendMsg(){
 
   /* ─────────────────── CHAT TEST DRAWER ─────────────────── */
   function ChatTestDrawer({ agent, onClose }) {
-    const [messages, setMessages] = useState(() => [
-      { id: uid(), role: 'agent', content: agent.openingMessage || 'Hello!', timestamp: new Date(), isOpening: true },
-    ]);
+    const historyKey = `agentforge_history_${agent.id}`;
+    const openingMsg = { id: uid(), role: 'agent', content: agent.openingMessage || 'Hello!', timestamp: new Date(), isOpening: true };
+    const [messages, setMessages] = useState([openingMsg]);
     const [input, setInput] = useState('');
     const [pending, setPending] = useState(false);
     const [activeSkillId, setActiveSkillId] = useState(null);
+    const [showHistory, setShowHistory] = useState(false);
+    const [viewingSession, setViewingSession] = useState(null); // { startedAt, messages }
+    const [historyTick, setHistoryTick] = useState(0);
     const listRef = useRef(null);
+    const currentSessionIdRef = useRef(uid());
+
+    // Save session to history on close (if has real messages)
+    const messagesRef = useRef(messages);
+    useEffect(() => { messagesRef.current = messages; }, [messages]);
+    useEffect(() => {
+      return () => {
+        const msgs = messagesRef.current.filter(m => m.role !== 'typing');
+        const hasReal = msgs.some(m => m.role === 'user');
+        if (!hasReal) return;
+        try {
+          const saved = JSON.parse(localStorage.getItem(historyKey) || '[]');
+          // avoid duplicate session saves
+          const filtered = saved.filter(s => s.id !== currentSessionIdRef.current);
+          const session = { id: currentSessionIdRef.current, startedAt: msgs[0]?.timestamp || new Date(), messages: msgs };
+          localStorage.setItem(historyKey, JSON.stringify([session, ...filtered].slice(0, 50)));
+        } catch (_) {}
+      };
+    }, [historyKey]);
+
+    function loadHistory() {
+      try { return JSON.parse(localStorage.getItem(historyKey) || '[]').map(s => ({ ...s, startedAt: new Date(s.startedAt), messages: s.messages.map(m => ({ ...m, timestamp: new Date(m.timestamp) })) })); }
+      catch (_) { return []; }
+    }
+
+    function deleteSession(sid) {
+      try {
+        const updated = loadHistory().filter(s => s.id !== sid);
+        localStorage.setItem(historyKey, JSON.stringify(updated));
+        if (viewingSession?.id === sid) setViewingSession(null);
+        setHistoryTick(t => t + 1);
+      } catch (_) {}
+    }
 
     useEffect(() => {
       function onKey(e) { if (e.key === 'Escape') onClose(); }
@@ -1421,7 +1457,7 @@ async function sendMsg(){
         {/* Backdrop */}
         <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 200 }} />
         {/* Drawer */}
-        <div className="slide-in-right" style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 420, background: 'var(--bg-sidebar)', borderLeft: '1px solid var(--border)', zIndex: 201, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.5)' }}>
+        <div className="slide-in-right" style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 420, background: 'var(--bg-sidebar)', borderLeft: '1px solid var(--border)', zIndex: 201, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
           {/* Header */}
           <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg,var(--primary),var(--teal))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>{agent.avatar}</div>
@@ -1432,8 +1468,67 @@ async function sendMsg(){
                 {hasKey ? 'Connected' : 'No API key'}
               </div>
             </div>
+            <IconBtn onClick={() => setShowHistory(h => !h)} title="Chat history" style={{ background: showHistory ? 'var(--bg-hover)' : undefined }}>🕐</IconBtn>
             <IconBtn onClick={onClose} title="Close">✕</IconBtn>
           </div>
+
+          {/* History Panel */}
+          {showHistory && (() => {
+            const sessions = loadHistory();
+            return (
+              <div style={{ position: 'absolute', top: 73, right: 0, width: 420, bottom: 0, background: 'var(--bg-app)', zIndex: 10, display: 'flex', flexDirection: 'column', borderLeft: '1px solid var(--border)' }}>
+                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  {viewingSession
+                    ? <><button onClick={() => setViewingSession(null)} style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: 13, padding: 0 }}>← Back</button>
+                        <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{viewingSession.startedAt.toLocaleDateString()} {viewingSession.startedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></>
+                    : <><span style={{ fontWeight: 600, fontSize: 14 }}>Previous conversations</span>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{sessions.length} saved</span></>
+                  }
+                </div>
+                <div style={{ flex: 1, overflowY: 'auto', padding: viewingSession ? '12px 16px' : 8, display: 'flex', flexDirection: 'column', gap: viewingSession ? 10 : 4 }}>
+                  {viewingSession
+                    ? viewingSession.messages.map(msg => {
+                        if (msg.role === 'tool') return <div key={msg.id} style={{ fontSize: 12, color: 'var(--warning)', fontFamily: 'monospace', background: 'rgba(245,158,11,0.08)', padding: '6px 10px', borderRadius: 8 }}>⚙️ {msg.content}</div>;
+                        if (msg.role === 'skill') return <div key={msg.id} style={{ textAlign: 'center', fontSize: 12, color: 'var(--teal)' }}>⚡ {msg.content}</div>;
+                        if (msg.role === 'error') return <div key={msg.id} style={{ fontSize: 12, color: 'var(--danger)', background: 'rgba(239,68,68,0.08)', padding: '6px 10px', borderRadius: 8 }}>⚠ {msg.content}</div>;
+                        const isUser = msg.role === 'user';
+                        const dir = isHebrew(msg.content) ? 'rtl' : 'ltr';
+                        return (
+                          <div key={msg.id} style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
+                            <div dir={dir} style={{ maxWidth: '85%', background: isUser ? 'var(--primary)' : 'var(--bg-panel)', color: 'var(--text)', padding: '8px 12px', borderRadius: isUser ? '14px 14px 4px 14px' : '14px 14px 14px 4px', fontSize: 13, lineHeight: 1.5 }}>
+                              {msg.content}
+                              <div style={{ fontSize: 10, color: isUser ? 'rgba(255,255,255,0.6)' : 'var(--text-muted)', marginTop: 3, textAlign: isUser ? 'right' : 'left' }}>
+                                🕐 {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    : sessions.length === 0
+                      ? <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, marginTop: 40 }}>No previous conversations</div>
+                      : sessions.map(s => {
+                          const firstUser = s.messages.find(m => m.role === 'user');
+                          const preview = firstUser?.content?.slice(0, 60) || '—';
+                          const d = new Date(s.startedAt);
+                          return (
+                            <div key={s.id} onClick={() => setViewingSession(s)} style={{ padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'var(--bg-card)', cursor: 'pointer', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}
+                              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                              onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-card)'}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 3 }}>{d.toLocaleDateString()} {d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · {s.messages.filter(m => m.role === 'user').length} messages</div>
+                                <div style={{ fontSize: 13, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{preview}</div>
+                              </div>
+                              <button onClick={e => { e.stopPropagation(); deleteSession(s.id); }} title="Delete" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 14, padding: '2px 4px', borderRadius: 4, flexShrink: 0 }}
+                                onMouseEnter={e => e.currentTarget.style.color = 'var(--danger)'}
+                                onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}>🗑</button>
+                            </div>
+                          );
+                        })
+                  }
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Messages */}
           <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
