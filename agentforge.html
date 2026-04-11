@@ -663,6 +663,87 @@
     );
   }
 
+  /* ── ToolRunner: inline test panel for a single tool ── */
+  function ToolRunner({ tool }) {
+    const [inputs, setInputs] = useState(() =>
+      Object.fromEntries((tool.parameters || []).map(p => [p.name, '']))
+    );
+    const [running, setRunning] = useState(false);
+    const [result, setResult] = useState(null); // { ok: bool, text: string, ms: number }
+
+    // Reset inputs when parameters change
+    const paramNames = (tool.parameters || []).map(p => p.name).join(',');
+    useEffect(() => {
+      setInputs(Object.fromEntries((tool.parameters || []).map(p => [p.name, ''])));
+      setResult(null);
+    }, [paramNames]);
+
+    async function run() {
+      setRunning(true);
+      setResult(null);
+      const t0 = performance.now();
+      try {
+        const packages = (tool.packages || '').split(',').map(s => s.trim()).filter(Boolean);
+        const envVars = Object.fromEntries((tool.envVars || []).filter(e => e.key).map(e => [e.key, e.value]));
+        // coerce typed inputs
+        const typedInputs = {};
+        for (const p of (tool.parameters || [])) {
+          const raw = inputs[p.name] ?? '';
+          typedInputs[p.name] = p.type === 'integer' ? parseInt(raw, 10) || 0
+                               : p.type === 'number'  ? parseFloat(raw) || 0
+                               : raw;
+        }
+        const resp = await fetch('/api/run-tool', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: tool.code || '', inputs: typedInputs, packages, env_vars: envVars }),
+        });
+        const data = await resp.json();
+        const ms = Math.round(performance.now() - t0);
+        if (data.error) setResult({ ok: false, text: data.error, ms });
+        else setResult({ ok: true, text: data.result, ms });
+      } catch (e) {
+        setResult({ ok: false, text: e.message, ms: Math.round(performance.now() - t0) });
+      } finally {
+        setRunning(false);
+      }
+    }
+
+    return (
+      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600 }}>Test Run</span>
+          <button onClick={run} disabled={running} style={{ background: running ? 'var(--bg-hover)' : 'var(--success)', color: running ? 'var(--text-muted)' : '#fff', border: 'none', borderRadius: 'var(--r-md)', padding: '6px 16px', fontWeight: 700, fontSize: 13, cursor: running ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+            {running ? <><span style={{ display: 'inline-block', width: 12, height: 12, border: '2px solid var(--text-muted)', borderTop: '2px solid var(--text)', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} /> Running…</> : '▶ Run'}
+          </button>
+        </div>
+
+        {(tool.parameters || []).length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {(tool.parameters || []).map(p => (
+              <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 12, color: 'var(--text-2)', fontFamily: 'monospace', minWidth: 120, flexShrink: 0 }}>{p.name}<span style={{ color: 'var(--text-muted)' }}>: {p.type || 'string'}</span></span>
+                <input value={inputs[p.name] ?? ''} onChange={e => setInputs(v => ({ ...v, [p.name]: e.target.value }))}
+                  placeholder={p.description || p.name} style={{ flex: 1, fontSize: 13, fontFamily: 'monospace' }} />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {result && (
+          <div style={{ borderRadius: 'var(--r-md)', overflow: 'hidden', border: `1px solid ${result.ok ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.35)'}` }}>
+            <div style={{ padding: '6px 12px', background: result.ok ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.12)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 13 }}>{result.ok ? '✓' : '✗'}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: result.ok ? 'var(--success)' : 'var(--danger)' }}>{result.ok ? 'Success' : 'Error'}</span>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>⏱ {result.ms}ms</span>
+            </div>
+            <pre style={{ margin: 0, padding: '10px 12px', fontSize: 12, fontFamily: 'monospace', color: result.ok ? 'var(--text)' : 'var(--danger)', background: 'var(--bg-input)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 200, overflowY: 'auto' }}>{result.text}</pre>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   function ToolsTab({ agent, onUpdate }) {
     const [expandedId, setExpandedId] = useState(null);
     const [addOpen, setAddOpen] = useState(false);
@@ -731,6 +812,7 @@
                   <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 6, display: 'block' }}>Code (Python)</label>
                   <MonacoPython value={tool.code} onChange={v => updateTool(tool.id, 'code', v)} />
                 </div>
+                <ToolRunner tool={tool} />
               </div>
             )}
           </div>
@@ -761,6 +843,7 @@
               <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 6, display: 'block' }}>Code (Python)</label>
               <MonacoPython value={newTool.code} onChange={v => setNewTool(p => ({ ...p, code: v }))} />
             </div>
+            <ToolRunner tool={newTool} />
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => setAddOpen(false)} style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '8px 16px', borderRadius: 'var(--r-md)' }}>Cancel</button>
               <button onClick={addTool} style={{ background: 'var(--primary)', color: '#fff', padding: '8px 16px', borderRadius: 'var(--r-md)', fontWeight: 600 }}>Add Tool</button>
