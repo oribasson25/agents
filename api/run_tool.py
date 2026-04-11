@@ -34,18 +34,26 @@ class handler(BaseHTTPRequestHandler):
         pass  # suppress access logs
 
 
+PKG_DIR = "/tmp/pip_packages"
+
+
 def _install(packages: list) -> str | None:
-    """Install packages via pip. Returns error string or None."""
+    """Install packages to /tmp (writable on Vercel). Returns error string or None."""
     if not packages:
         return None
+    # Add target dir to path so imports work
+    if PKG_DIR not in sys.path:
+        sys.path.insert(0, PKG_DIR)
     try:
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "--quiet", *packages],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--quiet", "--target", PKG_DIR, *packages],
+            capture_output=True,
+            text=True,
         )
-    except subprocess.CalledProcessError as e:
-        return f"pip install failed: {e.stderr.decode()[:500] if e.stderr else str(e)}"
+        if result.returncode != 0:
+            return f"pip install failed:\n{(result.stderr or result.stdout)[:600]}"
+    except Exception as e:
+        return f"pip install error: {e}"
     return None
 
 
