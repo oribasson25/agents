@@ -636,16 +636,44 @@
   }
 
   /* ─────────────────── TOOLS TAB ─────────────────── */
+  /* ── EnvVarEditor: key-value pairs for tool env vars ── */
+  function EnvVarEditor({ envVars = [], onChange }) {
+    function add() { onChange([...envVars, { key: '', value: '' }]); }
+    function update(i, field, val) { const n = envVars.map((e, idx) => idx === i ? { ...e, [field]: val } : e); onChange(n); }
+    function remove(i) { onChange(envVars.filter((_, idx) => idx !== i)); }
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <label style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600 }}>Environment Variables</label>
+          <button onClick={add} style={{ background: 'var(--bg-hover)', color: 'var(--text-2)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '3px 10px', fontSize: 12, cursor: 'pointer' }}>＋ Add</button>
+        </div>
+        {envVars.length === 0
+          ? <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 0' }}>No variables — add API keys or endpoint URLs here.</div>
+          : envVars.map((ev, i) => (
+            <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+              <input value={ev.key} onChange={e => update(i, 'key', e.target.value)} placeholder="KEY" style={{ flex: '0 0 140px', fontFamily: 'monospace', fontSize: 12 }} />
+              <input value={ev.value} onChange={e => update(i, 'value', e.target.value)} placeholder="value" style={{ flex: 1, fontFamily: 'monospace', fontSize: 12 }} />
+              <button onClick={() => remove(i)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 15, padding: '0 4px' }}
+                onMouseEnter={e => e.currentTarget.style.color = 'var(--danger)'}
+                onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}>×</button>
+            </div>
+          ))
+        }
+      </div>
+    );
+  }
+
   function ToolsTab({ agent, onUpdate }) {
     const [expandedId, setExpandedId] = useState(null);
     const [addOpen, setAddOpen] = useState(false);
-    const [newTool, setNewTool] = useState({ name: '', description: '', parameters: [], code: '# Parameters arrive as kwargs\n# e.g., if you defined "age" and "name":\n\ndef run(**kwargs):\n    age = kwargs.get("age")\n    name = kwargs.get("name")\n    return f"Hello {name}, you are {age} years old!"\n' });
+    const defaultCode = '# Parameters arrive as kwargs\n# Access env vars with os.environ["MY_KEY"]\nimport os\nimport urllib.request, json\n\ndef run(**kwargs):\n    # Example: call an external API\n    # url = os.environ.get("API_URL", "")\n    # with urllib.request.urlopen(url) as r:\n    #     data = json.loads(r.read())\n    # return str(data)\n    return "result"\n';
+    const [newTool, setNewTool] = useState({ name: '', description: '', parameters: [], packages: '', envVars: [], code: defaultCode });
 
     function addTool() {
       if (!newTool.name.trim()) return;
       const tool = { id: uid(), ...newTool };
       onUpdate({ ...agent, tools: [...agent.tools, tool] });
-      setNewTool({ name: '', description: '', code: '# Write your Python tool code here\n\ndef run(input: str) -> str:\n    return input\n' });
+      setNewTool({ name: '', description: '', parameters: [], packages: '', envVars: [], code: defaultCode });
       setAddOpen(false);
     }
 
@@ -680,7 +708,7 @@
               <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>{expandedId === tool.id ? '▼' : '▶'}</span>
             </div>
             {expandedId === tool.id && (
-              <div style={{ padding: '0 16px 16px', borderTop: '1px solid var(--border)', paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ padding: '0 16px 16px', borderTop: '1px solid var(--border)', paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div>
                   <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Name</label>
                   <input value={tool.name} onChange={e => updateTool(tool.id, 'name', e.target.value)} dir="auto" />
@@ -692,6 +720,13 @@
                 <div style={{ background: 'var(--bg-hover)', borderRadius: 'var(--r-md)', padding: 14 }}>
                   <ParameterEditor parameters={tool.parameters || []} onChange={v => updateTool(tool.id, 'parameters', v)} />
                 </div>
+                <div style={{ background: 'var(--bg-hover)', borderRadius: 'var(--r-md)', padding: 14 }}>
+                  <EnvVarEditor envVars={tool.envVars || []} onChange={v => updateTool(tool.id, 'envVars', v)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Packages <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(pip, comma-separated — e.g. requests, httpx)</span></label>
+                  <input value={tool.packages || ''} onChange={e => updateTool(tool.id, 'packages', e.target.value)} placeholder="requests, httpx, beautifulsoup4" style={{ fontFamily: 'monospace', fontSize: 13 }} />
+                </div>
                 <div>
                   <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 6, display: 'block' }}>Code (Python)</label>
                   <MonacoPython value={tool.code} onChange={v => updateTool(tool.id, 'code', v)} />
@@ -702,11 +737,11 @@
         ))}
 
         {addOpen && (
-          <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--primary)', borderRadius: 'var(--r-lg)', padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--primary)', borderRadius: 'var(--r-lg)', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>New Tool</div>
             <div>
               <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Name</label>
-              <input value={newTool.name} onChange={e => setNewTool(v => ({ ...v, name: e.target.value }))} dir="auto" placeholder="e.g. search_web" />
+              <input value={newTool.name} onChange={e => setNewTool(v => ({ ...v, name: e.target.value }))} dir="auto" placeholder="e.g. fetch_weather" />
             </div>
             <div>
               <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Description</label>
@@ -714,6 +749,13 @@
             </div>
             <div style={{ background: 'var(--bg-hover)', borderRadius: 'var(--r-md)', padding: 14 }}>
               <ParameterEditor parameters={newTool.parameters} onChange={v => setNewTool(p => ({ ...p, parameters: v }))} />
+            </div>
+            <div style={{ background: 'var(--bg-hover)', borderRadius: 'var(--r-md)', padding: 14 }}>
+              <EnvVarEditor envVars={newTool.envVars} onChange={v => setNewTool(p => ({ ...p, envVars: v }))} />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Packages <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(pip, comma-separated)</span></label>
+              <input value={newTool.packages} onChange={e => setNewTool(v => ({ ...v, packages: e.target.value }))} placeholder="requests, httpx, beautifulsoup4" style={{ fontFamily: 'monospace', fontSize: 13 }} />
             </div>
             <div>
               <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 6, display: 'block' }}>Code (Python)</label>
@@ -928,10 +970,12 @@
 
     async function executeTool(toolName, inputs) {
       const tool = (agent.tools || []).find(t => t.name === toolName);
+      const packages = (tool?.packages || '').split(',').map(s => s.trim()).filter(Boolean);
+      const envVars = Object.fromEntries((tool?.envVars || []).filter(e => e.key).map(e => [e.key, e.value]));
       const resp = await fetch('/api/run-tool', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: tool?.code || '', inputs }),
+        body: JSON.stringify({ code: tool?.code || '', inputs, packages, env_vars: envVars }),
       });
       const data = await resp.json();
       return String(data.result ?? data.error ?? 'No output');
