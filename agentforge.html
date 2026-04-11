@@ -1017,8 +1017,7 @@
     } catch (_) {}
 
     const systemPrompt = buildSystemPrompt(agent, ragChunks);
-    // Only tools that have parameters defined participate in tool-calling
-    const toolDefs = (agent.tools || []).filter(t => (t.parameters || []).length > 0);
+    const toolDefs = (agent.tools || []);
 
     function buildClaudeTools() {
       return toolDefs.map(t => ({
