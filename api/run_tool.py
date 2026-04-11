@@ -88,7 +88,9 @@ def _run(code: str, inputs: dict, packages: list, env_vars: dict) -> dict:
 
         run_fn = namespace.get("run")
         if not callable(run_fn):
-            return {"error": "No callable 'run' function found in tool code"}
+            defined = [k for k, v in namespace.items() if callable(v) and not k.startswith("_")]
+            hint = f"Found: {defined}" if defined else "No functions defined."
+            return {"error": f"No callable 'run' function found.\n{hint}\n\nMake sure your code defines:\n\ndef run(**kwargs):\n    ..."}
 
         try:
             result = run_fn(**inputs)
