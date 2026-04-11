@@ -859,8 +859,11 @@
     );
   }
 
-  function buildSystemPrompt(agent) {
+  function buildSystemPrompt(agent, ragChunks = []) {
     let system = agent.basePrompt || '';
+    if (ragChunks && ragChunks.length > 0) {
+      system += '\n\n## Relevant Context\n' + ragChunks.map(c => `--- ${c.title}\n${c.content}`).join('\n\n');
+    }
     if (agent.skills && agent.skills.length > 0) {
       system += '\n\n' + agent.skills.map(s => `## Skill: ${s.name}\n${s.description ? s.description + '\n' : ''}${s.prompt}`).join('\n\n');
     }
@@ -869,9 +872,26 @@
 
   /* ─────────────────── TOOL CALLING ENGINE ─────────────────── */
   // onToolCall(name, inputs) — called before executing, so the UI can show a bubble
-  async function callWithTools(agent, history, onToolCall) {
+  async function callWithTools(agent, history, onToolCall, activeSkillId = null) {
     const { apiKey, provider, model } = agent.apiConfig;
-    const systemPrompt = buildSystemPrompt(agent);
+
+    // RAG retrieval — inject relevant knowledge into system prompt
+    let ragChunks = [];
+    try {
+      const lastUserMsg = (history.filter(m => m.role === 'user').at(-1) || {}).content || '';
+      if (lastUserMsg.trim()) {
+        const ragResp = await apiFetch(`/api/agents/${agent.id}/retrieve`, {
+          method: 'POST',
+          body: JSON.stringify({ query: lastUserMsg, skill_id: activeSkillId }),
+        });
+        if (ragResp.ok) {
+          const ragData = await ragResp.json();
+          ragChunks = ragData.chunks || [];
+        }
+      }
+    } catch (_) {}
+
+    const systemPrompt = buildSystemPrompt(agent, ragChunks);
     // Only tools that have parameters defined participate in tool-calling
     const toolDefs = (agent.tools || []).filter(t => (t.parameters || []).length > 0);
 
@@ -990,6 +1010,147 @@
       }
       return d1.choices[0].message.content;
     }
+  }
+
+  /* ─────────────────── KNOWLEDGE TAB ─────────────────── */
+  function KnowledgeTab({ agent }) {
+    const [docs, setDocs] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [selectedSkillId, setSelectedSkillId] = useState('__global__');
+    const [addOpen, setAddOpen] = useState(false);
+    const [newDoc, setNewDoc] = useState({ title: '', content: '' });
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+      apiFetch(`/api/agents/${agent.id}/documents`)
+        .then(r => r.json())
+        .then(rows => { setDocs(rows); setLoading(false); })
+        .catch(() => setLoading(false));
+    }, [agent.id]);
+
+    const displayDocs = selectedSkillId === '__global__'
+      ? docs.filter(d => !d.skill_id)
+      : docs.filter(d => d.skill_id === selectedSkillId);
+
+    async function addDoc() {
+      if (!newDoc.title.trim() || !newDoc.content.trim()) return;
+      setSaving(true);
+      const docId = uid();
+      const skillId = selectedSkillId === '__global__' ? null : selectedSkillId;
+      try {
+        const resp = await apiFetch(`/api/agents/${agent.id}/documents`, {
+          method: 'POST',
+          body: JSON.stringify({ docId, skillId, title: newDoc.title, content: newDoc.content }),
+        });
+        if (resp.ok) {
+          const doc = await resp.json();
+          setDocs(d => [doc, ...d]);
+          setNewDoc({ title: '', content: '' });
+          setAddOpen(false);
+        }
+      } finally {
+        setSaving(false);
+      }
+    }
+
+    async function deleteDoc(docId) {
+      await apiFetch(`/api/documents/${docId}`, { method: 'DELETE' });
+      setDocs(d => d.filter(x => x.id !== docId));
+    }
+
+    const activeSkillName = selectedSkillId === '__global__'
+      ? 'Global'
+      : (agent.skills.find(s => s.id === selectedSkillId) || {}).name || '';
+
+    return (
+      <div style={{ maxWidth: 720, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', background: 'var(--bg-panel)', borderRadius: 'var(--r-md)', padding: '10px 14px', border: '1px solid var(--border)', lineHeight: 1.6 }}>
+          📚 Documents are retrieved automatically via full-text search and injected into the system prompt.
+          <br />
+          <span style={{ color: 'var(--primary)' }}>Global</span> docs apply to all conversations.
+          <span style={{ color: 'var(--teal)' }}> Skill docs</span> are only retrieved when that skill is active.
+        </div>
+
+        {/* Scope selector */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            onClick={() => { setSelectedSkillId('__global__'); setAddOpen(false); }}
+            style={{ padding: '6px 14px', borderRadius: 'var(--r-xl)', fontSize: 13, fontWeight: 600,
+              background: selectedSkillId === '__global__' ? 'var(--primary)' : 'var(--bg-hover)',
+              color: selectedSkillId === '__global__' ? '#fff' : 'var(--text-2)' }}>
+            🌐 Global
+          </button>
+          {agent.skills.map(s => (
+            <button key={s.id}
+              onClick={() => { setSelectedSkillId(s.id); setAddOpen(false); }}
+              style={{ padding: '6px 14px', borderRadius: 'var(--r-xl)', fontSize: 13, fontWeight: 600,
+                background: selectedSkillId === s.id ? 'var(--teal)' : 'var(--bg-hover)',
+                color: selectedSkillId === s.id ? '#fff' : 'var(--text-2)' }}>
+              🎯 {s.name}
+            </button>
+          ))}
+        </div>
+
+        {/* Section header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontWeight: 600, fontSize: 14 }}>
+            {activeSkillName} Knowledge
+            <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-muted)', fontWeight: 400 }}>
+              {displayDocs.length} doc{displayDocs.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <button onClick={() => setAddOpen(v => !v)}
+            style={{ background: 'var(--primary)', color: '#fff', padding: '8px 16px', borderRadius: 'var(--r-xl)', fontWeight: 600, fontSize: 13 }}>
+            ＋ Add Document
+          </button>
+        </div>
+
+        {/* Add panel */}
+        {addOpen && (
+          <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--primary)', borderRadius: 'var(--r-lg)', padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>New Document — {activeSkillName}</div>
+            <div>
+              <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Title</label>
+              <input value={newDoc.title} onChange={e => setNewDoc(v => ({...v, title: e.target.value}))} dir="auto" placeholder="e.g. Company Policy 2025" />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Content</label>
+              <textarea value={newDoc.content} onChange={e => setNewDoc(v => ({...v, content: e.target.value}))} dir="auto" rows={7}
+                placeholder="Paste document text here…"
+                style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: 13, lineHeight: 1.6 }} />
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setAddOpen(false)} style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '8px 16px', borderRadius: 'var(--r-md)' }}>Cancel</button>
+              <button onClick={addDoc} disabled={saving || !newDoc.title.trim() || !newDoc.content.trim()}
+                style={{ background: 'var(--primary)', color: '#fff', padding: '8px 16px', borderRadius: 'var(--r-md)', fontWeight: 600 }}>
+                {saving ? 'Saving…' : 'Add Document'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Doc list */}
+        {loading ? (
+          <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: 8 }}>Loading…</div>
+        ) : displayDocs.length === 0 && !addOpen ? (
+          <EmptyState icon="📄" title="No documents yet" subtitle="Add documents to give your agent knowledge to retrieve from" />
+        ) : (
+          displayDocs.map(doc => (
+            <div key={doc.id} style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '14px 16px' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6 }}>📄 {doc.title}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6, maxHeight: 64, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>
+                    {doc.content}
+                  </div>
+                </div>
+                <IconBtn onClick={() => deleteDoc(doc.id)} danger title="Delete document">🗑</IconBtn>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    );
   }
 
   /* ─────────────────── EXPORT TAB ─────────────────── */
@@ -1197,6 +1358,7 @@ async function sendMsg(){
     ]);
     const [input, setInput] = useState('');
     const [pending, setPending] = useState(false);
+    const [activeSkillId, setActiveSkillId] = useState(null);
     const listRef = useRef(null);
 
     useEffect(() => {
@@ -1220,7 +1382,7 @@ async function sendMsg(){
       let skillBanner = null;
       if (skillMatch) {
         const skill = agent.skills.find(s => s.name.toLowerCase() === skillMatch[1].toLowerCase());
-        if (skill) skillBanner = skill.name;
+        if (skill) { skillBanner = skill.name; setActiveSkillId(skill.id); }
       }
 
       const typingId = uid();
@@ -1241,7 +1403,7 @@ async function sendMsg(){
             { id: uid(), role: 'tool', content: `@${toolName}(${JSON.stringify(toolInput)})`, timestamp: new Date() },
             { id: typingId, role: 'typing' }
           ));
-        });
+        }, activeSkillId);
         const dt = performance.now() - t0;
         setMessages(m => m.filter(x => x.id !== typingId).concat({ id: uid(), role: 'agent', content, timestamp: new Date(), durationMs: dt }));
       } catch (err) {
@@ -1347,7 +1509,7 @@ async function sendMsg(){
   /* ─────────────────── AGENT EDITOR ─────────────────── */
   function AgentEditor({ agent, onUpdate, onBack }) {
     const [tab, setTab] = useState('configuration');
-    const TABS = ['configuration','skills','tools','export'];
+    const TABS = ['configuration','skills','tools','knowledge','export'];
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -1371,6 +1533,7 @@ async function sendMsg(){
           {tab === 'configuration' && <ConfigurationTab agent={agent} onUpdate={onUpdate} />}
           {tab === 'skills' && <SkillsTab agent={agent} onUpdate={onUpdate} />}
           {tab === 'tools' && <ToolsTab agent={agent} onUpdate={onUpdate} />}
+          {tab === 'knowledge' && <KnowledgeTab agent={agent} />}
           {tab === 'export' && <ExportTab agent={agent} />}
         </div>
       </div>
