@@ -1,6 +1,7 @@
 {
   "rewrites": [
     { "source": "/api/run-tool", "destination": "/api/run_tool.py" },
+    { "source": "/api/scrape", "destination": "/api/scrape.py" },
     { "source": "/", "destination": "/agentforge.html" }
   ]
 }
