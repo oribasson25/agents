@@ -1069,10 +1069,13 @@
     );
   }
 
-  function buildSystemPrompt(agent, ragChunks = []) {
+  function buildSystemPrompt(agent, ragChunks = [], webChunks = []) {
     let system = agent.basePrompt || '';
     if (ragChunks && ragChunks.length > 0) {
       system += '\n\n## Relevant Context\n' + ragChunks.map(c => `--- ${c.title}\n${c.content}`).join('\n\n');
+    }
+    if (webChunks && webChunks.length > 0) {
+      system += '\n\n## Web Page Content\n' + webChunks.map(c => `--- ${c.title}\n${c.content}`).join('\n\n');
     }
     if (agent.skills && agent.skills.length > 0) {
       system += '\n\n' + agent.skills.map(s => `## Skill: ${s.name}\n${s.description ? s.description + '\n' : ''}${s.prompt}`).join('\n\n');
@@ -1087,8 +1090,8 @@
 
     // RAG retrieval — inject relevant knowledge into system prompt
     let ragChunks = [];
+    const lastUserMsg = (history.filter(m => m.role === 'user').at(-1) || {}).content || '';
     try {
-      const lastUserMsg = (history.filter(m => m.role === 'user').at(-1) || {}).content || '';
       if (lastUserMsg.trim()) {
         const ragResp = await apiFetch(`/api/agents/${agent.id}/retrieve`, {
           method: 'POST',
@@ -1101,7 +1104,28 @@
       }
     } catch (_) {}
 
-    const systemPrompt = buildSystemPrompt(agent, ragChunks);
+    // Auto-scrape any URLs mentioned in the user's message
+    let webChunks = [];
+    try {
+      const urlRegex = /https?:\/\/[^\s"'<>)]+/g;
+      const urls = [...new Set((lastUserMsg.match(urlRegex) || []).slice(0, 3))];
+      if (urls.length > 0) {
+        const results = await Promise.allSettled(
+          urls.map(url =>
+            fetch('/api/scrape', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url }),
+            }).then(r => r.json())
+          )
+        );
+        webChunks = results
+          .filter(r => r.status === 'fulfilled' && !r.value.error)
+          .map(r => ({ title: r.value.title || r.value.url, content: r.value.text }));
+      }
+    } catch (_) {}
+
+    const systemPrompt = buildSystemPrompt(agent, ragChunks, webChunks);
     const toolDefs = (agent.tools || []);
 
     function buildClaudeTools() {
