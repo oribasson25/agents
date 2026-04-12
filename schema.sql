@@ -1,4 +1,5 @@
 -- Run this once in the Neon SQL Editor to initialize the database schema.
+-- After running this, also run migrations/002-add-users-and-ownership.sql
 
 create extension if not exists "pgcrypto";
 
