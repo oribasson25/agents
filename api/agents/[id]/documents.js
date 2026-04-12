@@ -18,18 +18,31 @@ export default async function handler(req, res) {
 
   if (req.method === 'POST') {
     const { docId, skillId, title, content } = req.body;
-    await sql`
-      insert into documents (id, agent_id, skill_id, title, content)
-      values (${docId}, ${id}, ${skillId || null}, ${title}, ${content})
-    `;
-    return res.status(201).json({
-      id: docId,
-      agent_id: id,
-      skill_id: skillId || null,
-      title,
-      content,
-      created_at: new Date().toISOString(),
-    });
+    
+    // Validation
+    if (!docId || !title || !content) {
+      return res.status(400).json({ error: 'docId, title, and content are required' });
+    }
+    
+    try {
+      const result = await sql`
+        insert into documents (id, agent_id, skill_id, title, content)
+        values (${docId}, ${id}, ${skillId || null}, ${title}, ${content})
+        returning id, agent_id, skill_id, title, content, created_at
+      `;
+      
+      if (!result || result.length === 0) {
+        return res.status(500).json({ error: 'Failed to insert document' });
+      }
+      
+      return res.status(201).json(result[0]);
+    } catch (err) {
+      console.error('Error inserting document:', err);
+      return res.status(500).json({ 
+        error: 'Database error', 
+        message: err.message 
+      });
+    }
   }
 
   res.status(405).end();
