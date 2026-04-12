@@ -744,20 +744,23 @@
       packages: '',
       envVars: [],
       code: [
-        'import urllib.request, urllib.parse, json',
+        'import urllib.request, urllib.parse, re',
         'from html.parser import HTMLParser',
         '',
         'class _X(HTMLParser):',
         '    SKIP = {"script","style","noscript","nav","footer","header","aside"}',
+        '    BLOCK = {"p","div","li","h1","h2","h3","h4","h5","h6","article","section","main","td","br"}',
         '    def __init__(self):',
         '        super().__init__()',
         '        self.parts=[]; self.title=""; self._t=False; self._s=0',
         '    def handle_starttag(self,tag,attrs):',
         '        if tag=="title": self._t=True',
         '        if tag in self.SKIP: self._s+=1',
+        '        if tag in self.BLOCK and self.parts and self.parts[-1]!="\\n": self.parts.append("\\n")',
         '    def handle_endtag(self,tag):',
         '        if tag=="title": self._t=False',
         '        if tag in self.SKIP: self._s=max(0,self._s-1)',
+        '        if tag in self.BLOCK and self.parts and self.parts[-1]!="\\n": self.parts.append("\\n")',
         '    def handle_data(self,d):',
         '        t=d.strip()',
         '        if not t: return',
@@ -769,16 +772,25 @@
         '    if not url: return "Error: url is required"',
         '    if not url.startswith("http"): url = "https://" + url',
         '    try:',
-        '        req = urllib.request.Request(url, headers={"User-Agent":"Mozilla/5.0"})',
-        '        with urllib.request.urlopen(req, timeout=15) as r:',
+        '        req = urllib.request.Request(url, headers={',
+        '            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",',
+        '            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",',
+        '            "Accept-Language": "he,en;q=0.9",',
+        '            "Accept-Encoding": "identity",',
+        '        })',
+        '        with urllib.request.urlopen(req, timeout=20) as r:',
         '            ct = r.headers.get("Content-Type",""); cs="utf-8"',
         '            if "charset=" in ct: cs=ct.split("charset=")[-1].split(";")[0].strip()',
         '            html = r.read().decode(cs, errors="replace")',
         '        p = _X(); p.feed(html)',
-        '        text = " ".join(p.parts)[:6000]',
+        '        raw = " ".join(p.parts)',
+        '        raw = re.sub(r" {2,}", " ", raw)',
+        '        raw = re.sub(r"\\n{3,}", "\\n\\n", raw)',
+        '        text = raw.strip()[:7000]',
+        '        if not text: return f"Could not extract text from {url} (may be a JavaScript-only site)"',
         '        return f"Title: {p.title.strip()}\\n\\n{text}"',
         '    except Exception as e:',
-        '        return f"Error: {e}"',
+        '        return f"Error scraping {url}: {e}"',
       ].join('\n'),
     },
   ];
@@ -1075,7 +1087,7 @@
       system += '\n\n## Relevant Context\n' + ragChunks.map(c => `--- ${c.title}\n${c.content}`).join('\n\n');
     }
     if (webChunks && webChunks.length > 0) {
-      system += '\n\n## Web Page Content\n' + webChunks.map(c => `--- ${c.title}\n${c.content}`).join('\n\n');
+      system += '\n\n## Fetched Web Pages\nThe following web pages were automatically fetched and are available for you to use. Answer questions about these URLs using the content below — do NOT say you cannot access the internet.\n\n' + webChunks.map(c => `--- ${c.title}\n${c.content}`).join('\n\n');
     }
     if (agent.skills && agent.skills.length > 0) {
       system += '\n\n' + agent.skills.map(s => `## Skill: ${s.name}\n${s.description ? s.description + '\n' : ''}${s.prompt}`).join('\n\n');
