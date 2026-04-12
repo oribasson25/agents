@@ -2648,7 +2648,7 @@ def run(**kwargs):
               {users.map((u, i) => (
                 <tr key={u.id} style={{ borderBottom: i < users.length - 1 ? '1px solid var(--border)' : 'none' }}>
                   <td style={{ padding: '12px 16px', fontWeight: 600 }}>
-                    <button onClick={() => onSelectUser(u)} style={{ background: 'transparent', color: 'var(--primary)', fontWeight: 600, textDecoration: 'underline', padding: 0 }}>
+                    <button onClick={() => onSelectUser(u)} style={{ background: 'transparent', color: 'var(--text)', fontWeight: 600, textDecoration: 'none', padding: 0 }}>
                       {u.username}
                     </button>
                   </td>
