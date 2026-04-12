@@ -494,7 +494,7 @@
             <div style={{ position: 'relative' }}>
               <button
                 onClick={() => setShowEmojiPicker(v => !v)}
-                style={{ width: 64, height: 64, borderRadius: '50%', background: 'linear-gradient(135deg,var(--primary),var(--teal))', fontSize: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--border)' }}
+                style={{ width: 64, height: 64, borderRadius: '50%', background: '#1e1e1e', fontSize: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--border)' }}
               >{agent.avatar}</button>
               {showEmojiPicker && (
                 <div style={{ position: 'absolute', top: 72, left: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 10, zIndex: 100, display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 4 }}>
@@ -1816,7 +1816,7 @@ async function sendMsg(){
         <div className="slide-in-right" style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 420, background: 'var(--bg-sidebar)', borderLeft: '1px solid var(--border)', zIndex: 201, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
           {/* Header */}
           <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg,var(--primary),var(--teal))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>{agent.avatar}</div>
+            <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#1e1e1e', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>{agent.avatar}</div>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 700, fontSize: 15 }}>{agent.name}</div>
               <div style={{ fontSize: 12, color: hasKey ? 'var(--success)' : 'var(--danger)', display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -2017,7 +2017,7 @@ async function sendMsg(){
       >
         {/* Avatar + name */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'linear-gradient(135deg,var(--primary),var(--teal))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0 }}>
+          <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#1e1e1e', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0 }}>
             {agent.avatar}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
