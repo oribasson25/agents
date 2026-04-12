@@ -2415,10 +2415,20 @@ def run(**kwargs):
 
   /* ─────────────────── LOGIN GATE ─────────────────── */
   function LoginGate({ onLogin }) {
+    const [mode, setMode] = useState('login'); // 'login' | 'register'
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
+    const [phone, setPhone] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+
+    function switchMode(m) {
+      setMode(m);
+      setError('');
+      setUsername('');
+      setPassword('');
+      setPhone('');
+    }
 
     async function handleLogin() {
       if (!username || !password) return;
@@ -2444,6 +2454,34 @@ def run(**kwargs):
       }
     }
 
+    async function handleRegister() {
+      if (!username || !password || !phone) return;
+      setLoading(true);
+      setError('');
+      try {
+        const resp = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password, phone }),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          sessionStorage.setItem('agentforge_auth', JSON.stringify(data));
+          onLogin(data);
+        } else {
+          const body = await resp.json().catch(() => ({}));
+          setError(body.error || 'Registration failed.');
+        }
+      } catch {
+        setError('Could not connect to server.');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    const isLogin = mode === 'login';
+    const canSubmit = isLogin ? (username && password) : (username && password && phone);
+
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-app)' }}>
         <div style={{ background: 'var(--bg-card)', borderRadius: 'var(--r-xl)', padding: 40, width: 380, boxShadow: 'var(--shadow)', border: '1px solid var(--border)' }}>
@@ -2451,14 +2489,28 @@ def run(**kwargs):
             <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>🔮</div>
             <div>
               <div style={{ fontWeight: 800, fontSize: 20 }}>ori-agent-builder</div>
-              <div style={{ fontSize: 13, color: 'var(--text-2)' }}>Sign in to continue</div>
+              <div style={{ fontSize: 13, color: 'var(--text-2)' }}>{isLogin ? 'Sign in to continue' : 'Create an account'}</div>
             </div>
           </div>
+
+          {/* Tab toggle */}
+          <div style={{ display: 'flex', gap: 0, marginBottom: 20, background: 'var(--bg-panel)', borderRadius: 'var(--r-md)', padding: 4 }}>
+            {['login', 'register'].map(m => (
+              <button key={m} onClick={() => switchMode(m)}
+                style={{ flex: 1, padding: '7px 0', borderRadius: 'var(--r-sm)', fontWeight: 600, fontSize: 13,
+                  background: mode === m ? 'var(--primary)' : 'transparent',
+                  color: mode === m ? '#fff' : 'var(--text-2)',
+                  transition: 'background 0.15s' }}>
+                {m === 'login' ? 'Sign in' : 'Register'}
+              </button>
+            ))}
+          </div>
+
           <input
             type="text"
             value={username}
             onChange={e => setUsername(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleLogin()}
+            onKeyDown={e => e.key === 'Enter' && (isLogin ? handleLogin() : handleRegister())}
             placeholder="Username"
             autoFocus
             style={{ marginBottom: 10 }}
@@ -2467,14 +2519,24 @@ def run(**kwargs):
             type="password"
             value={password}
             onChange={e => setPassword(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleLogin()}
+            onKeyDown={e => e.key === 'Enter' && (isLogin ? handleLogin() : handleRegister())}
             placeholder="Password"
-            style={{ marginBottom: 12 }}
+            style={{ marginBottom: 10 }}
           />
+          {!isLogin && (
+            <input
+              type="tel"
+              value={phone}
+              onChange={e => setPhone(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleRegister()}
+              placeholder="Phone number"
+              style={{ marginBottom: 10 }}
+            />
+          )}
           {error && <div style={{ color: 'var(--danger)', fontSize: 13, marginBottom: 10 }}>⚠ {error}</div>}
-          <button onClick={handleLogin} disabled={loading || !username || !password}
-            style={{ width: '100%', background: 'var(--primary)', color: '#fff', padding: '11px 16px', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 15 }}>
-            {loading ? 'Signing in…' : 'Sign in →'}
+          <button onClick={isLogin ? handleLogin : handleRegister} disabled={loading || !canSubmit}
+            style={{ width: '100%', background: 'var(--primary)', color: '#fff', padding: '11px 16px', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 15, marginTop: 2 }}>
+            {loading ? (isLogin ? 'Signing in…' : 'Registering…') : (isLogin ? 'Sign in →' : 'Create account →')}
           </button>
         </div>
       </div>
@@ -2515,7 +2577,7 @@ def run(**kwargs):
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
-                {['Username', 'Role', 'Agents', 'Last Login', 'Actions'].map(h => (
+                {['Username', 'Phone', 'Role', 'Agents', 'Last Login', 'Actions'].map(h => (
                   <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, color: 'var(--text-2)', fontWeight: 600 }}>{h}</th>
                 ))}
               </tr>
@@ -2528,6 +2590,7 @@ def run(**kwargs):
                       {u.username}
                     </button>
                   </td>
+                  <td style={{ padding: '12px 16px', color: 'var(--text-2)', fontSize: 13 }}>{u.phone || '—'}</td>
                   <td style={{ padding: '12px 16px' }}>
                     {u.is_admin
                       ? <span style={{ background: 'rgba(108,99,255,0.15)', color: 'var(--primary)', borderRadius: 'var(--r-sm)', padding: '2px 8px', fontSize: 12 }}>Admin</span>

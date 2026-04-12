@@ -10,6 +10,7 @@ export default async function handler(req, res) {
       select
         u.id,
         u.username,
+        u.phone,
         u.is_admin,
         u.created_at,
         u.last_login_at,
