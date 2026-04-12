@@ -514,7 +514,7 @@
             <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 6, display: 'block' }}>Provider</label>
             <div style={{ display: 'inline-flex', background: 'var(--bg-input)', borderRadius: 'var(--r-xl)', padding: 3, gap: 2 }}>
               {['claude','openai'].map(p => (
-                <button key={p} onClick={() => { update(['apiConfig','provider'], p); update(['apiConfig','model'], p === 'claude' ? CLAUDE_MODELS[1] : OPENAI_MODELS[0]); }}
+                <button key={p} onClick={() => { const u = JSON.parse(JSON.stringify(agent)); u.apiConfig.provider = p; u.apiConfig.model = p === 'claude' ? CLAUDE_MODELS[1] : OPENAI_MODELS[0]; onUpdate(u); }}
                   style={{ padding: '6px 18px', borderRadius: 'var(--r-xl)', fontWeight: 600, fontSize: 13, background: agent.apiConfig.provider === p ? 'var(--primary)' : 'transparent', color: agent.apiConfig.provider === p ? '#fff' : 'var(--text-2)' }}>
                   {p === 'claude' ? '🟣 Claude' : '🟢 OpenAI'}
                 </button>
@@ -1231,6 +1231,8 @@
     const [saving, setSaving] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState('');
+    const [editingDocId, setEditingDocId] = useState(null);
+    const [editDoc, setEditDoc] = useState({ title: '', content: '' });
     const fileInputRef = useRef(null);
 
     useEffect(() => {
@@ -1268,6 +1270,24 @@
     async function deleteDoc(docId) {
       await apiFetch(`/api/documents/${docId}`, { method: 'DELETE' });
       setDocs(d => d.filter(x => x.id !== docId));
+    }
+
+    async function updateDoc(docId) {
+      if (!editDoc.title.trim() || !editDoc.content.trim()) return;
+      setSaving(true);
+      try {
+        const resp = await apiFetch(`/api/documents/${docId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ title: editDoc.title, content: editDoc.content }),
+        });
+        if (resp.ok) {
+          setDocs(d => d.map(x => x.id === docId ? { ...x, title: editDoc.title, content: editDoc.content } : x));
+          setEditingDocId(null);
+          setEditDoc({ title: '', content: '' });
+        }
+      } finally {
+        setSaving(false);
+      }
     }
 
     async function handleFileUpload(e) {
@@ -1415,16 +1435,45 @@
           <EmptyState icon="📄" title="No documents yet" subtitle="Upload a PDF, Word, or Excel file — or paste text directly" />
         ) : (
           displayDocs.map(doc => (
-            <div key={doc.id} style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '14px 16px' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6 }}>{fileIcon(doc.title)} {doc.title}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6, maxHeight: 64, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>
-                    {doc.content}
+            <div key={doc.id} style={{ background: 'var(--bg-panel)', border: `1px solid ${editingDocId === doc.id ? 'var(--primary)' : 'var(--border)'}`, borderRadius: 'var(--r-lg)', padding: '14px 16px' }}>
+              {editingDocId === doc.id ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>Edit Document</div>
+                  <div>
+                    <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Title</label>
+                    <input value={editDoc.title} onChange={e => setEditDoc(v => ({...v, title: e.target.value}))} dir="auto" />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Content</label>
+                    <textarea value={editDoc.content} onChange={e => setEditDoc(v => ({...v, content: e.target.value}))} dir="auto" rows={8}
+                      style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: 13, lineHeight: 1.6 }} />
+                  </div>
+                  {editDoc.content.length > 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{editDoc.content.length.toLocaleString()} characters</div>
+                  )}
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button onClick={() => { setEditingDocId(null); setEditDoc({ title: '', content: '' }); }}
+                      style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '8px 16px', borderRadius: 'var(--r-md)' }}>Cancel</button>
+                    <button onClick={() => updateDoc(doc.id)} disabled={saving || !editDoc.title.trim() || !editDoc.content.trim()}
+                      style={{ background: 'var(--primary)', color: '#fff', padding: '8px 16px', borderRadius: 'var(--r-md)', fontWeight: 600 }}>
+                      {saving ? 'Saving…' : 'Save Changes'}
+                    </button>
                   </div>
                 </div>
-                <IconBtn onClick={() => deleteDoc(doc.id)} danger title="Delete document">🗑</IconBtn>
-              </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6 }}>{fileIcon(doc.title)} {doc.title}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6, maxHeight: 64, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>
+                      {doc.content}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <IconBtn onClick={() => { setEditingDocId(doc.id); setEditDoc({ title: doc.title, content: doc.content }); }} title="Edit document">✏️</IconBtn>
+                    <IconBtn onClick={() => deleteDoc(doc.id)} danger title="Delete document">🗑</IconBtn>
+                  </div>
+                </div>
+              )}
             </div>
           ))
         )}
