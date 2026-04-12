@@ -1570,10 +1570,20 @@
     const apiKey = (agent.apiConfig && agent.apiConfig.apiKey) || '';
     const provider = (agent.apiConfig && agent.apiConfig.provider) || 'claude';
     const model = (agent.apiConfig && agent.apiConfig.model) || 'claude-sonnet-4-5';
-    const safeTitle = (title || agent.name || 'Agent').replace(/`/g, '');
-    const safePlaceholder = (placeholder || 'Type a message…').replace(/`/g, '');
-    const safePrompt = systemPrompt.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
-    const safeKey = apiKey.replace(/`/g, '');
+    const titleStr = title || agent.name || 'Agent';
+    const placeholderStr = placeholder || 'Type a message…';
+    const avatarStr = agent.avatar || '🤖';
+    const openingStr = agent.openingMessage || 'Hello!';
+
+    // Use JSON.stringify for all user-controlled strings to avoid escaping issues
+    const jsSystem = JSON.stringify(systemPrompt);
+    const jsApiKey = JSON.stringify(apiKey);
+    const jsProvider = JSON.stringify(provider);
+    const jsModel = JSON.stringify(model);
+    const jsOpening = JSON.stringify(openingStr);
+
+    // HTML-escape helper for attribute/text values
+    function he(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
     return `<!DOCTYPE html>
 <html>
@@ -1610,17 +1620,17 @@ button:disabled{opacity:.4;cursor:not-allowed}
 </style>
 </head>
 <body>
-<div id="header"><span class="av">${agent.avatar || '🤖'}</span><span class="nm">${safeTitle}</span></div>
+<div id="header"><span class="av">${he(avatarStr)}</span><span class="nm">${he(titleStr)}</span></div>
 <div id="messages"></div>
 <div id="inputbar">
-  <textarea id="inp" placeholder="${safePlaceholder}" rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg()}"></textarea>
-  <button onclick="sendMsg()">➤</button>
+  <textarea id="inp" placeholder="${he(placeholderStr)}" rows="1" onkeydown="if(event.key==='Enter'&amp;&amp;!event.shiftKey){event.preventDefault();sendMsg()}"></textarea>
+  <button onclick="sendMsg()">&#x27A4;</button>
 </div>
 <script>
-var SYSTEM=\`${safePrompt}\`;
-var API_KEY=\`${safeKey}\`;
-var PROVIDER='${provider}';
-var MODEL='${model}';
+var SYSTEM=${jsSystem};
+var API_KEY=${jsApiKey};
+var PROVIDER=${jsProvider};
+var MODEL=${jsModel};
 var history=[];
 var pending=false;
 function isHeb(t){return /^[\\u0590-\\u05FF]/.test((t||'').trim())}
@@ -1649,7 +1659,7 @@ function showTyping(){
   msgs.appendChild(d);msgs.scrollTop=msgs.scrollHeight;
 }
 function hideTyping(){var d=document.getElementById('typing');if(d)d.remove()}
-addMsg('agent','${(agent.openingMessage || 'Hello!').replace(/'/g,"\\'")}',new Date());
+addMsg('agent',${jsOpening},new Date());
 async function sendMsg(){
   var inp=document.getElementById('inp');
   var text=inp.value.trim();
