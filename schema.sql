@@ -19,7 +19,7 @@ create table if not exists documents (
   title       text        not null default '',
   content     text        not null,
   tsv         tsvector generated always as (
-                to_tsvector('english', coalesce(title,'') || ' ' || content)
+                to_tsvector('simple', coalesce(title,'') || ' ' || content)
               ) stored,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()

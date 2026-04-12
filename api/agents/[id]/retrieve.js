@@ -17,11 +17,11 @@ export default async function handler(req, res) {
         // Specific skill: return skill-specific + global docs
         chunks = await sql`
           select title, content,
-                 ts_rank(tsv, plainto_tsquery('english', ${query})) as rank
+                 ts_rank(tsv, plainto_tsquery('simple', ${query})) as rank
           from documents
           where agent_id = ${id}
             and (skill_id is null or skill_id = ${skill_id})
-            and tsv @@ plainto_tsquery('english', ${query})
+            and tsv @@ plainto_tsquery('simple', ${query})
           order by rank desc
           limit 5
         `;
@@ -29,11 +29,11 @@ export default async function handler(req, res) {
         // No skill specified: return only global docs
         chunks = await sql`
           select title, content,
-                 ts_rank(tsv, plainto_tsquery('english', ${query})) as rank
+                 ts_rank(tsv, plainto_tsquery('simple', ${query})) as rank
           from documents
           where agent_id = ${id}
             and skill_id is null
-            and tsv @@ plainto_tsquery('english', ${query})
+            and tsv @@ plainto_tsquery('simple', ${query})
           order by rank desc
           limit 5
         `;

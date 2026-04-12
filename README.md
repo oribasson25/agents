@@ -61,3 +61,11 @@ vercel dev
 - API calls to Claude/OpenAI are made directly from the browser using the stored key
 - Do not share `APP_PASSWORD` publicly
 - For multi-user scenarios, consider adding per-user auth
+
+## Language Support
+
+**Full-Text Search (Documents)**: The database uses PostgreSQL's `simple` language tokenizer for full-text search, which means:
+- ✅ Works with **Hebrew, Arabic, Chinese, Japanese**, and other non-English languages
+- ✅ Case-insensitive matching
+- ❌ Does NOT perform stemming (e.g., "run", "running", "runs" are different tokens)
+- **Tip**: Users should search for exact or partial word matches for best results
