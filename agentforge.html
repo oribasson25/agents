@@ -1502,7 +1502,7 @@
     const [copied, setCopied] = useState(false);
 
     const params = new URLSearchParams({ title, accent, placeholder, height: widgetHeight });
-    const widgetUrl = `/api/widget/${agent.id}?${params}`;
+    const widgetUrl = `${window.location.origin}/api/widget/${agent.id}?${params}`;
     const iframeTag = `<iframe src="${widgetUrl}" width="100%" height="${widgetHeight}px" frameborder="0" style="border-radius:${radius}px;border:none;"></iframe>`;
 
     function copyIframe() {
