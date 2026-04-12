@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ori-agent-builder</title>
+  <title>8Legs.ai</title>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -11,14 +11,14 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
   <style>
     :root {
-      --bg-app: #0f1117;
-      --bg-sidebar: #13151c;
-      --bg-card: #1a1d27;
-      --bg-panel: #1e2130;
-      --bg-input: #252837;
-      --bg-hover: #2a2d3e;
-      --primary: #6c63ff;
-      --primary-hover: #7c74ff;
+      --bg-app: #080808;
+      --bg-sidebar: #0c0c0c;
+      --bg-card: #111111;
+      --bg-panel: #161616;
+      --bg-input: #1c1c1c;
+      --bg-hover: #222222;
+      --primary: #EF9F27;
+      --primary-hover: #F5B34D;
       --success: #22c55e;
       --warning: #f59e0b;
       --danger: #ef4444;
@@ -26,8 +26,8 @@
       --text: #f0f0f5;
       --text-2: #9ca3af;
       --text-muted: #5c6380;
-      --border: #2a2d3e;
-      --border-focus: #6c63ff;
+      --border: #2a2a2a;
+      --border-focus: #EF9F27;
       --r-sm: 6px;
       --r-md: 12px;
       --r-lg: 18px;
@@ -305,7 +305,7 @@
     function renderInlineChips(text) {
       const parts = text.split(/(@\w+|#\w+)/g);
       return parts.map((part, i) => {
-        if (part.match(/^@\w+$/)) return <span key={i} style={{ background: 'rgba(108,99,255,0.2)', color: 'var(--primary)', borderRadius: 4, padding: '1px 5px', fontSize: 12, fontWeight: 600 }}>{part}</span>;
+        if (part.match(/^@\w+$/)) return <span key={i} style={{ background: 'rgba(239,159,39,0.2)', color: 'var(--primary)', borderRadius: 4, padding: '1px 5px', fontSize: 12, fontWeight: 600 }}>{part}</span>;
         if (part.match(/^#\w+$/)) return <span key={i} style={{ background: 'rgba(20,184,166,0.2)', color: 'var(--teal)', borderRadius: 4, padding: '1px 5px', fontSize: 12, fontWeight: 600 }}>{part}</span>;
         return part;
       });
@@ -2005,7 +2005,7 @@ async function sendMsg(){
           background: 'var(--bg-card)',
           borderRadius: 'var(--r-lg)',
           border: `1px solid ${hovered ? 'var(--primary)' : 'var(--border)'}`,
-          boxShadow: hovered ? '0 0 16px rgba(108,99,255,0.2), var(--shadow)' : 'var(--shadow)',
+          boxShadow: hovered ? '0 0 16px rgba(239,159,39,0.2), var(--shadow)' : 'var(--shadow)',
           padding: 20,
           display: 'flex',
           flexDirection: 'column',
@@ -2027,7 +2027,7 @@ async function sendMsg(){
         </div>
         {/* Badges */}
         <div style={{ display: 'flex', gap: 6 }}>
-          <span style={{ background: 'rgba(108,99,255,0.15)', color: 'var(--primary)', borderRadius: 'var(--r-sm)', padding: '2px 8px', fontSize: 12, fontWeight: 600 }}>🎯 {agent.skills.length} skills</span>
+          <span style={{ background: 'rgba(239,159,39,0.15)', color: 'var(--primary)', borderRadius: 'var(--r-sm)', padding: '2px 8px', fontSize: 12, fontWeight: 600 }}>🎯 {agent.skills.length} skills</span>
           <span style={{ background: 'rgba(20,184,166,0.15)', color: 'var(--teal)', borderRadius: 'var(--r-sm)', padding: '2px 8px', fontSize: 12, fontWeight: 600 }}>⚙️ {agent.tools.length} tools</span>
         </div>
         {/* Actions */}
@@ -2318,7 +2318,7 @@ def run(**kwargs):
               <button key={s.id} onClick={() => setActive(s.id)}
                 style={{
                   textAlign: 'right', padding: '8px 10px', borderRadius: 'var(--r-sm)', fontSize: 13,
-                  background: active === s.id ? 'rgba(108,99,255,0.12)' : 'transparent',
+                  background: active === s.id ? 'rgba(239,159,39,0.10)' : 'transparent',
                   color: active === s.id ? 'var(--primary)' : 'var(--text-2)',
                   fontWeight: active === s.id ? 600 : 400,
                   borderRight: `3px solid ${active === s.id ? 'var(--primary)' : 'transparent'}`,
@@ -2367,7 +2367,7 @@ def run(**kwargs):
         )}
         {/* FAB */}
         <button onClick={onNew}
-          style={{ position: 'fixed', bottom: 32, right: 32, background: 'var(--primary)', color: '#fff', padding: '14px 24px', borderRadius: 'var(--r-xl)', fontWeight: 700, fontSize: 15, boxShadow: '0 4px 20px rgba(108,99,255,0.5)', zIndex: 50 }}
+          style={{ position: 'fixed', bottom: 32, right: 32, background: 'var(--primary)', color: '#fff', padding: '14px 24px', borderRadius: 'var(--r-xl)', fontWeight: 700, fontSize: 15, boxShadow: '0 4px 20px rgba(239,159,39,0.5)', zIndex: 50 }}
           onMouseEnter={e => e.currentTarget.style.background = 'var(--primary-hover)'}
           onMouseLeave={e => e.currentTarget.style.background = 'var(--primary)'}
         >＋ New Agent</button>
@@ -2386,16 +2386,39 @@ def run(**kwargs):
     return (
       <div style={{ width: 240, flexShrink: 0, background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', height: '100vh' }}>
         {/* Logo */}
-        <div style={{ padding: '22px 20px 18px', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🔮</div>
-          <span style={{ fontWeight: 800, fontSize: 17, letterSpacing: '-0.3px' }}>ori-agent-builder</span>
+        <div style={{ padding: '16px 20px 12px' }}>
+          <svg viewBox="200 20 280 205" width="148" height="58" role="img" xmlns="http://www.w3.org/2000/svg">
+            <ellipse cx="340" cy="108" rx="21" ry="29" fill="#EF9F27"/>
+            <ellipse cx="340" cy="72" rx="14" ry="14" fill="#EF9F27"/>
+            <circle cx="335" cy="70" r="3.5" fill="#854F0B"/>
+            <circle cx="345" cy="70" r="3.5" fill="#854F0B"/>
+            <path d="M345,136 C372,138 390,122 390,98 C390,72 374,56 379,38" fill="none" stroke="#EF9F27" strokeWidth="8" strokeLinecap="round"/>
+            <polygon points="375,40 382,24 389,40" fill="#D85A30"/>
+            <polyline points="319,95 293,80 278,72" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <polyline points="319,105 291,102 276,100" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <polyline points="319,115 291,119 276,124" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <polyline points="319,125 293,136 281,146" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <polyline points="361,95 387,80 402,72" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <polyline points="361,105 389,102 404,100" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <polyline points="361,115 389,119 404,124" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <polyline points="361,125 387,136 399,146" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M328,62 L313,48" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round"/>
+            <path d="M313,48 L304,40" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
+            <path d="M313,48 L309,57" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
+            <path d="M352,62 L367,48" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round"/>
+            <path d="M367,48 L376,40" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
+            <path d="M367,48 L371,57" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
+            <text x="340" y="210" textAnchor="middle" fontFamily="'Segoe UI',Arial,sans-serif" fontSize="52" fontWeight="600">
+              <tspan fill="#f0f0f5">8Legs</tspan><tspan fill="#EF9F27">.ai</tspan>
+            </text>
+          </svg>
         </div>
         <div style={{ flex: 1, padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
           {items.map(item => (
             <button key={item.id} onClick={() => onNav(item.id)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 'var(--r-md)',
-                background: activeNav === item.id ? 'rgba(108,99,255,0.12)' : 'transparent',
+                background: activeNav === item.id ? 'rgba(239,159,39,0.10)' : 'transparent',
                 color: activeNav === item.id ? 'var(--text)' : 'var(--text-2)',
                 fontWeight: activeNav === item.id ? 600 : 400,
                 borderLeft: `3px solid ${activeNav === item.id ? 'var(--primary)' : 'transparent'}`,
@@ -2496,12 +2519,34 @@ def run(**kwargs):
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-app)' }}>
         <div style={{ background: 'var(--bg-card)', borderRadius: 'var(--r-xl)', padding: 40, width: 380, boxShadow: 'var(--shadow)', border: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>🔮</div>
-            <div>
-              <div style={{ fontWeight: 800, fontSize: 20 }}>ori-agent-builder</div>
-              <div style={{ fontSize: 13, color: 'var(--text-2)' }}>{isLogin ? 'Sign in to continue' : 'Create an account'}</div>
-            </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 24 }}>
+            <svg viewBox="200 20 280 230" width="200" height="82" role="img" xmlns="http://www.w3.org/2000/svg">
+              <ellipse cx="340" cy="108" rx="21" ry="29" fill="#EF9F27"/>
+              <ellipse cx="340" cy="72" rx="14" ry="14" fill="#EF9F27"/>
+              <circle cx="335" cy="70" r="3.5" fill="#854F0B"/>
+              <circle cx="345" cy="70" r="3.5" fill="#854F0B"/>
+              <path d="M345,136 C372,138 390,122 390,98 C390,72 374,56 379,38" fill="none" stroke="#EF9F27" strokeWidth="8" strokeLinecap="round"/>
+              <polygon points="375,40 382,24 389,40" fill="#D85A30"/>
+              <polyline points="319,95 293,80 278,72" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <polyline points="319,105 291,102 276,100" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <polyline points="319,115 291,119 276,124" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <polyline points="319,125 293,136 281,146" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <polyline points="361,95 387,80 402,72" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <polyline points="361,105 389,102 404,100" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <polyline points="361,115 389,119 404,124" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <polyline points="361,125 387,136 399,146" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M328,62 L313,48" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round"/>
+              <path d="M313,48 L304,40" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
+              <path d="M313,48 L309,57" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
+              <path d="M352,62 L367,48" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round"/>
+              <path d="M367,48 L376,40" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
+              <path d="M367,48 L371,57" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
+              <text x="340" y="210" textAnchor="middle" fontFamily="'Segoe UI',Arial,sans-serif" fontSize="52" fontWeight="600">
+                <tspan fill="#f0f0f5">8Legs</tspan><tspan fill="#EF9F27">.ai</tspan>
+              </text>
+              <text x="340" y="242" textAnchor="middle" fontFamily="'Segoe UI',Arial,sans-serif" fontSize="13" fontWeight="400" fill="#5c6380" letterSpacing="2">YOUR AGENTS. YOUR RULES.</text>
+            </svg>
+            <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 4 }}>{isLogin ? 'Sign in to continue' : 'Create an account'}</div>
           </div>
 
           {/* Tab toggle */}
@@ -2604,7 +2649,7 @@ def run(**kwargs):
                   <td style={{ padding: '12px 16px', color: 'var(--text-2)', fontSize: 13 }}>{u.phone || '—'}</td>
                   <td style={{ padding: '12px 16px' }}>
                     {u.is_admin
-                      ? <span style={{ background: 'rgba(108,99,255,0.15)', color: 'var(--primary)', borderRadius: 'var(--r-sm)', padding: '2px 8px', fontSize: 12 }}>Admin</span>
+                      ? <span style={{ background: 'rgba(239,159,39,0.15)', color: 'var(--primary)', borderRadius: 'var(--r-sm)', padding: '2px 8px', fontSize: 12 }}>Admin</span>
                       : <span style={{ background: 'var(--bg-hover)', color: 'var(--text-2)', borderRadius: 'var(--r-sm)', padding: '2px 8px', fontSize: 12 }}>User</span>
                     }
                   </td>
