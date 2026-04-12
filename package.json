@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
-    "@neondatabase/serverless": "^0.9.0"
+    "@neondatabase/serverless": "^0.9.0",
+    "@sparticuz/chromium": "^147.0.0",
+    "playwright-core": "^1.59.1"
   }
 }
