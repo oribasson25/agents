@@ -1979,6 +1979,295 @@ async function sendMsg(){
     );
   }
 
+  /* ─────────────────── DOCS VIEW ─────────────────── */
+  function DocsView() {
+    const [active, setActive] = useState('intro');
+
+    const sections = [
+      { id: 'intro',   label: 'מה זה AgentForge?' },
+      { id: 'create',  label: 'יצירת סוכן' },
+      { id: 'config',  label: 'הגדרות בסיסיות' },
+      { id: 'tools',   label: 'כלים (Tools)' },
+      { id: 'rag',     label: 'בסיס ידע (RAG)' },
+      { id: 'scrape',  label: 'סריקת אתרים' },
+      { id: 'test',    label: 'בדיקת הסוכן' },
+      { id: 'tips',    label: 'טיפים מתקדמים' },
+    ];
+
+    const H2 = ({ children }) => (
+      <h2 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)', marginBottom: 12, marginTop: 32, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>{children}</h2>
+    );
+    const H3 = ({ children }) => (
+      <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--primary)', marginBottom: 8, marginTop: 20 }}>{children}</h3>
+    );
+    const P = ({ children }) => (
+      <p style={{ fontSize: 14, color: 'var(--text-2)', lineHeight: 1.75, marginBottom: 10 }}>{children}</p>
+    );
+    const Code = ({ children }) => (
+      <code style={{ background: 'var(--bg-hover)', color: 'var(--teal)', padding: '2px 6px', borderRadius: 4, fontSize: 13, fontFamily: 'monospace' }}>{children}</code>
+    );
+    const Block = ({ children }) => (
+      <pre style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '14px 16px', fontSize: 13, fontFamily: 'monospace', color: 'var(--text)', overflowX: 'auto', lineHeight: 1.6, marginBottom: 14 }}>{children}</pre>
+    );
+    const Tip = ({ children }) => (
+      <div style={{ background: 'rgba(108,99,255,0.08)', border: '1px solid rgba(108,99,255,0.25)', borderRadius: 'var(--r-md)', padding: '12px 16px', marginBottom: 12, fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>
+        <span style={{ color: 'var(--primary)', fontWeight: 600 }}>💡 טיפ: </span>{children}
+      </div>
+    );
+    const Warn = ({ children }) => (
+      <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 'var(--r-md)', padding: '12px 16px', marginBottom: 12, fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>
+        <span style={{ color: '#f59e0b', fontWeight: 600 }}>⚠️ שים לב: </span>{children}
+      </div>
+    );
+
+    const content = {
+      intro: (
+        <div dir="rtl">
+          <H2>מה זה AgentForge?</H2>
+          <P>AgentForge היא פלטפורמה לבניית סוכני AI חכמים ללא קוד. כל סוכן יכול לנהל שיחות, לגשת לבסיס ידע אישי, לסרוק אתרים, ולהריץ קוד Python בזמן אמת.</P>
+          <H3>מה אפשר לבנות?</H3>
+          <ul style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 2, paddingRight: 20, marginBottom: 12 }}>
+            <li>🤖 סוכן תמיכה לקוחות שעונה מתוך מסמכי החברה</li>
+            <li>📊 סוכן שמנתח נתונים ומחזיר תובנות</li>
+            <li>🌐 סוכן שסורק אתרים ומסכם תוכן</li>
+            <li>📝 סוכן כתיבה עם סגנון מותאם אישית</li>
+            <li>🔍 סוכן מחקר שמחפש ומסנתז מידע</li>
+          </ul>
+          <H3>ארכיטקטורה</H3>
+          <P>הפלטפורמה רצה על Vercel עם:</P>
+          <ul style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 2, paddingRight: 20 }}>
+            <li><strong>Frontend:</strong> React SPA — ממשק המשתמש</li>
+            <li><strong>AI:</strong> Claude (Anthropic) או GPT (OpenAI) — מנוע השיחה</li>
+            <li><strong>Database:</strong> Neon PostgreSQL — שמירת סוכנים ומסמכים</li>
+            <li><strong>Tools:</strong> Python serverless functions — הרצת קוד</li>
+            <li><strong>Scraper:</strong> Playwright + Chromium — סריקת אתרים</li>
+          </ul>
+        </div>
+      ),
+      create: (
+        <div dir="rtl">
+          <H2>יצירת סוכן חדש</H2>
+          <P>לחיצה על <strong>+ New Agent</strong> בדף הבית פותחת עורך סוכן חדש עם ערכי ברירת מחדל.</P>
+          <H3>שלב 1 — הגדר זהות</H3>
+          <P>בחר שם, תיאור ואמוג'י לסוכן. אלו מסייעים לזיהוי בין מספר סוכנים.</P>
+          <H3>שלב 2 — כתוב System Prompt</H3>
+          <P>ה-System Prompt הוא ה"אישיות" של הסוכן — ההוראות שהוא מקבל לפני כל שיחה. זה המקום הכי חשוב לעיצוב ההתנהגות.</P>
+          <Block>{`אתה עוזר מכירות מקצועי של חברת [שם החברה].
+תענה תמיד בעברית, בגובה העיניים.
+אם אינך יודע תשובה — הודה בכך ולא תמציא מידע.
+השתמש במידע מהמסמכים שסופקו לך בלבד.`}</Block>
+          <Tip>ככל שה-System Prompt מפורט יותר — הסוכן מדויק יותר. ציין: שפה, טון, מגבלות, תחומי אחריות.</Tip>
+          <H3>שלב 3 — חבר API Key</H3>
+          <P>בלשונית <strong>Configuration</strong> הכנס את מפתח ה-API שלך (Claude או OpenAI) ובחר מודל.</P>
+          <H3>שלב 4 — הוסף יכולות (אופציונלי)</H3>
+          <P>כלים, בסיס ידע, וסקילז — פורטים בהמשך.</P>
+          <H3>שלב 5 — בדוק</H3>
+          <P>לחץ <strong>Test</strong> בכל שלב כדי לראות איך הסוכן מגיב.</P>
+        </div>
+      ),
+      config: (
+        <div dir="rtl">
+          <H2>הגדרות בסיסיות (Configuration)</H2>
+          <H3>בחירת ספק AI</H3>
+          <P>שני ספקים נתמכים:</P>
+          <ul style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 2, paddingRight: 20, marginBottom: 12 }}>
+            <li><strong>Claude (Anthropic)</strong> — מצוין להבנת הקשר ארוך, עברית טובה, עקיבות הוראות</li>
+            <li><strong>OpenAI (GPT)</strong> — מהיר, function calling מוכח, אינטגרציות נרחבות</li>
+          </ul>
+          <H3>בחירת מודל</H3>
+          <P>לכל ספק מספר מודלים. המלצות:</P>
+          <ul style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 2, paddingRight: 20, marginBottom: 12 }}>
+            <li><Code>claude-sonnet-4-5</Code> — מאוזן, מהיר, עברית מצוינת ✅ מומלץ</li>
+            <li><Code>claude-opus-4-5</Code> — הכי חכם, יקר יותר</li>
+            <li><Code>gpt-4o</Code> — מהיר וחזק</li>
+            <li><Code>gpt-4o-mini</Code> — זול, לשימוש כבד</li>
+          </ul>
+          <H3>System Prompt</H3>
+          <P>ההוראות הקבועות שהסוכן מקבל. נכתב פעם אחת ופועל בכל שיחה.</P>
+          <Tip>כתוב בשפה שבה אתה רוצה שהסוכן יענה — אם רוצה עברית, כתוב בעברית.</Tip>
+          <Warn>ה-API Key נשמר בדפדפן בלבד ולא עובר לשרת. שמור אותו פרטי.</Warn>
+        </div>
+      ),
+      tools: (
+        <div dir="rtl">
+          <H2>כלים (Tools)</H2>
+          <P>כלים הם פונקציות Python שהסוכן יכול להפעיל בזמן אמת כחלק מהשיחה. הסוכן מחליט לבד מתי להשתמש בכלי.</P>
+          <H3>איך כלי עובד?</H3>
+          <P>כל כלי הוא קוד Python שמגדיר פונקציית <Code>run(**kwargs)</Code>:</P>
+          <Block>{`import urllib.request, json
+
+def run(**kwargs):
+    city = kwargs.get("city", "")
+    # קריאה ל-API חיצוני
+    url = f"https://wttr.in/{city}?format=j1"
+    with urllib.request.urlopen(url) as r:
+        data = json.loads(r.read())
+    temp = data["current_condition"][0]["temp_C"]
+    return f"טמפרטורה ב{city}: {temp}°C"`}</Block>
+          <H3>הפרמטרים</H3>
+          <P>כל פרמטר שמגדירים בעורך הכלי הופך ל-argument שהסוכן מזין אוטומטית:</P>
+          <ul style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 2, paddingRight: 20, marginBottom: 12 }}>
+            <li><strong>Name</strong> — שם הפרמטר (כפי שנכתב ב-kwargs)</li>
+            <li><strong>Type</strong> — string / number / integer / boolean</li>
+            <li><strong>Description</strong> — הסבר שמסייע לסוכן להבין מה להעביר</li>
+          </ul>
+          <H3>Presets מובנים</H3>
+          <P>לחיצה על <strong>scrape_website</strong> בלשונית Tools מוסיפה כלי סריקת אתרים מוכן לשימוש.</P>
+          <H3>חבילות Python</H3>
+          <P>ניתן להוסיף חבילות pip בשדה Packages. הן מותקנות אוטומטית בהרצה הראשונה:</P>
+          <Block>{`# שדה Packages:
+requests, beautifulsoup4, pandas`}</Block>
+          <H3>משתני סביבה</H3>
+          <P>מפתחות API ומידע רגיש נשמרים כ-env vars ונגישים בקוד:</P>
+          <Block>{`import os
+
+def run(**kwargs):
+    api_key = os.environ["MY_API_KEY"]
+    # ...`}</Block>
+          <Tip>השתמש בשדה Test Run בתחתית כל כלי כדי לבדוק אותו לפני שהסוכן משתמש בו.</Tip>
+        </div>
+      ),
+      rag: (
+        <div dir="rtl">
+          <H2>בסיס ידע (RAG)</H2>
+          <P>RAG (Retrieval-Augmented Generation) מאפשר לסוכן לענות שאלות על מסמכים שהעלית — PDF, Word, Excel, או טקסט חופשי.</P>
+          <H3>איך זה עובד?</H3>
+          <ol style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 2, paddingRight: 20, marginBottom: 12 }}>
+            <li>מעלים מסמך — הטקסט נשמר ב-PostgreSQL עם אינדקס חיפוש</li>
+            <li>המשתמש שולח שאלה</li>
+            <li>המערכת מחפשת קטעים רלוונטיים מהמסמכים (Full-Text Search)</li>
+            <li>הקטעים מוזרקים אוטומטית ל-System Prompt</li>
+            <li>הסוכן עונה עם ההקשר מהמסמכים</li>
+          </ol>
+          <H3>סוגי מסמכים נתמכים</H3>
+          <ul style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 2, paddingRight: 20, marginBottom: 12 }}>
+            <li>📕 <strong>PDF</strong> — מסמכים, דוחות, מדריכים</li>
+            <li>📘 <strong>DOCX</strong> — Word documents</li>
+            <li>📗 <strong>XLSX / XLS</strong> — גיליונות Excel</li>
+            <li>📝 <strong>טקסט חופשי</strong> — כתיבה ידנית ישירות בממשק</li>
+          </ul>
+          <H3>הוספת מסמך</H3>
+          <P>בלשונית <strong>Knowledge</strong> ניתן:</P>
+          <ul style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 2, paddingRight: 20, marginBottom: 12 }}>
+            <li>לחיצה על <strong>📎 Upload File</strong> — העלאת קובץ</li>
+            <li>לחיצה על <strong>+ Add</strong> — הוספת טקסט ידני</li>
+          </ul>
+          <Tip>תן שם ברור לכל מסמך — הסוכן מציין את שם המקור בתשובות שלו.</Tip>
+          <Warn>הסוכן מחפש לפי מילות מפתח. ודא שהמסמכים כתובים בשפה שהמשתמשים ישאלו בה.</Warn>
+        </div>
+      ),
+      scrape: (
+        <div dir="rtl">
+          <H2>סריקת אתרים</H2>
+          <P>הסוכן יכול לגשת לאתרים ולשלוף מהם מידע בשני מצבים:</P>
+          <H3>🔄 Auto-Scrape — אוטומטי</H3>
+          <P>כשמשתמש שולח הודעה עם URL, המערכת <strong>אוטומטית</strong> סורקת את האתר ומחדירה את התוכן לסוכן — לפני שהסוכן עונה.</P>
+          <Block>{`// דוגמת הודעה שמפעילה auto-scrape:
+"תסכם לי את האתר הזה: https://example.com"
+"מה הפריטים הכי נמכרים ב https://shop.co.il?"
+"תתאר את החברה ב https://company.com/about"`}</Block>
+          <P>עד 3 URLs בהודעה אחת נסרקים במקביל.</P>
+          <H3>🛠️ כלי scrape_website — מפורש</H3>
+          <P>הסוכן יכול לקרוא לכלי הסריקה בעצמו כשהוא מחליט שצריך מידע מאתר. מוסיפים אותו מ-Presets בלשונית Tools.</P>
+          <H3>טכנולוגיה</H3>
+          <P>הסורק משתמש ב-<strong>Playwright + Chromium</strong> — דפדפן אמיתי שמריץ JavaScript. זה אומר שגם אתרים מבוססי React/Next.js נסרקים כראוי.</P>
+          <Warn>אתרים עם CAPTCHA, login, או חסימות IP לא יסרקו. זמן סריקה: 3-8 שניות לאתר.</Warn>
+          <Tip>אם האתר לא נסרק — נסה להוסיף את תוכן הדף ידנית לבסיס הידע (RAG).</Tip>
+        </div>
+      ),
+      test: (
+        <div dir="rtl">
+          <H2>בדיקת הסוכן</H2>
+          <H3>Test Chat</H3>
+          <P>לחיצה על <strong>Test</strong> בכרטיס הסוכן פותחת חלון שיחה. כאן בודקים את ההתנהגות הסופית.</P>
+          <H3>Tool Test Run</H3>
+          <P>בלשונית Tools, כל כלי כולל פאנל <strong>Test Run</strong> — ניתן להריץ את הכלי ישירות עם ערכים לבדיקה לפני שהסוכן משתמש בו.</P>
+          <H3>מה לבדוק?</H3>
+          <ul style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 2, paddingRight: 20, marginBottom: 12 }}>
+            <li>✅ הסוכן עונה בשפה הנכונה</li>
+            <li>✅ הסוכן לא ממציא מידע שלא קיים במסמכים</li>
+            <li>✅ הכלים מופעלים כשצריך</li>
+            <li>✅ תשובות על אתרים מכילות תוכן אמיתי מהאתר</li>
+            <li>✅ הסוכן מתנהג לפי ה-System Prompt</li>
+          </ul>
+          <Tip>שמור שאלות בדיקה קבועות ובדוק אותן אחרי כל שינוי.</Tip>
+        </div>
+      ),
+      tips: (
+        <div dir="rtl">
+          <H2>טיפים מתקדמים</H2>
+          <H3>System Prompt אפקטיבי</H3>
+          <Block>{`// מבנה מומלץ:
+## תפקיד
+אתה [תפקיד] של [חברה/שירות].
+
+## הוראות
+- [הוראה 1]
+- [הוראה 2]
+
+## מגבלות
+- אל תענה על [נושא]
+- תמיד [התנהגות]
+
+## פורמט תשובה
+[תאר איך להציג תשובות]`}</Block>
+
+          <H3>כלים יעילים</H3>
+          <P>כלים טובים:</P>
+          <ul style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 2, paddingRight: 20, marginBottom: 12 }}>
+            <li>עושים דבר אחד בלבד, עושים אותו טוב</li>
+            <li>מחזירים מחרוזת ברורה שהסוכן יכול לפרש</li>
+            <li>כוללים טיפול בשגיאות</li>
+            <li>משתמשים ב-env vars למפתחות API</li>
+          </ul>
+
+          <H3>RAG איכותי</H3>
+          <ul style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 2, paddingRight: 20, marginBottom: 12 }}>
+            <li>חלק מסמכים גדולים לחלקים קטנים (topic per document)</li>
+            <li>שמות מסמכים תיאוריים — הסוכן מזכיר אותם</li>
+            <li>אותה שפה שהמשתמשים ישאלו בה</li>
+          </ul>
+
+          <H3>שימוש ב-Skills</H3>
+          <P>Skills הם זרימות עבודה מובנות — שילוב של prompt + כלים + מסמכים לתרחיש מסוים. מומלץ לסוכנים עם כמה "מצבים".</P>
+
+          <Tip>צור סוכן נפרד לכל תחום שימוש — סוכן מכירות, סוכן תמיכה, סוכן מחקר — במקום סוכן אחד שעושה הכל.</Tip>
+          <Warn>כל שיחה מתחילה מחדש — הסוכן לא זוכר שיחות קודמות אלא אם כן מוסיפים את ההיסטוריה לבסיס הידע.</Warn>
+        </div>
+      ),
+    };
+
+    return (
+      <div style={{ display: 'flex', gap: 32, maxWidth: 960, margin: '0 auto' }}>
+        {/* Sidebar nav */}
+        <div style={{ width: 200, flexShrink: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 11, color: 'var(--text-muted)', letterSpacing: 1, marginBottom: 10, textTransform: 'uppercase' }}>תוכן עניינים</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {sections.map(s => (
+              <button key={s.id} onClick={() => setActive(s.id)}
+                style={{
+                  textAlign: 'right', padding: '8px 10px', borderRadius: 'var(--r-sm)', fontSize: 13,
+                  background: active === s.id ? 'rgba(108,99,255,0.12)' : 'transparent',
+                  color: active === s.id ? 'var(--primary)' : 'var(--text-2)',
+                  fontWeight: active === s.id ? 600 : 400,
+                  borderRight: `3px solid ${active === s.id ? 'var(--primary)' : 'transparent'}`,
+                }}
+                onMouseEnter={e => { if (active !== s.id) e.currentTarget.style.background = 'var(--bg-hover)'; }}
+                onMouseLeave={e => { if (active !== s.id) e.currentTarget.style.background = 'transparent'; }}
+              >{s.label}</button>
+            ))}
+          </div>
+        </div>
+        {/* Content */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ marginBottom: 6, fontSize: 11, color: 'var(--text-muted)', letterSpacing: 1, textTransform: 'uppercase' }}>תיעוד</div>
+          <div style={{ fontWeight: 800, fontSize: 28, marginBottom: 24, color: 'var(--text)' }}>📖 מדריך AgentForge</div>
+          {content[active]}
+        </div>
+      </div>
+    );
+  }
+
   /* ─────────────────── AGENT LIST VIEW ─────────────────── */
   function AgentListView({ agents, onNew, onEdit, onTest, onDuplicate, onDelete, onExport }) {
     return (
@@ -2180,10 +2469,12 @@ async function sendMsg(){
       <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
         <Sidebar activeNav={nav} onNav={id => { setNav(id); if (id === 'home') dispatch({ type: 'SET_VIEW', view: 'list' }); }} />
         <div style={{ flex: 1, overflowY: 'auto', padding: '32px 32px 80px', background: 'var(--bg-app)' }}>
-          {nav !== 'home' ? (
+          {nav === 'docs' ? (
+            <DocsView />
+          ) : nav !== 'home' ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 60, gap: 12 }}>
-              <div style={{ fontSize: 48 }}>{nav === 'docs' ? '📖' : '⚙️'}</div>
-              <div style={{ fontWeight: 700, fontSize: 20 }}>{nav === 'docs' ? 'Documentation' : 'Settings'}</div>
+              <div style={{ fontSize: 48 }}>⚙️</div>
+              <div style={{ fontWeight: 700, fontSize: 20 }}>Settings</div>
               <div style={{ color: 'var(--text-2)', fontSize: 14 }}>Coming soon</div>
             </div>
           ) : state.view === 'editor' && editingAgent ? (
