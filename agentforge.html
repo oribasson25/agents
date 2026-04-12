@@ -2926,6 +2926,9 @@ def run(**kwargs):
 
         {chatAgent && <ChatTestDrawer agent={chatAgent} onClose={() => dispatch({ type: 'CLOSE_CHAT' })} />}
       </div>
+      <div style={{ position: 'fixed', bottom: 10, left: '50%', transform: 'translateX(-50%)', fontSize: 11, color: '#2a2a2a', letterSpacing: '2px', fontWeight: 500, pointerEvents: 'none', userSelect: 'none', zIndex: 1 }}>
+        YOUR AGENTS. YOUR RULES.
+      </div>
     );
   }
 
