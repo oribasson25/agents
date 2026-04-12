@@ -667,18 +667,20 @@
   function ToolRunner({ tool }) {
     const [running, setRunning] = useState(false);
     const [result, setResult] = useState(null); // { ok: bool, text: string, ms: number }
-    const inputsRef = useRef({}); // holds current input values, updated on every keystroke
 
-    async function run() {
+    async function handleSubmit(e) {
+      e.preventDefault();
       setRunning(true);
       setResult(null);
       const t0 = performance.now();
       try {
         const packages = (tool.packages || '').split(',').map(s => s.trim()).filter(Boolean);
-        const envVars = Object.fromEntries((tool.envVars || []).filter(e => e.key).map(e => [e.key, e.value]));
+        const envVars = Object.fromEntries((tool.envVars || []).filter(ev => ev.key).map(ev => [ev.key, ev.value]));
+        // FormData reads current input values at submit time — browser-native, no React state needed
+        const formData = new FormData(e.target);
         const typedInputs = {};
         (tool.parameters || []).forEach(p => {
-          const raw = inputsRef.current[p.name] ?? '';
+          const raw = formData.get(p.name) || '';
           typedInputs[p.name] = p.type === 'integer' ? parseInt(raw, 10) || 0
                                : p.type === 'number'  ? parseFloat(raw) || 0
                                : raw;
@@ -692,35 +694,32 @@
         const ms = Math.round(performance.now() - t0);
         if (data.error) setResult({ ok: false, text: data.error, ms });
         else setResult({ ok: true, text: data.result, ms });
-      } catch (e) {
-        setResult({ ok: false, text: e.message, ms: Math.round(performance.now() - t0) });
+      } catch (err) {
+        setResult({ ok: false, text: err.message, ms: Math.round(performance.now() - t0) });
       } finally {
         setRunning(false);
       }
     }
 
     return (
-      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600 }}>Test Run</span>
-          <button onClick={run} disabled={running} style={{ background: running ? 'var(--bg-hover)' : 'var(--success)', color: running ? 'var(--text-muted)' : '#fff', border: 'none', borderRadius: 'var(--r-md)', padding: '6px 16px', fontWeight: 700, fontSize: 13, cursor: running ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-            {running ? <><span style={{ display: 'inline-block', width: 12, height: 12, border: '2px solid var(--text-muted)', borderTop: '2px solid var(--text)', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} /> Running…</> : '▶ Run'}
-          </button>
-        </div>
-
+      <form onSubmit={handleSubmit} style={{ borderTop: '1px solid var(--border)', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
         {(tool.parameters || []).length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {(tool.parameters || []).map(p => (
               <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 12, color: 'var(--text-2)', fontFamily: 'monospace', minWidth: 120, flexShrink: 0 }}>{p.name}<span style={{ color: 'var(--text-muted)' }}>: {p.type || 'string'}</span></span>
-                <input
-                  defaultValue=""
-                  onChange={e => { inputsRef.current[p.name] = e.target.value; }}
-                  placeholder={p.description || p.name} style={{ flex: 1, fontSize: 13, fontFamily: 'monospace' }} />
+                <input name={p.name} placeholder={p.description || p.name} style={{ flex: 1, fontSize: 13, fontFamily: 'monospace' }} />
               </div>
             ))}
           </div>
         )}
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600 }}>Test Run</span>
+          <button type="submit" disabled={running} style={{ background: running ? 'var(--bg-hover)' : 'var(--success)', color: running ? 'var(--text-muted)' : '#fff', border: 'none', borderRadius: 'var(--r-md)', padding: '6px 16px', fontWeight: 700, fontSize: 13, cursor: running ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+            {running ? <><span style={{ display: 'inline-block', width: 12, height: 12, border: '2px solid var(--text-muted)', borderTop: '2px solid var(--text)', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} /> Running…</> : '▶ Run'}
+          </button>
+        </div>
 
         {result && (
           <div style={{ borderRadius: 'var(--r-md)', overflow: 'hidden', border: `1px solid ${result.ok ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.35)'}` }}>
@@ -732,7 +731,7 @@
             <pre style={{ margin: 0, padding: '10px 12px', fontSize: 12, fontFamily: 'monospace', color: result.ok ? 'var(--text)' : 'var(--danger)', background: 'var(--bg-input)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 200, overflowY: 'auto' }}>{result.text}</pre>
           </div>
         )}
-      </div>
+      </form>
     );
   }
 
