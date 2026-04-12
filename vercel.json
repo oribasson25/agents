@@ -4,6 +4,15 @@
       "maxDuration": 30
     }
   },
+  "headers": [
+    {
+      "source": "/api/widget/(.*)",
+      "headers": [
+        { "key": "X-Frame-Options", "value": "ALLOWALL" },
+        { "key": "Content-Security-Policy", "value": "frame-ancestors *" }
+      ]
+    }
+  ],
   "rewrites": [
     { "source": "/api/run-tool", "destination": "/api/run_tool.py" },
     { "source": "/api/scrape", "destination": "/api/scrape.py" },
