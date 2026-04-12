@@ -1,0 +1,307 @@
+# AgentForge — AI Agent Builder Platform
+## Claude Code Prompt (Full Specification)
+
+---
+
+Build a full-stack AI Agent Builder Platform as a single self-contained React application (JSX artifact). The platform allows users to create, configure, test, and export AI agents with structured prompts, skills, and tools.
+
+---
+
+## CORE DATA MODEL
+
+```ts
+Agent {
+  id, name, avatar, openingMessage,
+  basePrompt,
+  skills: Skill[],
+  tools: Tool[],
+  apiConfig: { provider: "claude" | "openai", apiKey, model },
+  createdAt
+}
+
+Skill {
+  id, name, description,
+  prompt
+}
+
+Tool {
+  id, name, description,
+  code // Python string, edited in VSCode-like Monaco editor
+}
+```
+
+---
+
+## GLOBAL DESIGN SYSTEM — DARK MODE ONLY
+
+The entire platform must be dark mode with no light mode toggle. Use this design system consistently:
+
+```
+Background layers:
+  - App bg:        #0f1117
+  - Sidebar bg:    #13151c
+  - Card bg:       #1a1d27
+  - Panel bg:      #1e2130
+  - Input bg:      #252837
+  - Hover bg:      #2a2d3e
+
+Accent:
+  - Primary:       #6c63ff  (purple)
+  - Primary hover: #7c74ff
+  - Success:       #22c55e
+  - Warning:       #f59e0b
+  - Danger:        #ef4444
+  - Teal:          #14b8a6
+
+Text:
+  - Primary:       #f0f0f5
+  - Secondary:     #9ca3af
+  - Muted:         #5c6380
+
+Borders:
+  - Default:       #2a2d3e
+  - Focus:         #6c63ff
+
+Border radius:
+  - Small:  6px
+  - Medium: 12px
+  - Large:  18px
+  - XLarge: 24px
+
+All cards, panels, modals, inputs must use rounded corners (minimum 12px).
+No sharp edges anywhere in the UI.
+Shadows: box-shadow: 0 4px 24px rgba(0,0,0,0.4)
+```
+
+---
+
+## RTL & HEBREW SUPPORT
+
+- All textarea and text inputs must have `dir="auto"`
+- Monaco editor stays LTR (code is always LTR)
+- Chat bubbles: detect if message starts with Hebrew characters → apply `dir="rtl"`, else `dir="ltr"`
+- Font: 'Segoe UI', 'Arial', sans-serif
+
+---
+
+## PAGES / VIEWS
+
+### 1. Agent List (Home)
+
+- Dark grid of agent cards (bg: #1a1d27, radius: 18px)
+- Each card: gradient avatar circle, agent name, skill/tool count badges
+- Card hover: subtle glow border in primary color
+- Actions per card: Edit | Test | Duplicate | Delete | Export
+- Floating "＋ New Agent" button (primary color, rounded pill)
+
+### 2. Agent Editor (full page)
+
+Tabs: [ Configuration | Skills | Tools | Export ]
+
+Tab bar: dark pill-style tabs, active tab has primary color underline or filled background.
+
+**Configuration Tab:**
+- Agent name + emoji avatar picker
+- Opening message input
+- API Config card (bg: #1e2130):
+  - Provider toggle: Claude / OpenAI (toggle pill, not dropdown)
+  - API Key input: password field with eye icon show/hide
+  - Model selector: auto-populated list per provider
+- Base Prompt section — uses Rich Prompt Editor
+
+**Skills Tab:**
+- Skill list with drag handle, name, description, edit/delete icons
+- "＋ Add Skill" opens inline expandable panel
+- Skill editor: name, description field, Skill Prompt (Rich Prompt Editor)
+- Tooltip: "The agent reads the description to decide when to invoke this skill. Use #SkillName in chat to force-switch."
+
+**Tools Tab:**
+- Tool list: name, description, edit/delete
+- "＋ Add Tool" opens tool panel:
+  - Name + description inputs
+  - Monaco Editor (Python):
+    - Theme: vs-dark
+    - Language: python
+    - Font size: 14px, font family: 'JetBrains Mono', 'Fira Code', monospace
+    - Line numbers ON, minimap ON, bracket matching ON
+    - Rounded container with dark border
+    - Minimum height: 400px
+  - Tooltip: "Invoke this tool in prompts using @toolName"
+
+---
+
+## EXPORT TAB — LIVE PREVIEW
+
+The Export tab must have a two-column layout:
+
+**Left column — Controls panel (bg: #1e2130, radius: 16px):**
+- Widget Title (text input) — default: agent name
+- Accent Color (native color picker + hex input synced together)
+- Border Radius slider (0px → 24px) with live numeric label
+- Widget Height slider (400px → 800px) with live numeric label
+- Placeholder text input (shown in empty chat state)
+- "Copy iframe Code" button with copy-success animation (icon turns to checkmark for 2s)
+
+**Right column — Live Preview panel:**
+- Label: "Live Preview" (muted text, top of panel)
+- Renders an actual interactive mini chat widget inside the page using the exact same React components as the test chat, but styled with the currently selected accent color, border radius, and height
+- The preview updates in real time on every control change — no submit button needed
+- The preview widget is fully interactive: user can type messages and get real API responses (using the agent's saved apiConfig)
+- A thin "Preview" badge floats in the top-right corner of the preview panel
+- If no API key is configured, show a banner: "Add an API key in Configuration to test live"
+- Below the preview: show the iframe embed code in a dark code block (monospace, scrollable, selectable)
+
+**iframe generation logic:**
+- Build a complete self-contained HTML string with:
+  - Dark chat widget styled with chosen accent color and border radius
+  - Agent name as title in colored header
+  - Hardcoded system prompt (base prompt + all skill prompts labeled)
+  - API call logic (Claude or OpenAI) with saved key embedded
+  - RTL-aware bubbles (detect Hebrew)
+  - Zero external dependencies — all CSS and JS inline
+- URL-encode and embed in:
+  `<iframe src="data:text/html;charset=utf-8,..." width="100%" height="{chosenHeight}px" frameborder="0" style="border-radius:{chosenRadius}px"></iframe>`
+
+---
+
+## RICH PROMPT EDITOR COMPONENT
+
+Used for Base Prompt and Skill Prompts. Must handle long, structured prompts comfortably.
+
+**Toolbar (dark pill bar above editor):**
+- ## Heading button — inserts a section heading
+- ▶ Collapse section / ▼ Expand section toggle
+- "Collapse All" / "Expand All" buttons
+- Edit / Preview toggle (two-state pill button)
+
+**Edit Mode:**
+- Large monospace textarea (bg: #252837, text: #f0f0f5, border-radius: 12px)
+- Min height 320px, auto-grows with content
+- `dir="auto"` for Hebrew support
+- Subtle scrollbar styling
+- Character counter bottom-right (muted color)
+
+**Preview Mode:**
+- Parse ## headings as collapsible section headers
+- Each section: dark header bar (bg: #2a2d3e) with ▶/▼ toggle arrow, bold white title
+- Collapsed sections show only the heading
+- Expanded sections show content in readable typography
+- @toolName references rendered as purple chip/badge inline
+- #SkillName references rendered as teal chip/badge inline
+
+---
+
+## CHAT TEST PANEL — WITH RESPONSE TIMING
+
+Opens as a right-side drawer (width: 420px) with dark overlay backdrop.
+
+**Header:**
+- Agent avatar + name
+- Connection status dot (green = API key set, red = missing)
+- Close X button
+
+**Message bubbles:**
+- User: right-aligned, bg #6c63ff, radius 18px 18px 4px 18px, dir auto
+- Agent: left-aligned, bg #1e2130, radius 18px 18px 18px 4px, dir auto
+- Tool call (@tool): dark yellow bubble with ⚙ icon
+- Skill switch (#skill): teal banner notification
+- Error: red bubble with ⚠ icon and full error text
+
+**Response timing — implement precisely as follows:**
+
+Each agent message bubble must show a metadata row directly below the bubble content
+(not inside it), aligned to the left, in muted small text (#5c6380, font-size: 11px):
+
+```
+⏱ 1.84s   •   🕐 14:32
+```
+
+- The timer starts exactly when the user sends the message (before the API call begins, to include network latency)
+- The timer stops exactly when the first token of the response is received (for streaming) or when the full response arrives
+- Display format: X.XXs (always 2 decimal places)
+- While waiting for the response, show a typing indicator bubble (three animated dots, bg #1e2130) — this replaces the static loading state
+- The timestamp shows the local time the response was received (HH:MM format)
+- For the opening message: show timestamp only (no timer, since it's not a real API call). Display: `🕐 HH:MM`
+- If an error occurs, show: `⚠ Failed after X.XXs   •   🕐 HH:MM` in red (#ef4444)
+
+**Typing indicator (while awaiting response):**
+- Three dots animated with a staggered CSS pulse (dot 1 → dot 2 → dot 3 in sequence)
+- Same bubble style as agent messages
+- Disappears and is replaced by the real response when it arrives
+
+**Input bar:**
+- Dark input (bg #252837), `dir="auto"`, send button (primary color)
+- Disabled while response is pending
+- Pressing Enter sends (Shift+Enter for newline)
+- Below input: small hint text "Use #SkillName to switch skills • @toolName to call tools" (muted, 11px)
+
+**On open:**
+- Display opening message as first agent bubble with timestamp only (🕐 HH:MM)
+
+---
+
+## DUPLICATE AGENT
+
+- Deep-clone entire agent object with new UUID
+- Append " (Copy)" to the name
+- Insert immediately into agent list with a brief highlight animation on the new card
+
+---
+
+## SIDEBAR NAVIGATION
+
+Left sidebar (width: 240px, bg: #13151c):
+- App logo "AgentForge" with a small purple icon at top
+- Nav items: Home (agent list) | Documentation (placeholder) | Settings (placeholder)
+- Active item: left border accent in primary color + slightly lighter bg
+- Bottom: version badge
+
+---
+
+## TECH REQUIREMENTS
+
+- React with hooks: useState, useReducer, useEffect, useRef, useCallback
+- Tailwind CSS for layout; use inline styles for precise dark-mode color tokens and Monaco
+- Monaco Editor via CDN:
+  `https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js`
+  Language: python, Theme: vs-dark
+- lucide-react for all icons
+- All state in memory (no localStorage, no backend)
+- Smooth transitions: panels slide in, cards fade, buttons scale on hover (CSS transitions)
+- All interactive elements have hover + focus states using the color tokens above
+
+---
+
+## MODEL LISTS
+
+Claude:
+- claude-opus-4-5
+- claude-sonnet-4-5
+- claude-haiku-4-5
+
+OpenAI:
+- gpt-4o
+- gpt-4o-mini
+- gpt-4-turbo
+- gpt-3.5-turbo
+
+---
+
+## BEHAVIOR RULES
+
+- Every input and textarea auto-saves to state onBlur or onChange
+- Empty states: illustrated empty state placeholder (simple SVG or emoji + message)
+- API errors shown inline in chat bubble with full error message, never as browser alerts
+- Default new agent: opens editor immediately after creation
+- Keyboard: Escape closes drawers/modals
+- Skill invocation logic:
+  - Agent decides which skill to apply based on skill description matching (explain this in UI tooltip)
+  - User can type #SkillName in chat to force-switch to that skill
+- Tool invocation:
+  - @ToolName in prompt text is highlighted as a purple tag/chip in preview mode
+- Export live preview updates in real time on every control change — no submit button needed
+
+---
+
+Build this as a single .jsx file with a default export. Do not split into multiple files.
+Use inline styles only where Tailwind cannot cover the need (e.g., Monaco editor container).

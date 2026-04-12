@@ -11,16 +11,32 @@ export default async function handler(req, res) {
     if (!query || !query.trim()) return res.json({ chunks: [] });
 
     // Retrieve global docs + skill-specific docs (if skill_id provided)
-    const chunks = await sql`
-      select title, content,
-             ts_rank(tsv, plainto_tsquery('english', ${query})) as rank
-      from documents
-      where agent_id = ${id}
-        and (skill_id is null or skill_id = ${skill_id || null})
-        and tsv @@ plainto_tsquery('english', ${query})
-      order by rank desc
-      limit 5
-    `;
+    let chunks;
+    if (skill_id) {
+      // Specific skill: return skill-specific + global docs
+      chunks = await sql`
+        select title, content,
+               ts_rank(tsv, plainto_tsquery('english', ${query})) as rank
+        from documents
+        where agent_id = ${id}
+          and (skill_id is null or skill_id = ${skill_id})
+          and tsv @@ plainto_tsquery('english', ${query})
+        order by rank desc
+        limit 5
+      `;
+    } else {
+      // No skill specified: return only global docs
+      chunks = await sql`
+        select title, content,
+               ts_rank(tsv, plainto_tsquery('english', ${query})) as rank
+        from documents
+        where agent_id = ${id}
+          and skill_id is null
+          and tsv @@ plainto_tsquery('english', ${query})
+        order by rank desc
+        limit 5
+      `;
+    }
     return res.json({ chunks });
   }
 

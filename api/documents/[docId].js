@@ -8,8 +8,10 @@ export default async function handler(req, res) {
 
   if (req.method === 'PATCH') {
     const { title, content } = req.body;
+    if (!title || !content) return res.status(400).json({ error: 'title and content required' });
     await sql`
-      update documents set title = ${title}, content = ${content}
+      update documents 
+      set title = ${title}, content = ${content}, updated_at = now()
       where id = ${docId}
     `;
     return res.status(200).json({ id: docId, title, content });

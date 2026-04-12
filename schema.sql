@@ -21,7 +21,8 @@ create table if not exists documents (
   tsv         tsvector generated always as (
                 to_tsvector('english', coalesce(title,'') || ' ' || content)
               ) stored,
-  created_at  timestamptz not null default now()
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
 );
 
 create index if not exists docs_agent_skill_idx on documents (agent_id, skill_id);

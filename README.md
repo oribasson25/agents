@@ -33,6 +33,15 @@ npm install
    - `APP_PASSWORD` — choose a password to protect the app
 3. Deploy
 
+### 3.1 Database Migrations (if upgrading)
+
+If you already have an existing database, run these migrations in the Neon SQL Editor:
+
+```sql
+-- Add updated_at column to documents (if missing)
+ALTER TABLE IF EXISTS documents ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+```
+
 ### 4. Access
 
 Go to your Vercel URL → enter your `APP_PASSWORD` → start creating agents.
