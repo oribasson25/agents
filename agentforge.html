@@ -665,19 +665,11 @@
 
   /* ── ToolRunner: inline test panel for a single tool ── */
   function ToolRunner({ tool }) {
-    const [inputs, setInputs] = useState(() =>
-      Object.fromEntries((tool.parameters || []).map(p => [p.name, '']))
-    );
     const [running, setRunning] = useState(false);
     const [result, setResult] = useState(null); // { ok: bool, text: string, ms: number }
+    const containerRef = useRef(null);
 
-    // Reset inputs when parameters change
-    const paramNames = (tool.parameters || []).map(p => p.name).join(',');
-    useEffect(() => {
-      setInputs(Object.fromEntries((tool.parameters || []).map(p => [p.name, ''])));
-      setResult(null);
-    }, [paramNames]);
-
+    // Read input values directly from DOM at run-time — avoids all stale-closure / state-reset issues
     async function run() {
       setRunning(true);
       setResult(null);
@@ -685,13 +677,17 @@
       try {
         const packages = (tool.packages || '').split(',').map(s => s.trim()).filter(Boolean);
         const envVars = Object.fromEntries((tool.envVars || []).filter(e => e.key).map(e => [e.key, e.value]));
-        // coerce typed inputs — build from inputs state (what user typed), not from tool.parameters
+        // Read values directly from DOM inputs
         const typedInputs = {};
-        for (const [name, raw] of Object.entries(inputs)) {
-          const p = (tool.parameters || []).find(p => p.name === name);
-          typedInputs[name] = p?.type === 'integer' ? parseInt(raw, 10) || 0
-                            : p?.type === 'number'  ? parseFloat(raw) || 0
-                            : String(raw ?? '');
+        if (containerRef.current) {
+          containerRef.current.querySelectorAll('input[data-param]').forEach(el => {
+            const name = el.dataset.param;
+            const raw = el.value;
+            const p = (tool.parameters || []).find(p => p.name === name);
+            typedInputs[name] = p?.type === 'integer' ? parseInt(raw, 10) || 0
+                              : p?.type === 'number'  ? parseFloat(raw) || 0
+                              : raw;
+          });
         }
         const resp = await fetch('/api/run-tool', {
           method: 'POST',
@@ -710,7 +706,7 @@
     }
 
     return (
-      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div ref={containerRef} style={{ borderTop: '1px solid var(--border)', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600 }}>Test Run</span>
           <button onClick={run} disabled={running} style={{ background: running ? 'var(--bg-hover)' : 'var(--success)', color: running ? 'var(--text-muted)' : '#fff', border: 'none', borderRadius: 'var(--r-md)', padding: '6px 16px', fontWeight: 700, fontSize: 13, cursor: running ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -723,7 +719,7 @@
             {(tool.parameters || []).map(p => (
               <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 12, color: 'var(--text-2)', fontFamily: 'monospace', minWidth: 120, flexShrink: 0 }}>{p.name}<span style={{ color: 'var(--text-muted)' }}>: {p.type || 'string'}</span></span>
-                <input value={inputs[p.name] ?? ''} onChange={e => setInputs(v => ({ ...v, [p.name]: e.target.value }))}
+                <input data-param={p.name} defaultValue=""
                   placeholder={p.description || p.name} style={{ flex: 1, fontSize: 13, fontFamily: 'monospace' }} />
               </div>
             ))}
