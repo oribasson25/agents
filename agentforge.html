@@ -685,13 +685,13 @@
       try {
         const packages = (tool.packages || '').split(',').map(s => s.trim()).filter(Boolean);
         const envVars = Object.fromEntries((tool.envVars || []).filter(e => e.key).map(e => [e.key, e.value]));
-        // coerce typed inputs
+        // coerce typed inputs — build from inputs state (what user typed), not from tool.parameters
         const typedInputs = {};
-        for (const p of (tool.parameters || [])) {
-          const raw = inputs[p.name] ?? '';
-          typedInputs[p.name] = p.type === 'integer' ? parseInt(raw, 10) || 0
-                               : p.type === 'number'  ? parseFloat(raw) || 0
-                               : raw;
+        for (const [name, raw] of Object.entries(inputs)) {
+          const p = (tool.parameters || []).find(p => p.name === name);
+          typedInputs[name] = p?.type === 'integer' ? parseInt(raw, 10) || 0
+                            : p?.type === 'number'  ? parseFloat(raw) || 0
+                            : String(raw ?? '');
         }
         const resp = await fetch('/api/run-tool', {
           method: 'POST',
