@@ -180,7 +180,7 @@
       skills: [],
       tools: [],
       apiConfig: { provider: 'claude', apiKey: '', model: 'claude-sonnet-4-5' },
-      scrapeUrl: '',
+      scrapeUrls: [],
       createdAt: new Date().toISOString(),
       ...overrides,
     };
@@ -552,24 +552,45 @@
         </div>
 
         {/* Site Scraping */}
-        <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 24, border: '1px solid var(--border)' }}>
-          <div style={{ fontWeight: 700, marginBottom: 16, fontSize: 15 }}>Site Scraping</div>
-          <div>
-            <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Predefined URL</label>
-            <input
-              type="url"
-              value={agent.scrapeUrl || ''}
-              onChange={e => update(['scrapeUrl'], e.target.value)}
-              onBlur={e => {
-                const v = e.target.value.trim();
-                if (v && !v.startsWith('http')) update(['scrapeUrl'], 'https://' + v);
-              }}
-              placeholder="https://example.com/docs"
-              dir="ltr"
-            />
-            <div style={{ fontSize: 11, color: 'var(--text-2)', marginTop: 6 }}>If set, the scrape_website tool will always use this URL and ignore any URL the model or user provides.</div>
-          </div>
-        </div>
+        {(() => {
+          const urls = agent.scrapeUrls || (agent.scrapeUrl ? [agent.scrapeUrl] : []);
+          function setUrls(newUrls) { update(['scrapeUrls'], newUrls); }
+          function addUrl() { setUrls([...urls, '']); }
+          function removeUrl(i) { setUrls(urls.filter((_, idx) => idx !== i)); }
+          function changeUrl(i, val) { const u = [...urls]; u[i] = val; setUrls(u); }
+          function normalizeUrl(i) {
+            const v = (urls[i] || '').trim();
+            if (v && !v.startsWith('http')) changeUrl(i, 'https://' + v);
+          }
+          return (
+            <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 24, border: '1px solid var(--border)' }}>
+              <div style={{ fontWeight: 700, marginBottom: 16, fontSize: 15 }}>Site Scraping</div>
+              <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 8, display: 'block' }}>Predefined URLs</label>
+              {urls.map((url, i) => (
+                <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  <input
+                    type="url"
+                    value={url}
+                    onChange={e => changeUrl(i, e.target.value)}
+                    onBlur={() => normalizeUrl(i)}
+                    placeholder="https://example.com/docs"
+                    dir="ltr"
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    onClick={() => removeUrl(i)}
+                    style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', fontSize: 16, lineHeight: 1 }}
+                  >✕</button>
+                </div>
+              ))}
+              <button
+                onClick={addUrl}
+                style={{ marginTop: 4, background: 'var(--bg-input)', color: 'var(--text-2)', padding: '7px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', fontSize: 13 }}
+              >+ Add URL</button>
+              <div style={{ fontSize: 11, color: 'var(--text-2)', marginTop: 8 }}>If set, the scrape_website tool will scrape these URLs and ignore any URL the model or user provides.</div>
+            </div>
+          );
+        })()}
 
         {/* Base Prompt */}
         <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 24, border: '1px solid var(--border)' }}>
@@ -1208,7 +1229,7 @@
 
     function buildClaudeTools() {
       const tools = toolDefs.map(t => {
-        const hasPredefinedUrl = t.name === 'scrape_website' && (agent.scrapeUrl || '').trim();
+        const hasPredefinedUrl = t.name === 'scrape_website' && (agent.scrapeUrls || (agent.scrapeUrl ? [agent.scrapeUrl] : [])).some(u => u.trim());
         const params = hasPredefinedUrl ? (t.parameters || []).filter(p => p.name !== 'url') : (t.parameters || []);
         return {
           name: t.name,
@@ -1230,7 +1251,7 @@
 
     function buildOpenAITools() {
       const tools = toolDefs.map(t => {
-        const hasPredefinedUrl = t.name === 'scrape_website' && (agent.scrapeUrl || '').trim();
+        const hasPredefinedUrl = t.name === 'scrape_website' && (agent.scrapeUrls || (agent.scrapeUrl ? [agent.scrapeUrl] : [])).some(u => u.trim());
         const params = hasPredefinedUrl ? (t.parameters || []).filter(p => p.name !== 'url') : (t.parameters || []);
         return {
           type: 'function',
@@ -1259,8 +1280,22 @@
     async function executeTool(toolName, inputs) {
       if (toolName === 'switch_skill') return 'OK';
       const tool = (agent.tools || []).find(t => t.name === toolName);
-      if (toolName === 'scrape_website' && (agent.scrapeUrl || '').trim()) {
-        inputs = { ...inputs, url: agent.scrapeUrl.trim() };
+      const predefinedUrls = (agent.scrapeUrls || (agent.scrapeUrl ? [agent.scrapeUrl] : [])).map(u => u.trim()).filter(Boolean);
+      if (toolName === 'scrape_website' && predefinedUrls.length > 0) {
+        if (predefinedUrls.length === 1) {
+          inputs = { ...inputs, url: predefinedUrls[0] };
+        } else {
+          const results = await Promise.allSettled(
+            predefinedUrls.map(url =>
+              fetch('/api/scrape-browser', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) }).then(r => r.json())
+            )
+          );
+          const combined = results.map((r, i) => {
+            const d = r.status === 'fulfilled' ? r.value : { error: r.reason?.message };
+            return `=== ${predefinedUrls[i]} ===\n${d.error ? 'Error: ' + d.error : (d.title ? 'Title: ' + d.title + '\n' : '') + (d.text || '')}`;
+          }).join('\n\n');
+          return combined;
+        }
       }
       const packages = (tool?.packages || '').split(',').map(s => s.trim()).filter(Boolean);
       const envVars = Object.fromEntries((tool?.envVars || []).filter(e => e.key).map(e => [e.key, e.value]));
