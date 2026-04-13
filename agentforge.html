@@ -974,10 +974,12 @@
 
       try {
         const content = await callWithTools(agent, history, async (toolName, toolInput) => {
+          const msgId = uid();
           setMessages(m => m.filter(x => x.id !== typingId).concat(
-            { id: uid(), role: 'tool', name: toolName, input: toolInput, timestamp: new Date() },
+            { id: msgId, role: 'tool', name: toolName, input: toolInput, timestamp: new Date() },
             { id: typingId, role: 'typing' }
           ));
+          return (result) => setMessages(m => m.map(x => x.id === msgId ? { ...x, result } : x));
         });
         const dt = performance.now() - t0;
         setMessages(m => m.filter(x => x.id !== typingId).concat({ id: uid(), role: 'agent', content, timestamp: new Date(), durationMs: dt }));
@@ -1041,17 +1043,19 @@
     const name = isSkill ? (msg.name || (msg.content || '').replace('Switched to skill: ', '')) : parseLegacyTool(msg).name;
     const input = isSkill ? null : parseLegacyTool(msg).input;
     const hasParams = !isSkill && input && Object.keys(input).length > 0;
+    const result = msg.result;
     return (
-      <div style={{ display: 'inline-flex', flexDirection: 'column', maxWidth: '100%' }}>
+      <div style={{ display: 'inline-flex', flexDirection: 'column', maxWidth: '100%', gap: 2 }}>
         <div
           onClick={hasParams ? () => setOpen(o => !o) : undefined}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: isSkill ? 'rgba(20,184,166,0.12)' : 'rgba(245,158,11,0.1)', border: `1px solid ${isSkill ? 'rgba(20,184,166,0.25)' : 'rgba(245,158,11,0.25)'}`, borderRadius: 20, padding: '4px 10px', cursor: hasParams ? 'pointer' : 'default', userSelect: 'none' }}>
-          <span style={{ fontSize: 11 }}>{isSkill ? '⚡' : '⚙'}</span>
-          <span style={{ fontSize: 12, fontFamily: 'monospace', color: isSkill ? 'var(--teal)' : 'var(--warning)', fontWeight: 500 }}>{name}</span>
-          {hasParams && <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 2 }}>{open ? '▾' : '▸'}</span>}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: hasParams ? 'pointer' : 'default', userSelect: 'none' }}>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{isSkill ? '⚡' : '⚙'}</span>
+          <span style={{ fontSize: 12, fontFamily: 'monospace', color: isSkill ? 'var(--teal)' : 'var(--text-2)' }}>{name}</span>
+          {hasParams && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{open ? '▾' : '▸'}</span>}
+          {result !== undefined && <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 4 }}>→ <span style={{ fontFamily: 'monospace', color: 'var(--text)' }}>{result}</span></span>}
         </div>
         {open && hasParams && (
-          <pre style={{ margin: '4px 0 0 10px', padding: '8px 12px', background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 11, color: 'var(--text-2)', overflow: 'auto', maxWidth: 340, maxHeight: 200 }}>{JSON.stringify(input, null, 2)}</pre>
+          <pre style={{ margin: '2px 0 0 16px', padding: '6px 10px', background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 11, color: 'var(--text-2)', overflow: 'auto', maxWidth: 320, maxHeight: 180 }}>{JSON.stringify(input, null, 2)}</pre>
         )}
       </div>
     );
@@ -1222,8 +1226,9 @@
         // Execute all tool_use blocks (may be multiple)
         const toolUses = d.content.filter(c => c.type === 'tool_use');
         const toolResults = await Promise.all(toolUses.map(async tu => {
-          await onToolCall(tu.name, tu.input);
+          const onResult = await onToolCall(tu.name, tu.input);
           const result = await executeTool(tu.name, tu.input);
+          if (onResult) onResult(result);
           return { type: 'tool_result', tool_use_id: tu.id, content: result };
         }));
 
@@ -1250,8 +1255,9 @@
         // Execute all tool_calls (may be multiple)
         const toolResultMsgs = await Promise.all((choice.message.tool_calls || []).map(async tc => {
           const inputs = JSON.parse(tc.function.arguments);
-          await onToolCall(tc.function.name, inputs);
+          const onResult = await onToolCall(tc.function.name, inputs);
           const result = await executeTool(tc.function.name, inputs);
+          if (onResult) onResult(result);
           return { role: 'tool', tool_call_id: tc.id, content: result };
         }));
 
@@ -1820,10 +1826,12 @@ async function sendMsg(){
 
       try {
         const content = await callWithTools(agent, history, async (toolName, toolInput) => {
+          const msgId = uid();
           setMessages(m => m.filter(x => x.id !== typingId).concat(
-            { id: uid(), role: 'tool', name: toolName, input: toolInput, timestamp: new Date() },
+            { id: msgId, role: 'tool', name: toolName, input: toolInput, timestamp: new Date() },
             { id: typingId, role: 'typing' }
           ));
+          return (result) => setMessages(m => m.map(x => x.id === msgId ? { ...x, result } : x));
         }, activeSkillId);
         const dt = performance.now() - t0;
         setMessages(m => m.filter(x => x.id !== typingId).concat({ id: uid(), role: 'agent', content, timestamp: new Date(), durationMs: dt }));
