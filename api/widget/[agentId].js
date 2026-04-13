@@ -71,7 +71,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
 </div>
 <script>
 var CHAT_URL=${jsChatUrl};
-var history=[];
+var chatHistory=[];
 var pending=false;
 function isHeb(t){return /^[\u0590-\u05FF]/.test((t||'').trim())}
 function fmt(d){return new Date(d).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false})}
@@ -105,14 +105,14 @@ async function sendMsg(){
   var text=inp.value.trim();
   if(!text||pending)return;
   inp.value='';inp.style.height='auto';
-  history.push({role:'user',content:text});
+  chatHistory.push({role:'user',content:text});
   addMsg('user',text);
   pending=true;
   var t0=performance.now();
   showTyping();
   try{
     console.log('[widget] sending to',CHAT_URL,'messages:',history.length);
-    var r=await fetch(CHAT_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:history})});
+    var r=await fetch(CHAT_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:chatHistory})});
     console.log('[widget] response status:',r.status);
     var raw=await r.text();
     console.log('[widget] raw response:',raw);
@@ -121,13 +121,13 @@ async function sendMsg(){
     var content=data.content;
     if(!content)throw new Error('Empty response from server');
     var dt=((performance.now()-t0)/1000).toFixed(2)+'s';
-    history.push({role:'assistant',content:content});
+    chatHistory.push({role:'assistant',content:content});
     hideTyping();addMsg('agent',content,new Date(),dt);
   }catch(e){
     console.error('[widget] error:',e);
     var dt=((performance.now()-t0)/1000).toFixed(2)+'s';
     hideTyping();addMsg('error',e.message||String(e)||'Unknown error',new Date(),dt);
-    history.pop();
+    chatHistory.pop();
   }
   pending=false;
 }
