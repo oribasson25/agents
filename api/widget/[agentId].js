@@ -1,15 +1,5 @@
 import { sql } from '../_db.js';
 
-function buildSystemPrompt(agent) {
-  let system = agent.basePrompt || '';
-  if (agent.skills && agent.skills.length > 0) {
-    system += '\n\n' + agent.skills.map(s =>
-      `## Skill: ${s.name}\n${s.description ? s.description + '\n' : ''}${s.prompt}`
-    ).join('\n\n');
-  }
-  return system.trim();
-}
-
 function he(s) {
   return String(s)
     .replace(/&/g, '&amp;')
@@ -31,18 +21,11 @@ export default async function handler(req, res) {
   if (!row) return res.status(404).send('Agent not found');
 
   const agent = row.data;
-  const systemPrompt = buildSystemPrompt(agent);
-  const apiKey  = (agent.apiConfig && agent.apiConfig.apiKey)  || '';
-  const provider = (agent.apiConfig && agent.apiConfig.provider) || 'claude';
-  const model   = (agent.apiConfig && agent.apiConfig.model)   || 'claude-sonnet-4-5';
   const titleStr   = titleParam || agent.name || 'Agent';
   const avatarStr  = agent.avatar  || '\uD83E\uDD16';
   const openingStr = agent.openingMessage || 'Hello!';
 
-  const jsSystem  = JSON.stringify(systemPrompt);
-  const jsApiKey  = JSON.stringify(apiKey);
-  const jsProvider = JSON.stringify(provider);
-  const jsModel   = JSON.stringify(model);
+  const jsChatUrl = JSON.stringify(`/api/widget/${agentId}/chat`);
   const jsOpening = JSON.stringify(openingStr);
 
   const html = `<!DOCTYPE html>
@@ -87,10 +70,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
   <button onclick="sendMsg()">&#x27A4;</button>
 </div>
 <script>
-var SYSTEM=${jsSystem};
-var API_KEY=${jsApiKey};
-var PROVIDER=${jsProvider};
-var MODEL=${jsModel};
+var CHAT_URL=${jsChatUrl};
 var history=[];
 var pending=false;
 function isHeb(t){return /^[\u0590-\u05FF]/.test((t||'').trim())}
@@ -131,20 +111,10 @@ async function sendMsg(){
   var t0=performance.now();
   showTyping();
   try{
-    var body,url,hdrs;
-    if(PROVIDER==='claude'){
-      url='https://api.anthropic.com/v1/messages';
-      hdrs={'Content-Type':'application/json','x-api-key':API_KEY,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'};
-      body=JSON.stringify({model:MODEL,max_tokens:1024,system:SYSTEM,messages:history});
-    }else{
-      url='https://api.openai.com/v1/chat/completions';
-      hdrs={'Content-Type':'application/json','Authorization':'Bearer '+API_KEY};
-      body=JSON.stringify({model:MODEL,messages:[{role:'system',content:SYSTEM},...history]});
-    }
-    var r=await fetch(url,{method:'POST',headers:hdrs,body:body});
+    var r=await fetch(CHAT_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:history})});
     var data=await r.json();
-    if(!r.ok)throw new Error(data.error&&data.error.message||JSON.stringify(data));
-    var content=PROVIDER==='claude'?data.content[0].text:data.choices[0].message.content;
+    if(!r.ok)throw new Error(data.error||JSON.stringify(data));
+    var content=data.content;
     var dt=((performance.now()-t0)/1000).toFixed(2)+'s';
     history.push({role:'assistant',content:content});
     hideTyping();addMsg('agent',content,new Date(),dt);
