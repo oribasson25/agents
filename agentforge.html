@@ -1195,8 +1195,10 @@
     const systemPrompt = buildSystemPrompt(agent, ragChunks, webChunks);
     const toolDefs = (agent.tools || []);
 
+    const skillNames = (agent.skills || []).map(s => s.name);
+
     function buildClaudeTools() {
-      return toolDefs.map(t => ({
+      const tools = toolDefs.map(t => ({
         name: t.name,
         description: t.description,
         input_schema: {
@@ -1207,10 +1209,16 @@
           required: (t.parameters || []).map(p => p.name),
         },
       }));
+      if (skillNames.length > 0) tools.push({
+        name: 'switch_skill',
+        description: 'Switch to a specific skill when the conversation topic matches that skill\'s domain. Call this before responding.',
+        input_schema: { type: 'object', properties: { skill_name: { type: 'string', description: 'Skill to activate', enum: skillNames } }, required: ['skill_name'] },
+      });
+      return tools;
     }
 
     function buildOpenAITools() {
-      return toolDefs.map(t => ({
+      const tools = toolDefs.map(t => ({
         type: 'function',
         function: {
           name: t.name,
@@ -1224,9 +1232,19 @@
           },
         },
       }));
+      if (skillNames.length > 0) tools.push({
+        type: 'function',
+        function: {
+          name: 'switch_skill',
+          description: 'Switch to a specific skill when the conversation topic matches that skill\'s domain. Call this before responding.',
+          parameters: { type: 'object', properties: { skill_name: { type: 'string', description: 'Skill to activate', enum: skillNames } }, required: ['skill_name'] },
+        },
+      });
+      return tools;
     }
 
     async function executeTool(toolName, inputs) {
+      if (toolName === 'switch_skill') return 'OK';
       const tool = (agent.tools || []).find(t => t.name === toolName);
       const packages = (tool?.packages || '').split(',').map(s => s.trim()).filter(Boolean);
       const envVars = Object.fromEntries((tool?.envVars || []).filter(e => e.key).map(e => [e.key, e.value]));
@@ -1864,6 +1882,17 @@ async function sendMsg(){
 
       try {
         const content = await callWithTools(agent, history, async (toolName, toolInput) => {
+          if (toolName === 'switch_skill') {
+            const skill = (agent.skills || []).find(s => s.name.toLowerCase() === (toolInput.skill_name || '').toLowerCase());
+            if (skill) {
+              setActiveSkillId(skill.id);
+              setMessages(m => m.filter(x => x.id !== typingId).concat(
+                { id: uid(), role: 'skill', name: skill.name, description: skill.description, prompt: skill.prompt, timestamp: new Date() },
+                { id: typingId, role: 'typing' }
+              ));
+            }
+            return null;
+          }
           const msgId = uid();
           setMessages(m => m.filter(x => x.id !== typingId).concat(
             { id: msgId, role: 'tool', name: toolName, input: toolInput, timestamp: new Date() },
