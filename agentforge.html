@@ -1037,6 +1037,27 @@
     return { name: msg.content || '?', input: null };
   }
 
+  function SkillBanner({ msg }) {
+    const [open, setOpen] = React.useState(false);
+    const name = msg.name || '';
+    const skillContent = [msg.description, msg.prompt].filter(Boolean).join('\n\n');
+    const hasContent = !!skillContent;
+    return (
+      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, margin: '4px 0' }}>
+        <div
+          onClick={hasContent ? () => setOpen(o => !o) : undefined}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: hasContent ? 'pointer' : 'default', userSelect: 'none', background: 'rgba(45,212,191,0.1)', border: '1px solid rgba(45,212,191,0.25)', borderRadius: 20, padding: '4px 14px' }}>
+          <span style={{ fontSize: 12 }}>⚡</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--teal)', fontFamily: 'monospace' }}>{name}</span>
+          {hasContent && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{open ? '▾' : '▸'}</span>}
+        </div>
+        {open && hasContent && (
+          <pre style={{ margin: 0, padding: '6px 10px', background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 11, color: 'var(--text-2)', overflow: 'auto', maxWidth: 320, maxHeight: 180, alignSelf: 'center' }}>{skillContent}</pre>
+        )}
+      </div>
+    );
+  }
+
   function InvocationChip({ msg }) {
     const [open, setOpen] = React.useState(false);
     const isSkill = msg.role === 'skill';
@@ -1899,7 +1920,7 @@ async function sendMsg(){
                   {viewingSession
                     ? viewingSession.messages.map(msg => {
                         if (msg.role === 'tool') return <div key={msg.id}><InvocationChip msg={msg} /></div>;
-                        if (msg.role === 'skill') return <div key={msg.id}><InvocationChip msg={msg} /></div>;
+                        if (msg.role === 'skill') return <div key={msg.id}><SkillBanner msg={msg} /></div>;
                         if (msg.role === 'error') return <div key={msg.id} style={{ fontSize: 12, color: 'var(--danger)', background: 'rgba(239,68,68,0.08)', padding: '6px 10px', borderRadius: 8 }}>⚠ {msg.content}</div>;
                         const isUser = msg.role === 'user';
                         const dir = isHebrew(msg.content) ? 'rtl' : 'ltr';
@@ -1956,8 +1977,8 @@ async function sendMsg(){
                 </div>
               );
               if (msg.role === 'skill') return (
-                <div key={msg.id} style={{ display: 'flex', alignItems: 'flex-start' }}>
-                  <InvocationChip msg={msg} />
+                <div key={msg.id}>
+                  <SkillBanner msg={msg} />
                 </div>
               );
               if (msg.role === 'user') {
