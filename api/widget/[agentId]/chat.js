@@ -11,7 +11,7 @@ function buildSystemPrompt(agent) {
 }
 
 function buildClaudeTools(agent) {
-  const toolDefs = agent.tools || [];
+  const toolDefs = (agent.tools || []).filter(t => t.name !== 'switch_skill');
   return toolDefs.map(t => {
     const predefinedUrls = (agent.scrapeUrls || (agent.scrapeUrl ? [agent.scrapeUrl] : [])).map(u => u.trim()).filter(Boolean);
     const hasPredefinedUrl = t.name === 'scrape_website' && predefinedUrls.length > 0;
@@ -29,7 +29,7 @@ function buildClaudeTools(agent) {
 }
 
 function buildOpenAITools(agent) {
-  const toolDefs = agent.tools || [];
+  const toolDefs = (agent.tools || []).filter(t => t.name !== 'switch_skill');
   return toolDefs.map(t => {
     const predefinedUrls = (agent.scrapeUrls || (agent.scrapeUrl ? [agent.scrapeUrl] : [])).map(u => u.trim()).filter(Boolean);
     const hasPredefinedUrl = t.name === 'scrape_website' && predefinedUrls.length > 0;
