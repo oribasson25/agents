@@ -212,8 +212,8 @@
         return { ...state, agents };
       }
       case 'SET_VIEW': return { ...state, view: action.view, editingId: action.editingId || state.editingId };
-      case 'OPEN_CHAT': return { ...state, chatAgentId: action.id };
-      case 'CLOSE_CHAT': return { ...state, chatAgentId: null };
+      case 'OPEN_CHAT': return { ...state, chatAgentId: action.id, chatInitialSessionId: action.sessionId || null };
+      case 'CLOSE_CHAT': return { ...state, chatAgentId: null, chatInitialSessionId: null };
       default: return state;
     }
   }
@@ -1737,14 +1737,14 @@ async function sendMsg(){
   }
 
   /* ─────────────────── CHAT TEST DRAWER ─────────────────── */
-  function ChatTestDrawer({ agent, onClose }) {
+  function ChatTestDrawer({ agent, onClose, initialSessionId }) {
     const historyKey = `agentforge_history_${agent.id}`;
     const openingMsg = { id: uid(), role: 'agent', content: agent.openingMessage || 'Hello!', timestamp: new Date(), isOpening: true };
     const [messages, setMessages] = useState([openingMsg]);
     const [input, setInput] = useState('');
     const [pending, setPending] = useState(false);
     const [activeSkillId, setActiveSkillId] = useState(null);
-    const [showHistory, setShowHistory] = useState(false);
+    const [showHistory, setShowHistory] = useState(!!initialSessionId);
     const [viewingSession, setViewingSession] = useState(null); // { startedAt, messages }
     const [historyTick, setHistoryTick] = useState(0);
     const listRef = useRef(null);
@@ -1773,6 +1773,14 @@ async function sendMsg(){
       try { return JSON.parse(localStorage.getItem(historyKey) || '[]').map(s => ({ ...s, startedAt: new Date(s.startedAt), messages: s.messages.map(m => ({ ...m, timestamp: new Date(m.timestamp) })) })); }
       catch (_) { return []; }
     }
+
+    // Auto-open a specific session from sidebar click
+    useEffect(() => {
+      if (!initialSessionId) return;
+      const sessions = loadHistory();
+      const target = sessions.find(s => s.id === initialSessionId);
+      if (target) setViewingSession(target);
+    }, [initialSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
     function deleteSession(sid) {
       try {
@@ -2527,7 +2535,7 @@ def run(**kwargs):
                 ) : allConversations.map(conv => (
                   <button
                     key={conv.agentId + conv.sessionId}
-                    onClick={() => onOpenChat(conv.agentId)}
+                    onClick={() => onOpenChat(conv.agentId, conv.sessionId)}
                     style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'transparent', textAlign: 'left', width: '100%', cursor: 'pointer' }}
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
@@ -2926,6 +2934,7 @@ def run(**kwargs):
       view: 'list',
       editingId: null,
       chatAgentId: null,
+      chatInitialSessionId: null,
     });
     const [nav, setNav] = useState('home');
     const [loading, setLoading] = useState(true);
@@ -2995,7 +3004,7 @@ def run(**kwargs):
     return (
       <React.Fragment>
       <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-        <Sidebar activeNav={nav} onNav={handleNav} user={user} onLogout={onLogout} agents={state.agents} onOpenChat={id => dispatch({ type: 'OPEN_CHAT', id })} />
+        <Sidebar activeNav={nav} onNav={handleNav} user={user} onLogout={onLogout} agents={state.agents} onOpenChat={(id, sessionId) => dispatch({ type: 'OPEN_CHAT', id, sessionId })} />
         <div style={{ flex: 1, overflowY: 'auto', padding: '32px 32px 80px', background: 'var(--bg-app)' }}>
           {nav === 'docs' ? (
             <DocsView />
@@ -3037,7 +3046,7 @@ def run(**kwargs):
           )}
         </div>
 
-        {chatAgent && <ChatTestDrawer agent={chatAgent} onClose={() => dispatch({ type: 'CLOSE_CHAT' })} />}
+        {chatAgent && <ChatTestDrawer agent={chatAgent} initialSessionId={state.chatInitialSessionId} onClose={() => dispatch({ type: 'CLOSE_CHAT' })} />}
       </div>
       <div style={{ position: 'fixed', bottom: 10, left: '50%', transform: 'translateX(-50%)', fontSize: 11, color: '#2a2a2a', letterSpacing: '2px', fontWeight: 500, pointerEvents: 'none', userSelect: 'none', zIndex: 1 }}>
         YOUR AGENTS. YOUR RULES.
