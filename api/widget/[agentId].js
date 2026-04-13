@@ -111,16 +111,22 @@ async function sendMsg(){
   var t0=performance.now();
   showTyping();
   try{
+    console.log('[widget] sending to',CHAT_URL,'messages:',history.length);
     var r=await fetch(CHAT_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:history})});
-    var data=await r.json();
+    console.log('[widget] response status:',r.status);
+    var raw=await r.text();
+    console.log('[widget] raw response:',raw);
+    var data;try{data=JSON.parse(raw)}catch(pe){throw new Error('Server returned non-JSON ('+r.status+'): '+raw.slice(0,200))}
     if(!r.ok)throw new Error(data.error||JSON.stringify(data));
     var content=data.content;
+    if(!content)throw new Error('Empty response from server');
     var dt=((performance.now()-t0)/1000).toFixed(2)+'s';
     history.push({role:'assistant',content:content});
     hideTyping();addMsg('agent',content,new Date(),dt);
   }catch(e){
+    console.error('[widget] error:',e);
     var dt=((performance.now()-t0)/1000).toFixed(2)+'s';
-    hideTyping();addMsg('error',e.message,new Date(),dt);
+    hideTyping();addMsg('error',e.message||String(e)||'Unknown error',new Date(),dt);
     history.pop();
   }
   pending=false;
