@@ -1044,18 +1044,22 @@
     const input = isSkill ? null : parseLegacyTool(msg).input;
     const hasParams = !isSkill && input && Object.keys(input).length > 0;
     const result = msg.result;
+    const hasToggle = hasParams || result !== undefined;
     return (
       <div style={{ display: 'inline-flex', flexDirection: 'column', maxWidth: '100%', gap: 2 }}>
         <div
-          onClick={hasParams ? () => setOpen(o => !o) : undefined}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: hasParams ? 'pointer' : 'default', userSelect: 'none' }}>
+          onClick={hasToggle ? () => setOpen(o => !o) : undefined}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: hasToggle ? 'pointer' : 'default', userSelect: 'none' }}>
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{isSkill ? '⚡' : '⚙'}</span>
           <span style={{ fontSize: 12, fontFamily: 'monospace', color: isSkill ? 'var(--teal)' : 'var(--text-2)' }}>{name}</span>
-          {hasParams && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{open ? '▾' : '▸'}</span>}
-          {result !== undefined && <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 4 }}>→ <span style={{ fontFamily: 'monospace', color: 'var(--text)' }}>{result}</span></span>}
+          {hasToggle && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{open ? '▾' : '▸'}</span>}
         </div>
-        {open && hasParams && (
-          <pre style={{ margin: '2px 0 0 16px', padding: '6px 10px', background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 11, color: 'var(--text-2)', overflow: 'auto', maxWidth: 320, maxHeight: 180 }}>{JSON.stringify(input, null, 2)}</pre>
+        {open && hasToggle && (
+          <pre style={{ margin: '2px 0 0 16px', padding: '6px 10px', background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 11, color: 'var(--text-2)', overflow: 'auto', maxWidth: 320, maxHeight: 180 }}>
+            {hasParams && JSON.stringify(input, null, 2)}
+            {hasParams && result !== undefined && '\n\n→ '}
+            {result !== undefined && (typeof result === 'object' ? JSON.stringify(result, null, 2) : result)}
+          </pre>
         )}
       </div>
     );
