@@ -332,6 +332,259 @@ pending: boolean
 
 ---
 
+## ניהול מסמכים ו-RAG (Retrieval-Augmented Generation)
+
+### סקירה כללית
+סוכנים יכולים להיות מחוברים למסמכים בעלי ידע ספציפי, המאפשרים retrieval דינמי של מידע רלוונטי בזמן הצ'אט. המערכת תומכת בשתי רמות של מסמכים:
+- **ידע גלובלי** (`skill_id = NULL`): מסמכים שחלים על כל הסוכן וכל הskills שלו
+- **ידע ספציפי לskill** (`skill_id = <skill.id>`): מסמכים המשמשים רק לskill מסוים
+
+### Schema בNeon
+
+```sql
+-- בחלק מ-schema.sql
+create table if not exists documents (
+  id          text        primary key,
+  agent_id    text        not null references agents(id) on delete cascade,
+  skill_id    text,       -- NULL = global RAG | skill.id = skill-specific RAG
+  title       text        not null default '',
+  content     text        not null,
+  tsv         tsvector generated always as (
+                to_tsvector('simple', coalesce(title,'') || ' ' || content)
+              ) stored,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create index if not exists docs_agent_skill_idx on documents (agent_id, skill_id);
+create index if not exists docs_tsv_idx         on documents using gin(tsv);
+```
+
+**הערות:**
+- `tsvector`: generated automatically עם language tokenizer `simple` (תומך בעברית, ערבית, סיני, ו-Unicode בדרך כלל)
+- `gin(tsv)` index: מאיץ full-text search queries
+- cascading delete: מחיקת סוכן = מחיקה אוטומטית של כל מסמכיו
+
+### Backend endpoints — מסמכים
+
+#### `api/agents/[id]/documents.js` — רשימה ויצירה של מסמכים לסוכן
+
+```js
+export default async function handler(req, res) {
+  if (!checkAuth(req, res)) return;
+  const { id: agentId } = req.query;
+  
+  if (req.method === 'GET') {
+    const docs = await sql`
+      select id, title, content, skill_id, created_at, updated_at 
+      from documents 
+      where agent_id = ${agentId} 
+      order by created_at desc
+    `;
+    return res.json(docs);
+  }
+  
+  if (req.method === 'POST') {
+    const { title, content, skillId } = req.body;
+    const docId = crypto.randomUUID();
+    await sql`
+      insert into documents (id, agent_id, skill_id, title, content) 
+      values (${docId}, ${agentId}, ${skillId || null}, ${title}, ${content})
+    `;
+    return res.status(201).json({ id: docId, title, content, skillId });
+  }
+  res.status(405).end();
+}
+```
+
+#### `api/documents/[docId].js` — GET, PUT, DELETE מסמך בודד
+
+```js
+export default async function handler(req, res) {
+  if (!checkAuth(req, res)) return;
+  const { docId } = req.query;
+  
+  if (req.method === 'GET') {
+    const [doc] = await sql`select * from documents where id = ${docId}`;
+    return doc ? res.json(doc) : res.status(404).end();
+  }
+  
+  if (req.method === 'PUT') {
+    const { title, content, skillId } = req.body;
+    await sql`
+      update documents 
+      set title = ${title}, content = ${content}, skill_id = ${skillId || null}, 
+          updated_at = now() 
+      where id = ${docId}
+    `;
+    return res.json({ id: docId, title, content, skillId });
+  }
+  
+  if (req.method === 'DELETE') {
+    await sql`delete from documents where id = ${docId}`;
+    return res.status(204).end();
+  }
+  res.status(405).end();
+}
+```
+
+#### `api/agents/[id]/retrieve.js` — Retrieval: חיפוש מסמכים רלוונטיים
+
+```js
+export default async function handler(req, res) {
+  if (!checkAuth(req, res)) return;
+  const { id: agentId, query, skillId } = req.query;
+  
+  // בנייה של full-text search query
+  // ניתן להשתמש בצורה פשוטה: tsvector @@ websearch_to_tsquery('simple', query)
+  // או tsquery לשליטה יותר עדינה
+  
+  let sql_query = `
+    select id, title, content, skill_id, 
+           ts_rank(tsv, query) as rank
+    from documents,
+         websearch_to_tsquery('simple', $1) query
+    where agent_id = $2
+      and tsv @@ query
+  `;
+  const params = [query, agentId];
+  
+  // אם skillId מסופק, סנן גם על skill_id
+  if (skillId) {
+    sql_query += ` and (skill_id is null or skill_id = $3)`;
+    params.push(skillId);
+  } else {
+    sql_query += ` and skill_id is null`;
+  }
+  
+  sql_query += ` order by rank desc limit 10`;
+  
+  const results = await sql(sql_query, params);
+  return res.json(results);
+}
+```
+
+**זרימה:**
+1. סוכן קולט query מהמשתמש בצ'אט
+2. לפני שליחה ל-Claude/OpenAI, שולח `GET /api/agents/:id/retrieve?query=...&skillId=...` 
+3. מקבל מחזיר של מסמכים רלוונטיים דירוג לפי relevance
+4. משלב את התוכן ב-system prompt או בהודעות context
+
+---
+
+## Web Scraping עם Playwright ו-Chromium
+
+### סקירה כללית
+סוכנים יכולים להגדיר URLs לא ממלא מקום עבור web scraping. כשמשתמש מבקש מהסוכן לשלוף תוכן מאתר (למשל: "What's the latest news on https://example.com?"), הסוכן יכול:
+1. להשתמש בhardcoded scrape URLs מ-`agent.scrapeUrls` 
+2. לחלוצ request לכמה URLs בעונש ללא פעולה
+3. לחזור ב-HTML/text מחולל בחזרה אל ה-Claude/OpenAI למודלים לעיבוד
+
+### תלויות ב-package.json
+
+```json
+{
+  "dependencies": {
+    "@neondatabase/serverless": "^0.9.0",
+    "@sparticuz/chromium": "^147.0.0",
+    "playwright-core": "^1.59.1"
+  }
+}
+```
+
+- **playwright-core**: ספרייה קלה של Playwright ללא bundled browser
+- **@sparticuz/chromium**: Chromium binary מותאם לVercel Serverless (קטן, fast boot)
+
+### Frontend — Agent model
+
+Agent JSON מכיל שדה:
+```js
+scrapeUrls: [
+  "https://docs.anthropic.com",
+  "https://example.com/knowledge-base"
+]
+```
+
+ב-Configuration tab, ניתן להוסיף/לערוך URLs אלה. כשמשתמש שולח הודעה שמזכירה URL זו, המודל יכול להחזיר directive כמו `[SCRAPE:https://docs.anthropic.com]` שהסוכן יפענח.
+
+### Backend — `api/scrape_browser.js`
+
+```js
+import chromium from '@sparticuz/chromium';
+import { chromium as pwChromium } from 'playwright-core';
+
+export default async function handler(req, res) {
+  if (!checkAuth(req, res)) return;
+  const { url, timeout = 30000 } = req.body;
+  
+  if (!url) return res.status(400).json({ error: 'url required' });
+  
+  let browser, page;
+  try {
+    // טעינה של Chromium
+    const args = chromium.args || [];
+    const headless = chromium.headless;
+    
+    browser = await pwChromium.launch({
+      args,
+      headless,
+      executablePath: await chromium.executablePath,
+    });
+    
+    page = await browser.newPage();
+    page.setDefaultTimeout(timeout);
+    
+    // ניווט ל-URL
+    await page.goto(url, { waitUntil: 'networkidle' });
+    
+    // חלוצ טקסט + HTML
+    const html = await page.content();
+    const text = await page.evaluate(() => document.body.innerText);
+    
+    return res.json({ url, html, text });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  } finally {
+    if (page) await page.close();
+    if (browser) await browser.close();
+  }
+}
+```
+
+### Frontend API Wrapper
+
+ב-`agentforge.html`:
+```js
+async function scrapeUrl(url) {
+  return apiFetch('/api/scrape_browser', {
+    method: 'POST',
+    body: JSON.stringify({ url })
+  }).then(r => r.json());
+}
+```
+
+### Integration עם Chat
+
+כשמשתמש שולח הודעה:
+1. בדוק אם המשתמש ציין URL מ-`agent.scrapeUrls`
+2. אם כן, קרא ל-`scrapeUrl(url)` לפני שליחה ל-Claude
+3. שלח את ה-text/HTML כ-part של system message: 
+   ```
+   [Web Content from https://example.com]:
+   {scraped_text}
+   ```
+4. Claude מעבד ומחזיר תשובה בהתאם
+
+### הערות ביטחון ודגלים
+
+- **Timeout**: 30 שניות ברירת מחדל, ניתן לשינוי בקרייה
+- **URL validation**: ודא שהURL ב-`agent.scrapeUrls` (whitelist) כדי למנוע SSRF
+- **No JavaScript execution**: באפשרות `waitUntil: 'networkidle'` רק HTML בסיסי נטען; JS מורכב לא בהכרח מתבצע (לפחות עם DOM יבא)
+- **Memory**: כל session דפדפן צורכת זיכרון; Vercel יש חיסכון memory-based
+- **Cold start**: Chromium boot הראשון קורא ~3-5 שניות; queries הבא מהיר יותר
+
+---
+
 ## design tokens — CSS vars
 
 ```css
