@@ -180,6 +180,7 @@
       skills: [],
       tools: [],
       apiConfig: { provider: 'claude', apiKey: '', model: 'claude-sonnet-4-5' },
+      scrapeUrl: '',
       createdAt: new Date().toISOString(),
       ...overrides,
     };
@@ -547,6 +548,26 @@
             <select value={agent.apiConfig.model} onChange={e => update(['apiConfig','model'], e.target.value)} style={{ borderRadius: 'var(--r-md)' }}>
               {models.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
+          </div>
+        </div>
+
+        {/* Site Scraping */}
+        <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 24, border: '1px solid var(--border)' }}>
+          <div style={{ fontWeight: 700, marginBottom: 16, fontSize: 15 }}>Site Scraping</div>
+          <div>
+            <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Predefined URL</label>
+            <input
+              type="url"
+              value={agent.scrapeUrl || ''}
+              onChange={e => update(['scrapeUrl'], e.target.value)}
+              onBlur={e => {
+                const v = e.target.value.trim();
+                if (v && !v.startsWith('http')) update(['scrapeUrl'], 'https://' + v);
+              }}
+              placeholder="https://example.com/docs"
+              dir="ltr"
+            />
+            <div style={{ fontSize: 11, color: 'var(--text-2)', marginTop: 6 }}>If set, the scrape_website tool will always use this URL and ignore any URL the model or user provides.</div>
           </div>
         </div>
 
@@ -1186,17 +1207,19 @@
     const skillNames = (agent.skills || []).map(s => s.name);
 
     function buildClaudeTools() {
-      const tools = toolDefs.map(t => ({
-        name: t.name,
-        description: t.description,
-        input_schema: {
-          type: 'object',
-          properties: Object.fromEntries(
-            (t.parameters || []).map(p => [p.name, { type: p.type || 'string', description: p.description || '' }])
-          ),
-          required: (t.parameters || []).map(p => p.name),
-        },
-      }));
+      const tools = toolDefs.map(t => {
+        const hasPredefinedUrl = t.name === 'scrape_website' && (agent.scrapeUrl || '').trim();
+        const params = hasPredefinedUrl ? (t.parameters || []).filter(p => p.name !== 'url') : (t.parameters || []);
+        return {
+          name: t.name,
+          description: t.description + (hasPredefinedUrl ? ' (URL is preconfigured; call with no arguments.)' : ''),
+          input_schema: {
+            type: 'object',
+            properties: Object.fromEntries(params.map(p => [p.name, { type: p.type || 'string', description: p.description || '' }])),
+            required: params.map(p => p.name),
+          },
+        };
+      });
       if (skillNames.length > 0 && !activeSkillId) tools.push({
         name: 'switch_skill',
         description: 'Switch to a skill ONLY when the user explicitly asks about that skill\'s specific domain. Do NOT call for greetings, small talk, or ambiguous messages. Call at most once.',
@@ -1206,20 +1229,22 @@
     }
 
     function buildOpenAITools() {
-      const tools = toolDefs.map(t => ({
-        type: 'function',
-        function: {
-          name: t.name,
-          description: t.description,
-          parameters: {
-            type: 'object',
-            properties: Object.fromEntries(
-              (t.parameters || []).map(p => [p.name, { type: p.type || 'string', description: p.description || '' }])
-            ),
-            required: (t.parameters || []).map(p => p.name),
+      const tools = toolDefs.map(t => {
+        const hasPredefinedUrl = t.name === 'scrape_website' && (agent.scrapeUrl || '').trim();
+        const params = hasPredefinedUrl ? (t.parameters || []).filter(p => p.name !== 'url') : (t.parameters || []);
+        return {
+          type: 'function',
+          function: {
+            name: t.name,
+            description: t.description + (hasPredefinedUrl ? ' (URL is preconfigured; call with no arguments.)' : ''),
+            parameters: {
+              type: 'object',
+              properties: Object.fromEntries(params.map(p => [p.name, { type: p.type || 'string', description: p.description || '' }])),
+              required: params.map(p => p.name),
+            },
           },
-        },
-      }));
+        };
+      });
       if (skillNames.length > 0 && !activeSkillId) tools.push({
         type: 'function',
         function: {
@@ -1234,6 +1259,9 @@
     async function executeTool(toolName, inputs) {
       if (toolName === 'switch_skill') return 'OK';
       const tool = (agent.tools || []).find(t => t.name === toolName);
+      if (toolName === 'scrape_website' && (agent.scrapeUrl || '').trim()) {
+        inputs = { ...inputs, url: agent.scrapeUrl.trim() };
+      }
       const packages = (tool?.packages || '').split(',').map(s => s.trim()).filter(Boolean);
       const envVars = Object.fromEntries((tool?.envVars || []).filter(e => e.key).map(e => [e.key, e.value]));
       const resp = await fetch('/api/run-tool', {
