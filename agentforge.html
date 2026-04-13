@@ -1197,9 +1197,9 @@
           required: (t.parameters || []).map(p => p.name),
         },
       }));
-      if (skillNames.length > 0) tools.push({
+      if (skillNames.length > 0 && !activeSkillId) tools.push({
         name: 'switch_skill',
-        description: 'Switch to a specific skill when the conversation topic matches that skill\'s domain. Call this before responding.',
+        description: 'Switch to a skill ONLY when the user explicitly asks about that skill\'s specific domain. Do NOT call for greetings, small talk, or ambiguous messages. Call at most once.',
         input_schema: { type: 'object', properties: { skill_name: { type: 'string', description: 'Skill to activate', enum: skillNames } }, required: ['skill_name'] },
       });
       return tools;
@@ -1220,11 +1220,11 @@
           },
         },
       }));
-      if (skillNames.length > 0) tools.push({
+      if (skillNames.length > 0 && !activeSkillId) tools.push({
         type: 'function',
         function: {
           name: 'switch_skill',
-          description: 'Switch to a specific skill when the conversation topic matches that skill\'s domain. Call this before responding.',
+          description: 'Switch to a skill ONLY when the user explicitly asks about that skill\'s specific domain. Do NOT call for greetings, small talk, or ambiguous messages. Call at most once.',
           parameters: { type: 'object', properties: { skill_name: { type: 'string', description: 'Skill to activate', enum: skillNames } }, required: ['skill_name'] },
         },
       });
@@ -1889,7 +1889,8 @@ async function sendMsg(){
           return (result) => setMessages(m => m.map(x => x.id === msgId ? { ...x, result } : x));
         }, activeSkillId);
         const dt = performance.now() - t0;
-        setMessages(m => m.filter(x => x.id !== typingId).concat({ id: uid(), role: 'agent', content, timestamp: new Date(), durationMs: dt }));
+        const next = m => m.filter(x => x.id !== typingId);
+        setMessages(m => content?.trim() ? next(m).concat({ id: uid(), role: 'agent', content, timestamp: new Date(), durationMs: dt }) : next(m));
       } catch (err) {
         const dt = performance.now() - t0;
         setMessages(m => m.filter(x => x.id !== typingId).concat({ id: uid(), role: 'error', content: err.message, timestamp: new Date(), durationMs: dt }));
