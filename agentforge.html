@@ -1044,7 +1044,8 @@
     const input = isSkill ? null : parseLegacyTool(msg).input;
     const hasParams = !isSkill && input && Object.keys(input).length > 0;
     const result = msg.result;
-    const hasToggle = hasParams || result !== undefined;
+    const skillContent = isSkill ? [msg.description, msg.prompt].filter(Boolean).join('\n\n') : null;
+    const hasToggle = hasParams || result !== undefined || !!skillContent;
     return (
       <div style={{ display: 'inline-flex', flexDirection: 'column', maxWidth: '100%', gap: 2 }}>
         <div
@@ -1056,9 +1057,13 @@
         </div>
         {open && hasToggle && (
           <pre style={{ margin: '2px 0 0 16px', padding: '6px 10px', background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 11, color: 'var(--text-2)', overflow: 'auto', maxWidth: 320, maxHeight: 180 }}>
-            {hasParams && JSON.stringify(input, null, 2)}
-            {hasParams && result !== undefined && '\n\n→ '}
-            {result !== undefined && (typeof result === 'object' ? JSON.stringify(result, null, 2) : result)}
+            {isSkill ? skillContent : (
+              <>
+                {hasParams && JSON.stringify(input, null, 2)}
+                {hasParams && result !== undefined && '\n\n→ '}
+                {result !== undefined && (typeof result === 'object' ? JSON.stringify(result, null, 2) : result)}
+              </>
+            )}
           </pre>
         )}
       </div>
@@ -1821,12 +1826,12 @@ async function sendMsg(){
       let skillBanner = null;
       if (skillMatch) {
         const skill = agent.skills.find(s => s.name.toLowerCase() === skillMatch[1].toLowerCase());
-        if (skill) { skillBanner = skill.name; setActiveSkillId(skill.id); }
+        if (skill) { skillBanner = skill; setActiveSkillId(skill.id); }
       }
 
       const typingId = uid();
       const newMsgs = [...messages, { id: uid(), role: 'user', content: text, timestamp: new Date() }];
-      if (skillBanner) newMsgs.push({ id: uid(), role: 'skill', name: skillBanner, timestamp: new Date() });
+      if (skillBanner) newMsgs.push({ id: uid(), role: 'skill', name: skillBanner.name, description: skillBanner.description, prompt: skillBanner.prompt, timestamp: new Date() });
       newMsgs.push({ id: typingId, role: 'typing' });
       setMessages(newMsgs);
       setPending(true);
