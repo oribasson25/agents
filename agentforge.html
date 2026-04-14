@@ -1387,7 +1387,12 @@
         const body = { model, messages: msgs };
         if (toolDefs.length > 0) body.tools = buildOpenAITools();
 
-        const r = await fetch(`${ollamaHost}/v1/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        // Route through server-side proxy to avoid mixed-content and CORS issues
+        const r = await fetch('/api/ollama-proxy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ host: ollamaHost, path: '/v1/chat/completions', body }),
+        });
         const d = await r.json();
         if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
 
