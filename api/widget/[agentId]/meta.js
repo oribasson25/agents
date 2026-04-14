@@ -23,6 +23,8 @@ export default async function handler(req, res) {
     : he(avatarRaw);
 
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Cache-Control', 'no-store, must-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.json({ avatarHtml, name: agent.name || 'Agent' });
 }
