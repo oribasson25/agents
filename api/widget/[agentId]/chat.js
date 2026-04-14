@@ -1,13 +1,33 @@
 import { sql } from '../../_db.js';
 
-function buildSystemPrompt(agent) {
+function buildSystemPrompt(agent, ragChunks = []) {
   let system = agent.basePrompt || '';
+  if (ragChunks.length > 0) {
+    system += '\n\n## Relevant Context\n' + ragChunks.map(c => `--- ${c.title}\n${c.content}`).join('\n\n');
+  }
   if (agent.skills && agent.skills.length > 0) {
     system += '\n\n' + agent.skills.map(s =>
       `## Skill: ${s.name}\n${s.description ? s.description + '\n' : ''}${s.prompt}`
     ).join('\n\n');
   }
   return system.trim();
+}
+
+async function retrieveRagChunks(agentId, query) {
+  try {
+    const chunks = await sql`
+      select title, content
+      from documents
+      where agent_id = ${agentId}
+        and skill_id is null
+        and tsv @@ plainto_tsquery('simple', ${query})
+      order by ts_rank(tsv, plainto_tsquery('simple', ${query})) desc
+      limit 5
+    `;
+    return chunks;
+  } catch (_) {
+    return [];
+  }
 }
 
 function buildClaudeTools(agent) {
@@ -111,7 +131,11 @@ export default async function handler(req, res) {
   if (!row) return res.status(404).json({ error: 'Agent not found' });
 
   const agent = row.data;
-  const systemPrompt = buildSystemPrompt(agent);
+  const proto = req.headers['x-forwarded-proto'] || 'https';
+  const baseUrl = `${proto}://${req.headers.host}`;
+  const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || '';
+  const ragChunks = lastUserMsg.trim() ? await retrieveRagChunks(agentId, lastUserMsg) : [];
+  const systemPrompt = buildSystemPrompt(agent, ragChunks);
   const apiKey   = (agent.apiConfig && agent.apiConfig.apiKey)   || '';
   const provider = (agent.apiConfig && agent.apiConfig.provider) || 'claude';
   const model    = (agent.apiConfig && agent.apiConfig.model)    || 'claude-sonnet-4-5';
@@ -120,9 +144,6 @@ export default async function handler(req, res) {
   if (!apiKey) {
     return res.status(503).json({ error: 'Agent is not configured with an API key. Contact the site owner.' });
   }
-
-  const proto = req.headers['x-forwarded-proto'] || 'https';
-  const baseUrl = `${proto}://${req.headers.host}`;
 
   try {
     if (provider === 'claude') {
