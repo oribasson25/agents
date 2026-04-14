@@ -2249,71 +2249,47 @@ async function sendMsg(){
         onMouseLeave={() => setHovered(false)}
         style={{
           background: 'var(--bg-card)',
-          borderRadius: 'var(--r-2xl)',
-          border: `1px solid ${hovered ? 'var(--primary)' : 'transparent'}`,
-          boxShadow: hovered ? '0 24px 60px rgba(0,0,0,0.18)' : '0 16px 36px rgba(0,0,0,0.12)',
-          padding: 22,
+          borderRadius: 'var(--r-lg)',
+          border: `1px solid ${hovered ? 'var(--primary)' : 'var(--border)'}`,
+          boxShadow: hovered ? '0 0 16px rgba(239,159,39,0.2), var(--shadow)' : 'var(--shadow)',
+          padding: 20,
           display: 'flex',
           flexDirection: 'column',
-          gap: 18,
+          gap: 14,
           transition: 'border-color 0.2s, box-shadow 0.2s',
           cursor: 'pointer',
-          minHeight: 240,
         }}
         onClick={onEdit}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
-            <div style={{ width: 58, height: 58, borderRadius: '24px', background: '#151719', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
-              <AvatarDisplay value={agent.avatar} size={52} />
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 800, fontSize: 18, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agent.name}</div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>{new Date(agent.createdAt).toLocaleDateString()}</div>
-            </div>
+        {/* Avatar + name */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#1e1e1e', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
+            <AvatarDisplay value={agent.avatar} size={52} />
           </div>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: '999px', background: 'rgba(59,130,246,0.08)', color: '#60A5FA' }}>⚡ {agent.skills.length || 0}</span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: '999px', background: 'rgba(16,185,129,0.08)', color: '#34D399' }}>⚙️ {agent.tools.length || 0}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agent.name}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{new Date(agent.createdAt).toLocaleDateString()}</div>
           </div>
         </div>
-
-        <div style={{ color: 'var(--text-2)', fontSize: 13, lineHeight: 1.6, minHeight: 40, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {agent.description || 'No description available. Click edit to add a short summary for this agent.'}
+        {/* Badges */}
+        <div style={{ display: 'flex', gap: 6 }}>
+          <span style={{ background: 'rgba(239,159,39,0.15)', color: 'var(--primary)', borderRadius: 'var(--r-sm)', padding: '2px 8px', fontSize: 12, fontWeight: 600 }}>🎯 {agent.skills.length} skills</span>
+          <span style={{ background: 'rgba(20,184,166,0.15)', color: 'var(--teal)', borderRadius: 'var(--r-sm)', padding: '2px 8px', fontSize: 12, fontWeight: 600 }}>⚙️ {agent.tools.length} tools</span>
         </div>
-
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', borderTop: '1px solid var(--border)', paddingTop: 14 }} onClick={e => e.stopPropagation()}>
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: 4, borderTop: '1px solid var(--border)', paddingTop: 12 }} onClick={e => e.stopPropagation()}>
           {[
-            { icon: '✏️', label: 'Edit', fn: onEdit },
-            { icon: '💬', label: 'Test', fn: onTest },
-            { icon: '📋', label: 'Copy', fn: onDuplicate },
-            { icon: '📤', label: 'Export', fn: onExport },
-            { icon: '🗑', label: 'Delete', fn: onDelete, danger: true },
-          ].map(({ icon, label, fn, danger }) => (
-            <button key={label} title={label} onClick={fn}
-              style={{
-                flex: danger ? '0 0 auto' : '1 1 0',
-                minWidth: danger ? 42 : 92,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                padding: '10px 12px',
-                borderRadius: '14px',
-                border: '1px solid transparent',
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: 'pointer',
-                background: danger ? 'rgba(248,113,113,0.08)' : 'rgba(255,255,255,0.05)',
-                color: danger ? 'var(--danger)' : 'var(--text)',
-                transition: 'background 0.2s, border-color 0.2s',
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = danger ? 'rgba(248,113,113,0.16)' : 'rgba(255,255,255,0.12)'}
-              onMouseLeave={e => e.currentTarget.style.background = danger ? 'rgba(248,113,113,0.08)' : 'rgba(255,255,255,0.05)'}
-            >
-              <span>{icon}</span>
-              <span style={{ display: 'none' }}>{label}</span>
-            </button>
+            { label: '✏️ Edit', fn: onEdit },
+            { label: '💬 Test', fn: onTest },
+            { label: '📋 Copy', fn: onDuplicate },
+            { label: '📤 Export', fn: onExport },
+            { label: '🗑', fn: onDelete, danger: true },
+          ].map(({ label, fn, danger }) => (
+            <button key={label} onClick={fn}
+              style={{ flex: label === '🗑' ? 0 : 1, padding: '6px 4px', borderRadius: 'var(--r-sm)', fontSize: 12, fontWeight: 500, background: 'var(--bg-hover)', color: danger ? 'var(--danger)' : 'var(--text-2)', border: 'none' }}
+              onMouseEnter={e => e.currentTarget.style.background = danger ? 'rgba(239,68,68,0.1)' : 'var(--bg-input)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+            >{label}</button>
           ))}
         </div>
       </div>
@@ -2614,17 +2590,8 @@ def run(**kwargs):
     return (
       <div style={{ position: 'relative', height: '100%' }}>
         <div style={{ marginBottom: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-            <div>
-              <div style={{ fontWeight: 800, fontSize: 30, lineHeight: 1 }}>Agents</div>
-              <div style={{ color: 'var(--text-2)', fontSize: 14, marginTop: 6 }}>{agents.length} active agents orchestration</div>
-            </div>
-            <button onClick={onNew}
-              style={{ background: '#0f172a', color: '#fff', padding: '14px 20px', borderRadius: '999px', fontWeight: 700, fontSize: 14, border: 'none', boxShadow: '0 20px 60px rgba(15,23,42,0.35)', cursor: 'pointer' }}
-              onMouseEnter={e => e.currentTarget.style.background = '#111827'}
-              onMouseLeave={e => e.currentTarget.style.background = '#0f172a'}
-            >＋ New Agent</button>
-          </div>
+          <div style={{ fontWeight: 700, fontSize: 24 }}>Agents</div>
+          <div style={{ color: 'var(--text-2)', fontSize: 14, marginTop: 4 }}>{agents.length} agent{agents.length !== 1 ? 's' : ''}</div>
         </div>
         {agents.length === 0 ? (
           <EmptyState icon="🤖" title="No agents yet" subtitle="Click + New Agent to create your first agent" />
@@ -2644,6 +2611,12 @@ def run(**kwargs):
             ))}
           </div>
         )}
+        {/* FAB */}
+        <button onClick={onNew}
+          style={{ position: 'fixed', bottom: 32, right: 32, background: '#3a3a3a', color: '#fff', padding: '14px 24px', borderRadius: 'var(--r-xl)', fontWeight: 700, fontSize: 15, boxShadow: '0 4px 20px rgba(0,0,0,0.4)', zIndex: 50 }}
+          onMouseEnter={e => e.currentTarget.style.background = '#444444'}
+          onMouseLeave={e => e.currentTarget.style.background = '#3a3a3a'}
+        >＋ New Agent</button>
       </div>
     );
   }
