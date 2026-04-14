@@ -141,6 +141,7 @@ async function sendMsg(){
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('X-Frame-Options', 'ALLOWALL');
-  res.setHeader('Content-Security-Policy', "frame-ancestors * file:;");
+  res.setHeader('Content-Security-Policy', "frame-ancestors * file: data:;");
+  res.setHeader('Cache-Control', 'no-store');
   res.send(html);
 }
