@@ -22,7 +22,11 @@ export default async function handler(req, res) {
 
   const agent = row.data;
   const titleStr   = titleParam || agent.name || 'Agent';
-  const avatarStr  = agent.avatar  || '\uD83E\uDD16';
+  const avatarRaw  = agent.avatar  || '\uD83E\uDD16';
+  const avatarIsImage = avatarRaw.startsWith('data:') || avatarRaw.startsWith('http');
+  const avatarHtml = avatarIsImage
+    ? `<img src="${he(avatarRaw)}" style="width:30px;height:30px;border-radius:50%;object-fit:cover">`
+    : he(avatarRaw);
   const openingStr = agent.openingMessage || 'Hello!';
 
   const jsChatUrl = JSON.stringify(`/api/widget/${agentId}/chat`);
@@ -63,7 +67,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
 </style>
 </head>
 <body>
-<div id="header"><span class="av">${he(avatarStr)}</span><span class="nm">${he(titleStr)}</span></div>
+<div id="header"><span class="av">${avatarHtml}</span><span class="nm">${he(titleStr)}</span></div>
 <div id="messages"></div>
 <div id="inputbar">
   <textarea id="inp" placeholder="${he(placeholder)}" rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg()}"></textarea>

@@ -252,6 +252,12 @@
     );
   }
 
+  function AvatarDisplay({ value, size = 22, style: extraStyle = {} }) {
+    const isImage = value && (value.startsWith('data:') || value.startsWith('http'));
+    if (isImage) return <img src={value} style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, ...extraStyle }} />;
+    return <span style={{ fontSize: size, lineHeight: 1, ...extraStyle }}>{value || '🤖'}</span>;
+  }
+
   /* ─────────────────── RICH PROMPT EDITOR ─────────────────── */
   function RichPromptEditor({ value, onChange }) {
     const [mode, setMode] = useState('edit');
@@ -475,6 +481,7 @@
   function ConfigurationTab({ agent, onUpdate }) {
     const [showKey, setShowKey] = useState(false);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const fileInputRef = React.useRef(null);
     const models = agent.apiConfig.provider === 'claude' ? CLAUDE_MODELS : OPENAI_MODELS;
 
     function update(path, val) {
@@ -486,6 +493,29 @@
       onUpdate(updated);
     }
 
+    function handleImageUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = 64; canvas.height = 64;
+          const ctx = canvas.getContext('2d');
+          // cover-crop to square
+          const s = Math.min(img.width, img.height);
+          const sx = (img.width - s) / 2, sy = (img.height - s) / 2;
+          ctx.drawImage(img, sx, sy, s, s, 0, 0, 64, 64);
+          update(['avatar'], canvas.toDataURL('image/png', 0.9));
+          setShowEmojiPicker(false);
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+    }
+
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 720 }}>
         {/* Identity */}
@@ -494,15 +524,19 @@
           <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
             {/* Avatar */}
             <div style={{ position: 'relative' }}>
+              <input type="file" accept="image/*" ref={fileInputRef} style={{ display: 'none' }} onChange={handleImageUpload} />
               <button
                 onClick={() => setShowEmojiPicker(v => !v)}
-                style={{ width: 64, height: 64, borderRadius: '50%', background: '#1e1e1e', fontSize: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--border)' }}
-              >{agent.avatar}</button>
+                style={{ width: 64, height: 64, borderRadius: '50%', background: '#1e1e1e', fontSize: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--border)', overflow: 'hidden', padding: 0 }}
+              ><AvatarDisplay value={agent.avatar} size={40} /></button>
               {showEmojiPicker && (
-                <div style={{ position: 'absolute', top: 72, left: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 10, zIndex: 100, display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 4 }}>
-                  {EMOJI_OPTIONS.map(e => (
-                    <button key={e} onClick={() => { update(['avatar'], e); setShowEmojiPicker(false); }} style={{ fontSize: 22, background: 'transparent', borderRadius: 6, padding: 4 }}>{e}</button>
-                  ))}
+                <div style={{ position: 'absolute', top: 72, left: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 10, zIndex: 100, width: 190 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 4, marginBottom: 8 }}>
+                    {EMOJI_OPTIONS.map(e => (
+                      <button key={e} onClick={() => { update(['avatar'], e); setShowEmojiPicker(false); }} style={{ fontSize: 22, background: 'transparent', borderRadius: 6, padding: 4 }}>{e}</button>
+                    ))}
+                  </div>
+                  <button onClick={() => fileInputRef.current.click()} style={{ width: '100%', fontSize: 12, padding: '6px 0', borderRadius: 6, background: 'var(--bg-hover)', color: 'var(--text-2)', border: '1px dashed var(--border)', cursor: 'pointer' }}>📁 Upload image</button>
                 </div>
               )}
             </div>
@@ -1039,7 +1073,7 @@
       <div style={{ display: 'flex', flexDirection: 'column', height, borderRadius: radius, overflow: 'hidden', border: `1px solid ${accent}44`, boxShadow: `0 4px 24px rgba(0,0,0,0.4)` }}>
         {/* Header */}
         <div style={{ background: accent, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 22 }}>{agent.avatar}</span>
+          <AvatarDisplay value={agent.avatar} size={22} />
           <span style={{ fontWeight: 700, color: '#fff', fontSize: 15 }}>{title || agent.name}</span>
         </div>
         {noKey && (
@@ -1641,6 +1675,10 @@
     const iframeTag = `<iframe src="${widgetUrl}" width="100%" height="${widgetHeight}px" frameborder="0" style="border-radius:${radius}px;border:none;"></iframe>`;
 
     const avatar = agent.avatar || '🤖';
+    const avatarIsImage = avatar.startsWith('data:') || avatar.startsWith('http');
+    const btnIconHtml = avatarIsImage
+      ? `<img src="${avatar}" style="width:32px;height:32px;border-radius:50%;object-fit:cover">`
+      : avatar;
     const floatingSnippet = `<!-- ${agent.name} Chat Widget -->
 <style>
   #_agentbtn{position:fixed;bottom:24px;right:24px;width:56px;height:56px;border-radius:50%;background:${accent};border:none;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.25);font-size:26px;display:flex;align-items:center;justify-content:center;z-index:9998;transition:transform .2s}
@@ -1650,7 +1688,7 @@
   @media(max-width:440px){#_agentpanel{width:calc(100vw - 32px);right:16px;bottom:84px}}
 </style>
 <button id="_agentbtn" onclick="_agentToggle()" title="Chat with us">
-  <span id="_agentbtnicon">${avatar}</span>
+  <span id="_agentbtnicon">${btnIconHtml}</span>
 </button>
 <div id="_agentpanel"></div>
 <script>
@@ -1661,8 +1699,8 @@
     var i=document.getElementById('_agentbtnicon');
     if(_agentOpen){
       if(!_agentLoaded){p.innerHTML='<iframe src="${widgetUrl}" allow="microphone"></iframe>';_agentLoaded=true}
-      p.style.display='block';i.textContent='✕';
-    }else{p.style.display='none';i.textContent='${avatar}'}
+      p.style.display='block';i.innerHTML='✕';
+    }else{p.style.display='none';i.innerHTML='${btnIconHtml.replace(/'/g, "\\'")}'}
   }
 <\/script>`;
 
@@ -2025,7 +2063,7 @@ async function sendMsg(){
         <div className="slide-in-right" style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 420, background: 'var(--bg-sidebar)', borderLeft: '1px solid var(--border)', zIndex: 201, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
           {/* Header */}
           <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#1e1e1e', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>{agent.avatar}</div>
+            <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#1e1e1e', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}><AvatarDisplay value={agent.avatar} size={40} /></div>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 700, fontSize: 15 }}>{agent.name}</div>
               <div style={{ fontSize: 12, color: hasKey ? 'var(--success)' : 'var(--danger)', display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -2175,7 +2213,7 @@ async function sendMsg(){
         {/* Back + title */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
           <button onClick={onBack} style={{ background: 'var(--bg-hover)', color: 'var(--text-2)', padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 13 }}>← Back</button>
-          <span style={{ fontSize: 22 }}>{agent.avatar}</span>
+          <AvatarDisplay value={agent.avatar} size={22} />
           <span style={{ fontWeight: 700, fontSize: 18 }}>{agent.name}</span>
         </div>
         {/* Tab bar */}
@@ -2224,8 +2262,8 @@ async function sendMsg(){
       >
         {/* Avatar + name */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#1e1e1e', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0 }}>
-            {agent.avatar}
+          <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#1e1e1e', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
+            <AvatarDisplay value={agent.avatar} size={52} />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agent.name}</div>
@@ -3089,7 +3127,7 @@ def run(**kwargs):
             {agents.map(a => (
               <div key={a.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 20 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                  <div style={{ fontSize: 28 }}>{a.avatar || '🤖'}</div>
+                  <AvatarDisplay value={a.avatar || '🤖'} size={28} />
                   <div style={{ fontWeight: 600, flex: 1 }}>{a.name}</div>
                 </div>
                 <div style={{ color: 'var(--text-2)', fontSize: 12, marginBottom: 14, lineHeight: 1.4, minHeight: 32 }}>
