@@ -1692,7 +1692,8 @@
 </button>
 <div id="_agentpanel"></div>
 <script>
-  var _agentOpen=false,_agentLoaded=false;
+  var _agentOpen=false,_agentLoaded=false,_agentIcon='${btnIconHtml.replace(/'/g, "\\'")}';
+  fetch('${window.location.origin}/api/widget/${agent.id}/meta').then(function(r){return r.json()}).then(function(d){if(d.avatarHtml){_agentIcon=d.avatarHtml;if(!_agentOpen)document.getElementById('_agentbtnicon').innerHTML=d.avatarHtml}}).catch(function(){});
   function _agentToggle(){
     _agentOpen=!_agentOpen;
     var p=document.getElementById('_agentpanel');
@@ -1700,7 +1701,7 @@
     if(_agentOpen){
       if(!_agentLoaded){p.innerHTML='<iframe src="${widgetUrl}" allow="microphone"></iframe>';_agentLoaded=true}
       p.style.display='block';i.innerHTML='✕';
-    }else{p.style.display='none';i.innerHTML='${btnIconHtml.replace(/'/g, "\\'")}'}
+    }else{p.style.display='none';i.innerHTML=_agentIcon}
   }
 <\/script>`;
 
