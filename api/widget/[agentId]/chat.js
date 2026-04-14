@@ -136,12 +136,13 @@ export default async function handler(req, res) {
   const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || '';
   const ragChunks = lastUserMsg.trim() ? await retrieveRagChunks(agentId, lastUserMsg) : [];
   const systemPrompt = buildSystemPrompt(agent, ragChunks);
-  const apiKey   = (agent.apiConfig && agent.apiConfig.apiKey)   || '';
-  const provider = (agent.apiConfig && agent.apiConfig.provider) || 'claude';
-  const model    = (agent.apiConfig && agent.apiConfig.model)    || 'claude-sonnet-4-5';
+  const apiKey     = (agent.apiConfig && agent.apiConfig.apiKey)     || '';
+  const provider   = (agent.apiConfig && agent.apiConfig.provider)   || 'claude';
+  const model      = (agent.apiConfig && agent.apiConfig.model)      || 'claude-sonnet-4-5';
+  const ollamaHost = ((agent.apiConfig && agent.apiConfig.ollamaHost) || 'http://localhost:11434').replace(/\/$/, '');
   const toolDefs = agent.tools || [];
 
-  if (!apiKey) {
+  if (!apiKey && provider !== 'ollama') {
     return res.status(503).json({ error: 'Agent is not configured with an API key. Contact the site owner.' });
   }
 
@@ -173,6 +174,36 @@ export default async function handler(req, res) {
         }));
 
         msgs = [...msgs, { role: 'assistant', content: d.content }, { role: 'user', content: toolResults }];
+      }
+      throw new Error('Too many tool call rounds (max 10)');
+
+    } else if (provider === 'ollama') {
+      let msgs = [{ role: 'system', content: systemPrompt }, ...messages];
+
+      for (let round = 0; round < 10; round++) {
+        const body = { model, messages: msgs };
+        if (toolDefs.length > 0) body.tools = buildOpenAITools(agent);
+
+        const llmRes = await fetch(`${ollamaHost}/v1/chat/completions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const d = await llmRes.json();
+        if (!llmRes.ok) throw new Error(d.error?.message || JSON.stringify(d));
+
+        const choice = d.choices[0];
+        if (choice.finish_reason !== 'tool_calls') {
+          return res.json({ content: choice.message.content });
+        }
+
+        const toolResultMsgs = await Promise.all((choice.message.tool_calls || []).map(async tc => {
+          const inputs = JSON.parse(tc.function.arguments);
+          const result = await executeTool(tc.function.name, inputs, agent, baseUrl);
+          return { role: 'tool', tool_call_id: tc.id, content: result };
+        }));
+
+        msgs = [...msgs, choice.message, ...toolResultMsgs];
       }
       throw new Error('Too many tool call rounds (max 10)');
 

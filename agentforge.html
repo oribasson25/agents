@@ -119,6 +119,7 @@
   /* ─────────────────── CONSTANTS ─────────────────── */
   const CLAUDE_MODELS = ['claude-opus-4-5', 'claude-sonnet-4-5', 'claude-haiku-4-5'];
   const OPENAI_MODELS = ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'];
+  const OLLAMA_MODELS = ['gemma4:4b', 'gemma4:12b', 'gemma4:27b', 'gemma3:latest', 'llama3.2:latest', 'mistral:latest', 'qwen2.5:latest'];
 
   /* ─────────────────── HELPERS ─────────────────── */
   function uid() { return crypto.randomUUID(); }
@@ -179,7 +180,7 @@
       basePrompt: '',
       skills: [],
       tools: [],
-      apiConfig: { provider: 'claude', apiKey: '', model: 'claude-sonnet-4-5' },
+      apiConfig: { provider: 'claude', apiKey: '', model: 'claude-sonnet-4-5', ollamaHost: '' },
       scrapeUrls: [],
       createdAt: new Date().toISOString(),
       ...overrides,
@@ -482,7 +483,7 @@
     const [showKey, setShowKey] = useState(false);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const fileInputRef = React.useRef(null);
-    const models = agent.apiConfig.provider === 'claude' ? CLAUDE_MODELS : OPENAI_MODELS;
+    const models = agent.apiConfig.provider === 'claude' ? CLAUDE_MODELS : agent.apiConfig.provider === 'ollama' ? OLLAMA_MODELS : OPENAI_MODELS;
 
     function update(path, val) {
       const updated = JSON.parse(JSON.stringify(agent));
@@ -560,15 +561,23 @@
           <div style={{ marginBottom: 16 }}>
             <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 6, display: 'block' }}>Provider</label>
             <div style={{ display: 'inline-flex', background: 'var(--bg-input)', borderRadius: 'var(--r-xl)', padding: 3, gap: 2 }}>
-              {['claude','openai'].map(p => (
-                <button key={p} onClick={() => { const u = JSON.parse(JSON.stringify(agent)); u.apiConfig.provider = p; u.apiConfig.model = p === 'claude' ? CLAUDE_MODELS[1] : OPENAI_MODELS[0]; onUpdate(u); }}
+              {['claude','openai','ollama'].map(p => (
+                <button key={p} onClick={() => { const u = JSON.parse(JSON.stringify(agent)); u.apiConfig.provider = p; u.apiConfig.model = p === 'claude' ? CLAUDE_MODELS[1] : p === 'ollama' ? OLLAMA_MODELS[0] : OPENAI_MODELS[0]; onUpdate(u); }}
                   style={{ padding: '6px 18px', borderRadius: 'var(--r-xl)', fontWeight: 600, fontSize: 13, background: agent.apiConfig.provider === p ? 'var(--primary)' : 'transparent', color: agent.apiConfig.provider === p ? '#fff' : 'var(--text-2)' }}>
-                  {p === 'claude' ? '🟣 Claude' : '🟢 OpenAI'}
+                  {p === 'claude' ? '🟣 Claude' : p === 'ollama' ? '🦙 Ollama' : '🟢 OpenAI'}
                 </button>
               ))}
             </div>
           </div>
+          {/* Ollama Host */}
+          {agent.apiConfig.provider === 'ollama' && (
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Ollama Server IP</label>
+              <input type="text" value={agent.apiConfig.ollamaHost || ''} onChange={e => update(['apiConfig','ollamaHost'], e.target.value)} placeholder="http://192.168.1.100:11434" style={{ width: '100%' }} />
+            </div>
+          )}
           {/* API Key */}
+          {agent.apiConfig.provider !== 'ollama' && (
           <div style={{ marginBottom: 16 }}>
             <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>API Key</label>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -576,6 +585,7 @@
               <button onClick={() => setShowKey(v=>!v)} style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', fontSize: 16 }}>{showKey ? '🙈' : '👁'}</button>
             </div>
           </div>
+          )}
           {/* Model */}
           <div>
             <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Model</label>
@@ -1067,7 +1077,7 @@
       }
     }
 
-    const noKey = !agent.apiConfig.apiKey;
+    const noKey = agent.apiConfig.provider === 'ollama' ? !agent.apiConfig.ollamaHost : !agent.apiConfig.apiKey;
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height, borderRadius: radius, overflow: 'hidden', border: `1px solid ${accent}44`, boxShadow: `0 4px 24px rgba(0,0,0,0.4)` }}>
@@ -1078,7 +1088,7 @@
         </div>
         {noKey && (
           <div style={{ background: 'rgba(245,158,11,0.15)', borderBottom: '1px solid rgba(245,158,11,0.3)', padding: '8px 16px', fontSize: 12, color: 'var(--warning)', textAlign: 'center' }}>
-            Add an API key in Configuration to test live
+            {agent.apiConfig.provider === 'ollama' ? 'Add Ollama Server IP in Configuration to test live' : 'Add an API key in Configuration to test live'}
           </div>
         )}
         {/* Messages */}
@@ -1366,6 +1376,33 @@
         }));
 
         msgs = [...msgs, { role: 'assistant', content: d.content }, { role: 'user', content: toolResults }];
+      }
+      throw new Error('Too many tool call rounds (max 10)');
+
+    } else if (provider === 'ollama') {
+      const ollamaHost = (agent.apiConfig.ollamaHost || 'http://localhost:11434').replace(/\/$/, '');
+      let msgs = [{ role: 'system', content: systemPrompt }, ...history];
+
+      for (let round = 0; round < 10; round++) {
+        const body = { model, messages: msgs };
+        if (toolDefs.length > 0) body.tools = buildOpenAITools();
+
+        const r = await fetch(`${ollamaHost}/v1/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
+
+        const choice = d.choices[0];
+        if (choice.finish_reason !== 'tool_calls') return choice.message.content;
+
+        const toolResultMsgs = await Promise.all((choice.message.tool_calls || []).map(async tc => {
+          const inputs = JSON.parse(tc.function.arguments);
+          const onResult = await onToolCall(tc.function.name, inputs);
+          const result = await executeTool(tc.function.name, inputs);
+          if (onResult) onResult(result);
+          return { role: 'tool', tool_call_id: tc.id, content: result };
+        }));
+
+        msgs = [...msgs, choice.message, ...toolResultMsgs];
       }
       throw new Error('Too many tool call rounds (max 10)');
 
@@ -1806,6 +1843,7 @@
     const apiKey = (agent.apiConfig && agent.apiConfig.apiKey) || '';
     const provider = (agent.apiConfig && agent.apiConfig.provider) || 'claude';
     const model = (agent.apiConfig && agent.apiConfig.model) || 'claude-sonnet-4-5';
+    const ollamaHost = (agent.apiConfig && agent.apiConfig.ollamaHost) || 'http://localhost:11434';
     const titleStr = title || agent.name || 'Agent';
     const placeholderStr = placeholder || 'Type a message…';
     const avatarStr = agent.avatar || '🤖';
@@ -1816,6 +1854,7 @@
     const jsApiKey = JSON.stringify(apiKey);
     const jsProvider = JSON.stringify(provider);
     const jsModel = JSON.stringify(model);
+    const jsOllamaHost = JSON.stringify(ollamaHost.replace(/\/$/, ''));
     const jsOpening = JSON.stringify(openingStr);
 
     // HTML-escape helper for attribute/text values
@@ -1867,6 +1906,7 @@ var SYSTEM=${jsSystem};
 var API_KEY=${jsApiKey};
 var PROVIDER=${jsProvider};
 var MODEL=${jsModel};
+var OLLAMA_HOST=${jsOllamaHost};
 var history=[];
 var pending=false;
 function isHeb(t){return /^[\\u0590-\\u05FF]/.test((t||'').trim())}
@@ -1912,6 +1952,10 @@ async function sendMsg(){
       url='https://api.anthropic.com/v1/messages';
       hdrs={'Content-Type':'application/json','x-api-key':API_KEY,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'};
       body=JSON.stringify({model:MODEL,max_tokens:1024,system:SYSTEM,messages:history});
+    }else if(PROVIDER==='ollama'){
+      url=OLLAMA_HOST+'/v1/chat/completions';
+      hdrs={'Content-Type':'application/json'};
+      body=JSON.stringify({model:MODEL,messages:[{role:'system',content:SYSTEM},...history]});
     }else{
       url='https://api.openai.com/v1/chat/completions';
       hdrs={'Content-Type':'application/json','Authorization':'Bearer '+API_KEY};
@@ -2063,7 +2107,7 @@ async function sendMsg(){
       }
     }
 
-    const hasKey = !!agent.apiConfig.apiKey;
+    const hasKey = agent.apiConfig.provider === 'ollama' ? !!agent.apiConfig.ollamaHost : !!agent.apiConfig.apiKey;
 
     return (
       <>
@@ -2078,7 +2122,7 @@ async function sendMsg(){
               <div style={{ fontWeight: 700, fontSize: 15 }}>{agent.name}</div>
               <div style={{ fontSize: 12, color: hasKey ? 'var(--success)' : 'var(--danger)', display: 'flex', alignItems: 'center', gap: 4 }}>
                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: hasKey ? 'var(--success)' : 'var(--danger)', display: 'inline-block' }} />
-                {hasKey ? 'Connected' : 'No API key'}
+                {hasKey ? (agent.apiConfig.provider === 'ollama' ? `🦙 ${agent.apiConfig.ollamaHost}` : 'Connected') : (agent.apiConfig.provider === 'ollama' ? 'No Ollama host set' : 'No API key')}
               </div>
             </div>
             <IconBtn onClick={() => setShowHistory(h => !h)} title="Chat history" style={{ background: showHistory ? 'var(--bg-hover)' : undefined }}>🕐</IconBtn>
