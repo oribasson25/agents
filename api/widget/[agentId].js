@@ -13,6 +13,7 @@ export default async function handler(req, res) {
 
   const { agentId } = req.query;
   const accent      = req.query.accent      || '#6c63ff';
+  const titleColor  = req.query.titleColor  || '#ffffff';
   const titleParam  = req.query.title       || '';
   const placeholder = req.query.placeholder || 'Type a message\u2026';
   const height      = parseInt(req.query.height) || 500;
@@ -42,7 +43,7 @@ export default async function handler(req, res) {
 body{background:#0f1117;color:#f0f0f5;font-family:'Segoe UI',Arial,sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 #header{background:${he(accent)};padding:12px 16px;display:flex;align-items:center;gap:10px}
 #header .av{font-size:22px}
-#header .nm{font-weight:700;color:#fff;font-size:15px}
+#header .nm{font-weight:700;color:${he(titleColor)};font-size:15px}
 #messages{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:10px}
 #messages::-webkit-scrollbar{width:4px}
 #messages::-webkit-scrollbar-thumb{background:#2a2d3e;border-radius:2px}

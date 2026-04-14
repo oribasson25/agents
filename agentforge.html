@@ -1021,7 +1021,7 @@
   }
 
   /* ─────────────────── MINI CHAT WIDGET ─────────────────── */
-  function MiniChatWidget({ agent, accent, radius, height, placeholder, title }) {
+  function MiniChatWidget({ agent, accent, titleColor, radius, height, placeholder, title }) {
     const [messages, setMessages] = useState(() => {
       const ts = new Date();
       return [{ id: uid(), role: 'agent', content: agent.openingMessage || 'Hello!', timestamp: ts, isOpening: true }];
@@ -1074,7 +1074,7 @@
         {/* Header */}
         <div style={{ background: accent, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
           <AvatarDisplay value={agent.avatar} size={22} />
-          <span style={{ fontWeight: 700, color: '#fff', fontSize: 15 }}>{title || agent.name}</span>
+          <span style={{ fontWeight: 700, color: titleColor || '#fff', fontSize: 15 }}>{title || agent.name}</span>
         </div>
         {noKey && (
           <div style={{ background: 'rgba(245,158,11,0.15)', borderBottom: '1px solid rgba(245,158,11,0.3)', padding: '8px 16px', fontSize: 12, color: 'var(--warning)', textAlign: 'center' }}>
@@ -1664,13 +1664,14 @@
   function ExportTab({ agent }) {
     const [title, setTitle] = useState(agent.name);
     const [accent, setAccent] = useState('#6c63ff');
+    const [titleColor, setTitleColor] = useState('#ffffff');
     const [radius, setRadius] = useState(16);
     const [widgetHeight, setWidgetHeight] = useState(500);
     const [placeholder, setPlaceholder] = useState('Type a message…');
     const [mode, setMode] = useState('inline'); // 'inline' | 'floating'
     const [copied, setCopied] = useState('');
 
-    const params = new URLSearchParams({ title, accent, placeholder, height: widgetHeight });
+    const params = new URLSearchParams({ title, accent, titleColor, placeholder, height: widgetHeight });
     const baseUrl = window.location.origin.startsWith('file') ? 'https://8legs.vercel.app' : window.location.origin;
     const widgetUrl = `${baseUrl}/api/widget/${agent.id}?${params}`;
     const iframeTag = `<iframe src="${widgetUrl}" width="100%" height="${widgetHeight}px" frameborder="0" style="border-radius:${radius}px;border:none;"></iframe>`;
@@ -1742,6 +1743,13 @@
               <input value={accent} onChange={e => setAccent(e.target.value)} style={{ fontFamily: 'monospace', fontSize: 13 }} />
             </div>
           </div>
+          <div>
+            <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Title Text Color</label>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input type="color" value={titleColor} onChange={e => setTitleColor(e.target.value)} style={{ width: 48, flexShrink: 0 }} />
+              <input value={titleColor} onChange={e => setTitleColor(e.target.value)} style={{ fontFamily: 'monospace', fontSize: 13 }} />
+            </div>
+          </div>
           {mode === 'inline' && (
             <div>
               <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
@@ -1777,7 +1785,7 @@
           <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 20, border: '1px solid var(--border)', position: 'relative', flexShrink: 0 }}>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>Live Preview</div>
             <span style={{ position: 'absolute', top: 16, right: 16, background: 'var(--bg-hover)', color: 'var(--text-2)', fontSize: 11, padding: '3px 8px', borderRadius: 'var(--r-sm)', fontWeight: 600 }}>PREVIEW</span>
-            <MiniChatWidget agent={agent} accent={accent} radius={radius} height={widgetHeight} placeholder={placeholder} title={title} />
+            <MiniChatWidget agent={agent} accent={accent} titleColor={titleColor} radius={radius} height={widgetHeight} placeholder={placeholder} title={title} />
           </div>
           {/* Code block */}
           <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 16, border: '1px solid var(--border)' }}>
