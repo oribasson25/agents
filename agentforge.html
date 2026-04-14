@@ -1671,7 +1671,8 @@
     const [copied, setCopied] = useState('');
 
     const params = new URLSearchParams({ title, accent, placeholder, height: widgetHeight });
-    const widgetUrl = `${window.location.origin}/api/widget/${agent.id}?${params}`;
+    const baseUrl = window.location.origin.startsWith('file') ? 'https://8legs.vercel.app' : window.location.origin;
+    const widgetUrl = `${baseUrl}/api/widget/${agent.id}?${params}`;
     const iframeTag = `<iframe src="${widgetUrl}" width="100%" height="${widgetHeight}px" frameborder="0" style="border-radius:${radius}px;border:none;"></iframe>`;
 
     const avatar = agent.avatar || '🤖';
@@ -1692,8 +1693,8 @@
 </button>
 <div id="_agentpanel"></div>
 <script>
-  var _agentOpen=false,_agentLoaded=false,_agentIcon='${btnIconHtml.replace(/'/g, "\\'")}';
-  fetch('${window.location.origin}/api/widget/${agent.id}/meta?_t='+Date.now()).then(function(r){return r.json()}).then(function(d){if(d.avatarHtml){_agentIcon=d.avatarHtml;if(!_agentOpen)document.getElementById('_agentbtnicon').innerHTML=d.avatarHtml}}).catch(function(){});
+  var _agentOpen=false,_agentLoaded=false,_agentIcon='${btnIconHtml.replace(/'/g, "\\'")}',_baseUrl='${baseUrl}';
+  fetch(_baseUrl+'/api/widget/${agent.id}/meta?_t='+Date.now()).then(function(r){return r.json()}).then(function(d){if(d.avatarHtml){_agentIcon=d.avatarHtml;if(!_agentOpen)document.getElementById('_agentbtnicon').innerHTML=d.avatarHtml}}).catch(function(){});
   function _agentToggle(){
     _agentOpen=!_agentOpen;
     var p=document.getElementById('_agentpanel');
