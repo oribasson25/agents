@@ -67,7 +67,7 @@ textarea:focus{border-color:${he(accent)}}
 button{background:${he(accent)};color:#fff;border:none;padding:0 14px;border-radius:12px;font-size:18px;cursor:pointer;font-weight:700}
 button:disabled{opacity:.4;cursor:not-allowed}
 .dlp-notice{font-size:11px;color:#f59e0b;display:flex;align-items:center;gap:4px;padding:2px 4px}
-#dlp-banner{padding:5px 14px;background:#1e2130;border-top:1px solid #2a2d3e;font-size:11px;color:#6b7280;text-align:center}
+
 </style>
 </head>
 <body>
@@ -77,7 +77,6 @@ button:disabled{opacity:.4;cursor:not-allowed}
   <textarea id="inp" placeholder="${he(placeholder)}" rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg()}"></textarea>
   <button onclick="sendMsg()">&#x27A4;</button>
 </div>
-${(agent.dlp && (agent.dlp.creditCard || agent.dlp.israeliId)) ? '<div id="dlp-banner">\uD83D\uDD12 \u05D0\u05DC \u05EA\u05D7\u05E9\u05D5\u05E3 \u05DE\u05D9\u05D3\u05E2 \u05D0\u05D9\u05E9\u05D9 \u05E8\u05D2\u05D9\u05E9 \u05D1\u05E6\u05D0\u05D8 \u05D6\u05D4</div>' : ''}
 <script>
 var CHAT_URL=${jsChatUrl};
 var DLP=${jsDlp};
