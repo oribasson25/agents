@@ -181,6 +181,7 @@
       skills: [],
       tools: [],
       apiConfig: { provider: 'claude', apiKey: '', model: 'claude-sonnet-4-5', ollamaHost: '' },
+      dlp: { creditCard: false, israeliId: false },
       scrapeUrls: [],
       createdAt: new Date().toISOString(),
       ...overrides,
@@ -594,6 +595,34 @@
             </select>
           </div>
         </div>
+
+        {/* DLP */}
+        {(() => {
+          const dlp = agent.dlp || {};
+          const rules = [
+            { key: 'creditCard', label: 'כרטיס אשראי', desc: '1234-5678-9012-3456 / 1234567890123456' },
+            { key: 'israeliId',  label: 'תעודת זהות',  desc: '9 ספרות' },
+          ];
+          return (
+            <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 24, border: '1px solid var(--border)' }}>
+              <div style={{ fontWeight: 700, marginBottom: 4, fontSize: 15 }}>DLP — מניעת דליפת מידע</div>
+              <div style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 16 }}>מידע שיסומן יוחלף ב-[MASKED] לפני שנשלח ל-AI</div>
+              {rules.map(r => (
+                <div key={r.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{r.label}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-2)', marginTop: 2 }}>{r.desc}</div>
+                  </div>
+                  <div
+                    onClick={() => { const u = JSON.parse(JSON.stringify(agent)); u.dlp = { ...dlp, [r.key]: !dlp[r.key] }; onUpdate(u); }}
+                    style={{ width: 40, height: 22, borderRadius: 11, background: dlp[r.key] ? 'var(--primary)' : 'var(--bg-input)', border: '1px solid var(--border)', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
+                    <div style={{ position: 'absolute', top: 2, left: dlp[r.key] ? 20 : 2, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
 
         {/* Site Scraping */}
         {(() => {
@@ -1224,6 +1253,29 @@
     return system.trim();
   }
 
+  /* ─────────────────── DLP ─────────────────── */
+  function applyDlp(text, dlp) {
+    if (!dlp || typeof text !== 'string') return text;
+    let out = text;
+    if (dlp.creditCard) {
+      // with dashes/spaces or without, 16 digits
+      out = out.replace(/\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/g, '[MASKED]');
+    }
+    if (dlp.israeliId) {
+      // exactly 9 digits, not part of a longer number
+      out = out.replace(/\b\d{9}\b/g, '[MASKED]');
+    }
+    return out;
+  }
+
+  function dlpMessages(messages, dlp) {
+    if (!dlp) return messages;
+    return messages.map(m => {
+      if (m.role !== 'user' || typeof m.content !== 'string') return m;
+      return { ...m, content: applyDlp(m.content, dlp) };
+    });
+  }
+
   /* ─────────────────── TOOL CALLING ENGINE ─────────────────── */
   // onToolCall(name, inputs) — called before executing, so the UI can show a bubble
   async function callWithTools(agent, history, onToolCall, activeSkillId = null) {
@@ -1268,6 +1320,7 @@
 
     const systemPrompt = buildSystemPrompt(agent, ragChunks, webChunks);
     const toolDefs = (agent.tools || []);
+    const dlp = agent.dlp || {};
 
     const skillNames = (agent.skills || []).map(s => s.name);
 
@@ -1354,7 +1407,7 @@
 
     if (provider === 'claude') {
       const claudeHeaders = { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' };
-      let msgs = [...history];
+      let msgs = dlpMessages([...history], dlp);
 
       for (let round = 0; round < 10; round++) {
         const body = { model, max_tokens: 1024, system: systemPrompt, messages: msgs };
@@ -1381,7 +1434,7 @@
 
     } else if (provider === 'ollama') {
       const ollamaHost = (agent.apiConfig.ollamaHost || 'http://localhost:11434').replace(/\/$/, '');
-      let msgs = [{ role: 'system', content: systemPrompt }, ...history];
+      let msgs = [{ role: 'system', content: systemPrompt }, ...dlpMessages(history, dlp)];
 
       for (let round = 0; round < 10; round++) {
         const body = { model, messages: msgs };
@@ -1414,7 +1467,7 @@
     } else {
       // OpenAI
       const oaiHeaders = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` };
-      let msgs = [{ role: 'system', content: systemPrompt }, ...history];
+      let msgs = [{ role: 'system', content: systemPrompt }, ...dlpMessages(history, dlp)];
 
       for (let round = 0; round < 10; round++) {
         const body = { model, messages: msgs };

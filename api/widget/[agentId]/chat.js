@@ -1,5 +1,21 @@
 import { sql } from '../../_db.js';
 
+function applyDlp(text, dlp) {
+  if (!dlp || typeof text !== 'string') return text;
+  let out = text;
+  if (dlp.creditCard) out = out.replace(/\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/g, '[MASKED]');
+  if (dlp.israeliId)  out = out.replace(/\b\d{9}\b/g, '[MASKED]');
+  return out;
+}
+
+function dlpMessages(messages, dlp) {
+  if (!dlp) return messages;
+  return messages.map(m => {
+    if (m.role !== 'user' || typeof m.content !== 'string') return m;
+    return { ...m, content: applyDlp(m.content, dlp) };
+  });
+}
+
 function buildSystemPrompt(agent, ragChunks = []) {
   let system = agent.basePrompt || '';
   if (ragChunks.length > 0) {
@@ -140,7 +156,9 @@ export default async function handler(req, res) {
   const provider   = (agent.apiConfig && agent.apiConfig.provider)   || 'claude';
   const model      = (agent.apiConfig && agent.apiConfig.model)      || 'claude-sonnet-4-5';
   const ollamaHost = ((agent.apiConfig && agent.apiConfig.ollamaHost) || 'http://localhost:11434').replace(/\/$/, '');
-  const toolDefs = agent.tools || [];
+  const dlp        = agent.dlp || {};
+  const toolDefs   = agent.tools || [];
+  const safeMessages = dlpMessages(messages, dlp);
 
   if (!apiKey && provider !== 'ollama') {
     return res.status(503).json({ error: 'Agent is not configured with an API key. Contact the site owner.' });
@@ -148,7 +166,7 @@ export default async function handler(req, res) {
 
   try {
     if (provider === 'claude') {
-      let msgs = [...messages];
+      let msgs = [...safeMessages];
 
       for (let round = 0; round < 10; round++) {
         const body = { model, max_tokens: 1024, system: systemPrompt, messages: msgs };
@@ -178,7 +196,7 @@ export default async function handler(req, res) {
       throw new Error('Too many tool call rounds (max 10)');
 
     } else if (provider === 'ollama') {
-      let msgs = [{ role: 'system', content: systemPrompt }, ...messages];
+      let msgs = [{ role: 'system', content: systemPrompt }, ...safeMessages];
 
       for (let round = 0; round < 10; round++) {
         const body = { model, messages: msgs };
@@ -208,7 +226,7 @@ export default async function handler(req, res) {
       throw new Error('Too many tool call rounds (max 10)');
 
     } else {
-      let msgs = [{ role: 'system', content: systemPrompt }, ...messages];
+      let msgs = [{ role: 'system', content: systemPrompt }, ...safeMessages];
 
       for (let round = 0; round < 10; round++) {
         const body = { model, messages: msgs };
