@@ -1781,7 +1781,7 @@
     const params = new URLSearchParams({ title, accent, titleColor, placeholder, height: widgetHeight });
     const baseUrl = window.location.origin.startsWith('file') ? 'https://8legs.vercel.app' : window.location.origin;
     const widgetUrl = `${baseUrl}/api/widget/${agent.id}?${params}`;
-    const iframeTag = `<iframe src="${widgetUrl}" width="100%" height="${widgetHeight}px" frameborder="0" style="border-radius:${radius}px;border:none;"></iframe>`;
+    const iframeTag = `<iframe src="${widgetUrl}" width="100%" height="${widgetHeight}px" frameborder="0" style="border-radius:${radius}px;border:none;" sandbox="allow-scripts allow-forms"></iframe>`;
 
     const avatar = agent.avatar || '🤖';
     const avatarIsImage = avatar.startsWith('data:') || avatar.startsWith('http');
@@ -1808,7 +1808,7 @@
     var p=document.getElementById('_agentpanel');
     var i=document.getElementById('_agentbtnicon');
     if(_agentOpen){
-      if(!_agentLoaded){p.innerHTML='<iframe src="${widgetUrl}" allow="microphone"></iframe>';_agentLoaded=true}
+      if(!_agentLoaded){p.innerHTML='<iframe src="${widgetUrl}" allow="microphone" sandbox="allow-scripts allow-forms"></iframe>';_agentLoaded=true}
       p.style.display='block';i.innerHTML='✕';
     }else{p.style.display='none';i.innerHTML=_agentIcon}
   }
