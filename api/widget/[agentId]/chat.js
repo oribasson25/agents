@@ -5,6 +5,11 @@ function applyDlp(text, dlp) {
   let out = text;
   if (dlp.creditCard) out = out.replace(/\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/g, '[MASKED]');
   if (dlp.israeliId)  out = out.replace(/\b\d{9}\b/g, '[MASKED]');
+  if (dlp.codeBlocks) {
+    out = out.replace(/```[\s\S]*?```/g, '[CODE BLOCKED]');
+    out = out.replace(/<script\b[\s\S]*?<\/script>/gi, '[CODE BLOCKED]');
+    out = out.replace(/^(\$|#!)\s*\S[^\n]*/gm, '[CODE BLOCKED]');
+  }
   return out;
 }
 
@@ -29,6 +34,9 @@ function buildSystemPrompt(agent, ragChunks = []) {
   const dlp = agent.dlp || {};
   if (dlp.creditCard || dlp.israeliId) {
     system += '\n\n[SECURITY NOTICE] Never process, repeat, or store personal identifiable information (PII). If the user provides sensitive data such as credit card numbers or ID numbers, refuse to repeat it and treat it as [MASKED].';
+  }
+  if (dlp.codeBlocks) {
+    system += '\n\n[SECURITY NOTICE] Code blocks, scripts, and shell commands are not permitted. If the user sends [CODE BLOCKED], refuse to execute, explain, or reproduce it.';
   }
   return system.trim();
 }

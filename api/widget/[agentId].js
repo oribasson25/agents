@@ -84,6 +84,11 @@ function applyDlp(t){
   if(!t)return t;
   if(DLP.creditCard)t=t.replace(/\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/g,'[MASKED]');
   if(DLP.israeliId)t=t.replace(/\b\d{9}\b/g,'[MASKED]');
+  if(DLP.codeBlocks){
+    t=t.replace(/```[\s\S]*?```/g,'[CODE BLOCKED]');
+    t=t.replace(/<script\b[\s\S]*?<\/script>/gi,'[CODE BLOCKED]');
+    t=t.replace(/^(\$|#!)\s*\S[^\n]*/gm,'[CODE BLOCKED]');
+  }
   return t;
 }
 var SESSION_ID=(function(){var a='0123456789abcdef',s='';for(var i=0;i<24;i++)s+=a[Math.floor(Math.random()*16)];return s})();
