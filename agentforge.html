@@ -2747,109 +2747,10 @@ def run(**kwargs):
     );
   }
 
-  /* ─────────────────── CONVERSATIONS VIEW ─────────────────── */
-  function ConversationsView({ agents, onOpenChat }) {
-    const PAGE_SIZE = 10;
-    const [page, setPage] = React.useState(0);
-
-    const allConversations = React.useMemo(() => {
-      const result = [];
-      for (const agent of (agents || [])) {
-        try {
-          const raw = localStorage.getItem(`agentforge_history_${agent.id}`);
-          if (!raw) continue;
-          const sessions = JSON.parse(raw);
-          for (const s of sessions) {
-            if (!s.messages || !s.messages.some(m => m.role === 'user')) continue;
-            const firstUser = s.messages.find(m => m.role === 'user');
-            result.push({
-              sessionId: s.id,
-              agentId: agent.id,
-              agentName: agent.name,
-              agentAvatar: agent.avatar,
-              startedAt: new Date(s.startedAt),
-              preview: firstUser?.content?.slice(0, 80) || '—',
-              msgCount: s.messages.filter(m => m.role === 'user').length,
-              totalMsgs: s.messages.filter(m => m.role === 'user' || m.role === 'agent').length,
-            });
-          }
-        } catch (_) {}
-      }
-      return result.sort((a, b) => b.startedAt - a.startedAt);
-    }, [agents]);
-
-    const totalPages = Math.ceil(allConversations.length / PAGE_SIZE);
-    const pageItems = allConversations.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
-
-    return (
-      <div style={{ maxWidth: 720, margin: '0 auto' }}>
-        <div style={{ marginBottom: 28 }}>
-          <h2 style={{ fontWeight: 700, fontSize: 22, margin: 0 }}>Conversations</h2>
-          <div style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>{allConversations.length} total across all agents</div>
-        </div>
-
-        {allConversations.length === 0 ? (
-          <div style={{ textAlign: 'center', color: 'var(--text-muted)', paddingTop: 60, fontSize: 14 }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>🕐</div>
-            No conversations yet. Start chatting with an agent!
-          </div>
-        ) : (
-          <>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {pageItems.map(conv => (
-                <div
-                  key={conv.agentId + conv.sessionId}
-                  onClick={() => onOpenChat(conv.agentId, conv.sessionId)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '14px 18px', borderRadius: 'var(--r-md)', background: 'var(--bg-card)', border: '1px solid var(--border)', cursor: 'pointer' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-card)'}
-                >
-                  <div style={{ width: 42, height: 42, borderRadius: '50%', background: 'var(--bg-panel)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}><AvatarDisplay value={conv.agentAvatar} size={42} /></div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 3 }}>{conv.preview}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                      <span style={{ color: 'var(--text-2)', fontWeight: 500 }}>{conv.agentName}</span>
-                      &nbsp;·&nbsp;{conv.msgCount} {conv.msgCount === 1 ? 'message' : 'messages'}
-                      &nbsp;·&nbsp;{conv.startedAt.toLocaleDateString()} {conv.startedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                  </div>
-                  <div style={{ fontSize: 16, color: 'var(--text-muted)', flexShrink: 0 }}>›</div>
-                </div>
-              ))}
-            </div>
-
-            {totalPages > 1 && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 24 }}>
-                <button
-                  onClick={() => setPage(p => Math.max(0, p - 1))}
-                  disabled={page === 0}
-                  style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', background: 'var(--bg-card)', border: '1px solid var(--border)', color: page === 0 ? 'var(--text-muted)' : 'var(--text)', cursor: page === 0 ? 'default' : 'pointer', fontSize: 13 }}
-                >← Prev</button>
-                {Array.from({ length: totalPages }, (_, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setPage(i)}
-                    style={{ width: 32, height: 32, borderRadius: 'var(--r-md)', background: i === page ? 'var(--primary)' : 'var(--bg-card)', border: `1px solid ${i === page ? 'var(--primary)' : 'var(--border)'}`, color: i === page ? '#fff' : 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: i === page ? 700 : 400 }}
-                  >{i + 1}</button>
-                ))}
-                <button
-                  onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
-                  disabled={page === totalPages - 1}
-                  style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', background: 'var(--bg-card)', border: '1px solid var(--border)', color: page === totalPages - 1 ? 'var(--text-muted)' : 'var(--text)', cursor: page === totalPages - 1 ? 'default' : 'pointer', fontSize: 13 }}
-                >Next →</button>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    );
-  }
-
   /* ─────────────────── SIDEBAR ─────────────────── */
   function Sidebar({ activeNav, onNav, user, onLogout }) {
     const items = [
       { id: 'home', label: 'Home', icon: '🏠' },
-      { id: 'conversations', label: 'Conversations', icon: '🕐' },
       { id: 'docs', label: 'Documentation', icon: '📖' },
       { id: 'settings', label: 'Settings', icon: '⚙️' },
       ...(user && user.isAdmin ? [{ id: 'admin', label: 'Admin', icon: '🛡️' }] : []),
@@ -3494,9 +3395,7 @@ def run(**kwargs):
       <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
         <Sidebar activeNav={nav} onNav={handleNav} user={user} onLogout={onLogout} />
         <div style={{ flex: 1, overflowY: 'auto', padding: '32px 32px 80px', background: 'var(--bg-app)' }}>
-          {nav === 'conversations' ? (
-            <ConversationsView agents={state.agents} onOpenChat={(id, sessionId) => dispatch({ type: 'OPEN_CHAT', id, sessionId })} />
-          ) : nav === 'docs' ? (
+          {nav === 'docs' ? (
             <DocsView />
           ) : nav === 'admin' ? (
             adminSelectedUser ? (
