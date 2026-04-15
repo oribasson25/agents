@@ -2802,7 +2802,7 @@ def run(**kwargs):
                   onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-card)'}
                 >
-                  <div style={{ width: 42, height: 42, borderRadius: '50%', background: 'var(--bg-panel)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>{conv.agentAvatar}</div>
+                  <div style={{ width: 42, height: 42, borderRadius: '50%', background: 'var(--bg-panel)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}><AvatarDisplay value={conv.agentAvatar} size={42} /></div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 3 }}>{conv.preview}</div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
@@ -3097,7 +3097,10 @@ def run(**kwargs):
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
             <button onClick={() => setOpenSession(null)} style={{ background: 'var(--bg-hover)', color: 'var(--text-2)', padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 13 }}>← Back</button>
             <div>
-              <div style={{ fontWeight: 700, fontSize: 20 }}>{openSession.agent_avatar} {openSession.agent_name}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 700, fontSize: 20 }}>
+                <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--bg-panel)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}><AvatarDisplay value={openSession.agent_avatar || '🤖'} size={32} /></div>
+                {openSession.agent_name}
+              </div>
               <div style={{ color: 'var(--text-2)', fontSize: 12, marginTop: 2 }}>
                 {new Date(openSession.started_at).toLocaleString()} · {msgs.filter(m => m.role === 'user').length} user messages
               </div>
@@ -3158,7 +3161,7 @@ def run(**kwargs):
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                   >
-                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--bg-panel)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>{s.agent_avatar || '🤖'}</div>
+                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--bg-panel)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}><AvatarDisplay value={s.agent_avatar || '🤖'} size={40} /></div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 14, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 3 }}>{preview}</div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
