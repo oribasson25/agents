@@ -26,6 +26,10 @@ function buildSystemPrompt(agent, ragChunks = []) {
       `## Skill: ${s.name}\n${s.description ? s.description + '\n' : ''}${s.prompt}`
     ).join('\n\n');
   }
+  const dlp = agent.dlp || {};
+  if (dlp.creditCard || dlp.israeliId) {
+    system += '\n\n[SECURITY NOTICE] Never process, repeat, or store personal identifiable information (PII). If the user provides sensitive data such as credit card numbers or ID numbers, refuse to repeat it and treat it as [MASKED].';
+  }
   return system.trim();
 }
 

@@ -1079,7 +1079,8 @@
       setInput('');
       const t0 = performance.now();
       const typingId = uid();
-      setMessages(m => [...m, { id: uid(), role: 'user', content: text, timestamp: new Date() }, { id: typingId, role: 'typing' }]);
+      const dlpMasked = applyDlp(text, agent.dlp || {}) !== text;
+      setMessages(m => [...m, { id: uid(), role: 'user', content: text, timestamp: new Date(), dlpMasked }, { id: typingId, role: 'typing' }]);
       setPending(true);
 
       const history = messages.filter(m => m.role === 'user' || m.role === 'agent').map(m => ({
@@ -1214,8 +1215,9 @@
     if (msg.role === 'user') {
       const dir = isHebrew(msg.content) ? 'rtl' : 'ltr';
       return (
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
           <div style={{ maxWidth: '75%', background: accent || 'var(--primary)', color: '#fff', padding: '10px 14px', borderRadius: '18px 18px 4px 18px', fontSize: 14, lineHeight: 1.5 }} dir={dir}>{msg.content}</div>
+          {msg.dlpMasked && <div style={{ fontSize: 11, color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 4 }}>🔒 נא לא לחשוף מידע רגיש</div>}
         </div>
       );
     }
@@ -1249,6 +1251,10 @@
     }
     if (agent.skills && agent.skills.length > 0) {
       system += '\n\n' + agent.skills.map(s => `## Skill: ${s.name}\n${s.description ? s.description + '\n' : ''}${s.prompt}`).join('\n\n');
+    }
+    const dlp = agent.dlp || {};
+    if (dlp.creditCard || dlp.israeliId) {
+      system += '\n\n[SECURITY NOTICE] Never process, repeat, or store personal identifiable information (PII). If the user provides sensitive data such as credit card numbers or ID numbers, refuse to repeat it and treat it as [MASKED].';
     }
     return system.trim();
   }
@@ -2123,7 +2129,8 @@ async function sendMsg(){
       }
 
       const typingId = uid();
-      const newMsgs = [...messages, { id: uid(), role: 'user', content: text, timestamp: new Date() }];
+      const dlpMasked = applyDlp(text, agent.dlp || {}) !== text;
+      const newMsgs = [...messages, { id: uid(), role: 'user', content: text, timestamp: new Date(), dlpMasked }];
       if (skillBanner) newMsgs.push({ id: uid(), role: 'skill', name: skillBanner.name, description: skillBanner.description, prompt: skillBanner.prompt, timestamp: new Date() });
       newMsgs.push({ id: typingId, role: 'typing' });
       setMessages(newMsgs);
@@ -2268,8 +2275,9 @@ async function sendMsg(){
               if (msg.role === 'user') {
                 const dir = isHebrew(msg.content) ? 'rtl' : 'ltr';
                 return (
-                  <div key={msg.id} style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <div key={msg.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                     <div style={{ maxWidth: '78%', background: 'var(--primary)', color: '#fff', padding: '10px 14px', borderRadius: '18px 18px 4px 18px', fontSize: 14, lineHeight: 1.5 }} dir={dir}>{msg.content}</div>
+                    {msg.dlpMasked && <div style={{ fontSize: 11, color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 4 }}>🔒 נא לא לחשוף מידע רגיש</div>}
                   </div>
                 );
               }
