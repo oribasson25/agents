@@ -158,6 +158,11 @@
   async function adminDeleteAgent(agentId) { return apiFetch(`/api/admin/agents/${agentId}`, { method: 'DELETE' }); }
   async function adminUpdateAgent(agent) { return apiFetch(`/api/admin/agents/${agent.id}`, { method: 'PUT', body: JSON.stringify(agent) }).then(r => r.json()); }
   async function adminDuplicateTo(agentId, targetUserId) { return apiFetch(`/api/admin/agents/${agentId}/duplicate-to/${targetUserId}`, { method: 'POST' }).then(r => r.json()); }
+  async function adminListChatSessions({ agentId, limit = 50, offset = 0 } = {}) {
+    const params = new URLSearchParams({ limit, offset });
+    if (agentId) params.set('agentId', agentId);
+    return apiFetch(`/api/admin/chat-sessions?${params}`).then(r => r.json());
+  }
 
   /* ─────────────────── DEBOUNCE ─────────────────── */
   function useDebounce(fn, delay) {
@@ -3069,9 +3074,124 @@ def run(**kwargs):
     );
   }
 
+  /* ─────────────────── ADMIN: CHAT HISTORY ─────────────────── */
+  function AdminChatHistoryView({ onBack }) {
+    const PAGE_SIZE = 20;
+    const [data, setData]           = useState(null);
+    const [offset, setOffset]       = useState(0);
+    const [openSession, setOpenSession] = useState(null);
+
+    function load(off) {
+      setData(null);
+      adminListChatSessions({ limit: PAGE_SIZE, offset: off })
+        .then(d => { setData(d); setOffset(off); })
+        .catch(() => setData({ sessions: [], total: 0 }));
+    }
+
+    useEffect(() => { load(0); }, []);
+
+    if (openSession) {
+      const msgs = openSession.messages || [];
+      return (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+            <button onClick={() => setOpenSession(null)} style={{ background: 'var(--bg-hover)', color: 'var(--text-2)', padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 13 }}>← Back</button>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 20 }}>{openSession.agent_avatar} {openSession.agent_name}</div>
+              <div style={{ color: 'var(--text-2)', fontSize: 12, marginTop: 2 }}>
+                {new Date(openSession.started_at).toLocaleString()} · {msgs.filter(m => m.role === 'user').length} user messages
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 720 }}>
+            {msgs.filter(m => m.role === 'user' || m.role === 'assistant').map((m, i) => (
+              <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                <div style={{
+                  maxWidth: '80%', padding: '10px 14px', fontSize: 14, lineHeight: 1.5,
+                  whiteSpace: 'pre-wrap', wordBreak: 'break-word', borderRadius: m.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+                  background: m.role === 'user' ? 'var(--primary)' : 'var(--bg-card)',
+                  color: m.role === 'user' ? '#fff' : 'var(--text)',
+                  border: m.role === 'assistant' ? '1px solid var(--border)' : 'none',
+                }}>{m.content}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, padding: '0 4px' }}>
+                  {m.role === 'user' ? 'User' : openSession.agent_name}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    const total = data?.total || 0;
+    const totalPages = Math.ceil(total / PAGE_SIZE);
+    const currentPage = Math.floor(offset / PAGE_SIZE);
+
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+          <button onClick={onBack} style={{ background: 'var(--bg-hover)', color: 'var(--text-2)', padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 13 }}>← Back</button>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 22 }}>Chat History</div>
+            {data && <div style={{ color: 'var(--text-2)', fontSize: 13, marginTop: 2 }}>{total} conversation{total !== 1 ? 's' : ''} across all agents</div>}
+          </div>
+        </div>
+
+        {!data ? (
+          <div style={{ color: 'var(--text-2)', padding: 40 }}>Loading…</div>
+        ) : data.sessions.length === 0 ? (
+          <div style={{ textAlign: 'center', color: 'var(--text-muted)', paddingTop: 60, fontSize: 14 }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>💬</div>
+            No conversations yet.
+          </div>
+        ) : (
+          <>
+            <div style={{ background: 'var(--bg-card)', borderRadius: 'var(--r-lg)', border: '1px solid var(--border)', overflow: 'hidden' }}>
+              {data.sessions.map((s, i) => {
+                const msgs = s.messages || [];
+                const userMsgs = msgs.filter(m => m.role === 'user');
+                const preview = userMsgs[0]?.content?.slice(0, 80) || '—';
+                return (
+                  <div key={s.id}
+                    onClick={() => setOpenSession(s)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '14px 18px', cursor: 'pointer', borderBottom: i < data.sessions.length - 1 ? '1px solid var(--border)' : 'none' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--bg-panel)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>{s.agent_avatar || '🤖'}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 3 }}>{preview}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        <span style={{ color: 'var(--text-2)', fontWeight: 500 }}>{s.agent_name}</span>
+                        &nbsp;·&nbsp;{userMsgs.length} message{userMsgs.length !== 1 ? 's' : ''}
+                        &nbsp;·&nbsp;{new Date(s.started_at).toLocaleDateString()} {new Date(s.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 16, color: 'var(--text-muted)', flexShrink: 0 }}>›</div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 20 }}>
+                <button onClick={() => load((currentPage - 1) * PAGE_SIZE)} disabled={currentPage === 0}
+                  style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', background: 'var(--bg-card)', border: '1px solid var(--border)', color: currentPage === 0 ? 'var(--text-muted)' : 'var(--text)', cursor: currentPage === 0 ? 'default' : 'pointer', fontSize: 13 }}>← Prev</button>
+                <span style={{ fontSize: 13, color: 'var(--text-2)' }}>{currentPage + 1} / {totalPages}</span>
+                <button onClick={() => load((currentPage + 1) * PAGE_SIZE)} disabled={currentPage >= totalPages - 1}
+                  style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', background: 'var(--bg-card)', border: '1px solid var(--border)', color: currentPage >= totalPages - 1 ? 'var(--text-muted)' : 'var(--text)', cursor: currentPage >= totalPages - 1 ? 'default' : 'pointer', fontSize: 13 }}>Next →</button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
+
   /* ─────────────────── ADMIN: USERS LIST ─────────────────── */
   function AdminView({ onSelectUser, myAgents }) {
-    const [users, setUsers] = useState(null);
+    const [tab, setTab]             = useState('users');
+    const [users, setUsers]         = useState(null);
     const [resetting, setResetting] = useState(null);
     const [resetResult, setResetResult] = useState({});
 
@@ -3091,13 +3211,31 @@ def run(**kwargs):
       }
     }
 
+    const tabStyle = (id) => ({
+      padding: '7px 18px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: tab === id ? 700 : 400,
+      background: tab === id ? 'var(--primary)' : 'var(--bg-card)',
+      color: tab === id ? '#fff' : 'var(--text-2)',
+      border: `1px solid ${tab === id ? 'var(--primary)' : 'var(--border)'}`,
+      cursor: 'pointer',
+    });
+
+    if (tab === 'history') {
+      return <AdminChatHistoryView onBack={() => setTab('users')} />;
+    }
+
     if (!users) return <div style={{ color: 'var(--text-2)', padding: 40 }}>Loading…</div>;
 
     return (
       <div>
         <div style={{ marginBottom: 24 }}>
-          <div style={{ fontWeight: 700, fontSize: 24 }}>Admin — Users</div>
-          <div style={{ color: 'var(--text-2)', fontSize: 14, marginTop: 4 }}>{users.length} registered user{users.length !== 1 ? 's' : ''}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+            <div style={{ fontWeight: 700, fontSize: 24 }}>Admin</div>
+            <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+              <button onClick={() => setTab('users')} style={tabStyle('users')}>Users</button>
+              <button onClick={() => setTab('history')} style={tabStyle('history')}>💬 Chat History</button>
+            </div>
+          </div>
+          <div style={{ color: 'var(--text-2)', fontSize: 14 }}>{users.length} registered user{users.length !== 1 ? 's' : ''}</div>
         </div>
         <div style={{ background: 'var(--bg-card)', borderRadius: 'var(--r-lg)', border: '1px solid var(--border)', overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>

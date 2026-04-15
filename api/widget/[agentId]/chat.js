@@ -33,6 +33,19 @@ function buildSystemPrompt(agent, ragChunks = []) {
   return system.trim();
 }
 
+async function saveSession(sessionId, agentId, allMessages) {
+  if (!sessionId) return;
+  try {
+    await sql`
+      insert into chat_sessions (id, agent_id, source, messages, started_at, updated_at)
+      values (${sessionId}, ${agentId}, 'widget', ${JSON.stringify(allMessages)}, now(), now())
+      on conflict (id) do update
+        set messages   = excluded.messages,
+            updated_at = now()
+    `;
+  } catch (_) {}
+}
+
 async function retrieveRagChunks(agentId, query) {
   try {
     const chunks = await sql`
@@ -141,7 +154,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
   const { agentId } = req.query;
-  const { messages } = req.body || {};
+  const { messages, sessionId } = req.body || {};
 
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: 'messages array required' });
@@ -186,6 +199,8 @@ export default async function handler(req, res) {
 
         if (d.stop_reason !== 'tool_use') {
           const text = d.content.find(c => c.type === 'text')?.text || '';
+          const finalMessages = [...safeMessages, { role: 'assistant', content: text }];
+          await saveSession(sessionId, agentId, finalMessages);
           return res.json({ content: text });
         }
 
@@ -216,7 +231,10 @@ export default async function handler(req, res) {
 
         const choice = d.choices[0];
         if (choice.finish_reason !== 'tool_calls') {
-          return res.json({ content: choice.message.content });
+          const text = choice.message.content;
+          const finalMessages = [...safeMessages, { role: 'assistant', content: text }];
+          await saveSession(sessionId, agentId, finalMessages);
+          return res.json({ content: text });
         }
 
         const toolResultMsgs = await Promise.all((choice.message.tool_calls || []).map(async tc => {
@@ -246,7 +264,10 @@ export default async function handler(req, res) {
 
         const choice = d.choices[0];
         if (choice.finish_reason !== 'tool_calls') {
-          return res.json({ content: choice.message.content });
+          const text = choice.message.content;
+          const finalMessages = [...safeMessages, { role: 'assistant', content: text }];
+          await saveSession(sessionId, agentId, finalMessages);
+          return res.json({ content: text });
         }
 
         const toolResultMsgs = await Promise.all((choice.message.tool_calls || []).map(async tc => {

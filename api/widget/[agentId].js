@@ -78,6 +78,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
 var CHAT_URL=${jsChatUrl};
 var chatHistory=[];
 var pending=false;
+var SESSION_ID=(function(){var a='0123456789abcdef',s='';for(var i=0;i<24;i++)s+=a[Math.floor(Math.random()*16)];return s})();
 function isHeb(t){return /^[\u0590-\u05FF]/.test((t||'').trim())}
 function fmt(d){return new Date(d).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false})}
 var msgs=document.getElementById('messages');
@@ -117,7 +118,7 @@ async function sendMsg(){
   showTyping();
   try{
     console.log('[widget] sending to',CHAT_URL,'messages:',history.length);
-    var r=await fetch(CHAT_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:chatHistory})});
+    var r=await fetch(CHAT_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:chatHistory,sessionId:SESSION_ID})});
     console.log('[widget] response status:',r.status);
     var raw=await r.text();
     console.log('[widget] raw response:',raw);
