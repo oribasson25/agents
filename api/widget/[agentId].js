@@ -32,6 +32,7 @@ export default async function handler(req, res) {
 
   const jsChatUrl = JSON.stringify(`/api/widget/${agentId}/chat`);
   const jsOpening = JSON.stringify(openingStr);
+  const jsDlp     = JSON.stringify(agent.dlp || {});
 
   const html = `<!DOCTYPE html>
 <html>
@@ -76,8 +77,15 @@ button:disabled{opacity:.4;cursor:not-allowed}
 </div>
 <script>
 var CHAT_URL=${jsChatUrl};
+var DLP=${jsDlp};
 var chatHistory=[];
 var pending=false;
+function applyDlp(t){
+  if(!t)return t;
+  if(DLP.creditCard)t=t.replace(/\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/g,'[MASKED]');
+  if(DLP.israeliId)t=t.replace(/\b\d{9}\b/g,'[MASKED]');
+  return t;
+}
 var SESSION_ID=(function(){var a='0123456789abcdef',s='';for(var i=0;i<24;i++)s+=a[Math.floor(Math.random()*16)];return s})();
 function isHeb(t){return /^[\u0590-\u05FF]/.test((t||'').trim())}
 function fmt(d){return new Date(d).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false})}
@@ -108,7 +116,7 @@ function hideTyping(){var d=document.getElementById('typing');if(d)d.remove()}
 addMsg('agent',${jsOpening},new Date());
 async function sendMsg(){
   var inp=document.getElementById('inp');
-  var text=inp.value.trim();
+  var text=applyDlp(inp.value.trim());
   if(!text||pending)return;
   inp.value='';inp.style.height='auto';
   chatHistory.push({role:'user',content:text});
