@@ -66,6 +66,8 @@ textarea{flex:1;background:#252837;color:#f0f0f5;border:1px solid #2a2d3e;border
 textarea:focus{border-color:${he(accent)}}
 button{background:${he(accent)};color:#fff;border:none;padding:0 14px;border-radius:12px;font-size:18px;cursor:pointer;font-weight:700}
 button:disabled{opacity:.4;cursor:not-allowed}
+.dlp-notice{font-size:11px;color:#f59e0b;display:flex;align-items:center;gap:4px;padding:2px 4px}
+#dlp-banner{padding:5px 14px;background:#1e2130;border-top:1px solid #2a2d3e;font-size:11px;color:#6b7280;text-align:center}
 </style>
 </head>
 <body>
@@ -75,6 +77,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
   <textarea id="inp" placeholder="${he(placeholder)}" rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg()}"></textarea>
   <button onclick="sendMsg()">&#x27A4;</button>
 </div>
+${(agent.dlp && (agent.dlp.creditCard || agent.dlp.israeliId || agent.dlp.codeBlocks)) ? '<div id="dlp-banner">🔒 אל תחשוף מידע אישי רגיש בצ\'אט זה</div>' : ''}
 <script>
 var CHAT_URL=${jsChatUrl};
 var DLP=${jsDlp};
@@ -95,7 +98,7 @@ var SESSION_ID=(function(){var a='0123456789abcdef',s='';for(var i=0;i<24;i++)s+
 function isHeb(t){return /^[\u0590-\u05FF]/.test((t||'').trim())}
 function fmt(d){return new Date(d).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false})}
 var msgs=document.getElementById('messages');
-function addMsg(role,content,ts,dt){
+function addMsg(role,content,ts,dt,dlpMasked){
   var wrap=document.createElement('div');
   wrap.className='bubble-wrap '+role;
   var b=document.createElement('div');
@@ -103,6 +106,12 @@ function addMsg(role,content,ts,dt){
   b.textContent=content;
   b.dir=isHeb(content)?'rtl':'ltr';
   wrap.appendChild(b);
+  if(role==='user'&&dlpMasked){
+    var n=document.createElement('div');
+    n.className='dlp-notice';
+    n.textContent='\uD83D\uDD12 מידע רגיש הוסר מההודעה';
+    wrap.appendChild(n);
+  }
   if(role==='agent'||role==='error'){
     var m=document.createElement('div');
     m.className='meta'+(role==='error'?' err':'');
@@ -121,11 +130,12 @@ function hideTyping(){var d=document.getElementById('typing');if(d)d.remove()}
 addMsg('agent',${jsOpening},new Date());
 async function sendMsg(){
   var inp=document.getElementById('inp');
-  var text=applyDlp(inp.value.trim());
+  var raw=inp.value.trim();
+  var text=applyDlp(raw);
   if(!text||pending)return;
   inp.value='';inp.style.height='auto';
   chatHistory.push({role:'user',content:text});
-  addMsg('user',text);
+  addMsg('user',text,null,null,text!==raw);
   pending=true;
   var t0=performance.now();
   showTyping();
