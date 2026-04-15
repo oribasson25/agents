@@ -77,7 +77,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
   <textarea id="inp" placeholder="${he(placeholder)}" rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg()}"></textarea>
   <button onclick="sendMsg()">&#x27A4;</button>
 </div>
-${(agent.dlp && (agent.dlp.creditCard || agent.dlp.israeliId || agent.dlp.codeBlocks)) ? '<div id="dlp-banner">🔒 אל תחשוף מידע אישי רגיש בצ\'אט זה</div>' : ''}
+${(agent.dlp && (agent.dlp.creditCard || agent.dlp.israeliId)) ? '<div id="dlp-banner">\uD83D\uDD12 \u05D0\u05DC \u05EA\u05D7\u05E9\u05D5\u05E3 \u05DE\u05D9\u05D3\u05E2 \u05D0\u05D9\u05E9\u05D9 \u05E8\u05D2\u05D9\u05E9 \u05D1\u05E6\u05D0\u05D8 \u05D6\u05D4</div>' : ''}
 <script>
 var CHAT_URL=${jsChatUrl};
 var DLP=${jsDlp};
@@ -87,11 +87,6 @@ function applyDlp(t){
   if(!t)return t;
   if(DLP.creditCard)t=t.replace(/\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/g,'[MASKED]');
   if(DLP.israeliId)t=t.replace(/\b\d{9}\b/g,'[MASKED]');
-  if(DLP.codeBlocks){
-    t=t.replace(/\x60\x60\x60[\s\S]*?\x60\x60\x60/g,'[CODE BLOCKED]');
-    t=t.replace(/<scr\x69pt\b[\s\S]*?<\/scr\x69pt>/gi,'[CODE BLOCKED]');
-    t=t.replace(/^(\$|#!)\s*\S[^\n]*/gm,'[CODE BLOCKED]');
-  }
   return t;
 }
 var SESSION_ID=(function(){var a='0123456789abcdef',s='';for(var i=0;i<24;i++)s+=a[Math.floor(Math.random()*16)];return s})();

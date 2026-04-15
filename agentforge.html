@@ -607,7 +607,6 @@
           const rules = [
             { key: 'creditCard', label: 'כרטיס אשראי', desc: '1234-5678-9012-3456 / 1234567890123456' },
             { key: 'israeliId',  label: 'תעודת זהות',  desc: '9 ספרות' },
-            { key: 'codeBlocks', label: 'קטעי קוד / פקודות', desc: '```code```, <script>, פקודות shell' },
           ];
           return (
             <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 24, border: '1px solid var(--border)' }}>
@@ -1263,9 +1262,6 @@
     if (dlp.creditCard || dlp.israeliId) {
       system += '\n\n[SECURITY NOTICE] Never process, repeat, or store personal identifiable information (PII). If the user provides sensitive data such as credit card numbers or ID numbers, refuse to repeat it and treat it as [MASKED].';
     }
-    if (dlp.codeBlocks) {
-      system += '\n\n[SECURITY NOTICE] Code blocks, scripts, and shell commands are not permitted. If the user sends [CODE BLOCKED], refuse to execute, explain, or reproduce it.';
-    }
     return system.trim();
   }
 
@@ -1280,14 +1276,6 @@
     if (dlp.israeliId) {
       // exactly 9 digits, not part of a longer number
       out = out.replace(/\b\d{9}\b/g, '[MASKED]');
-    }
-    if (dlp.codeBlocks) {
-      // markdown code fences ```...```
-      out = out.replace(/```[\s\S]*?```/g, '[CODE BLOCKED]');
-      // <script> tags
-      out = out.replace(/<script\b[\s\S]*?<\/script>/gi, '[CODE BLOCKED]');
-      // shell command lines (starting with $ or #!)
-      out = out.replace(/^(\$|#!)\s*\S[^\n]*/gm, '[CODE BLOCKED]');
     }
     return out;
   }
