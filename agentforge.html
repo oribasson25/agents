@@ -1084,14 +1084,15 @@
       setInput('');
       const t0 = performance.now();
       const typingId = uid();
-      const dlpMasked = applyDlp(text, agent.dlp || {}) !== text;
-      setMessages(m => [...m, { id: uid(), role: 'user', content: text, timestamp: new Date(), dlpMasked }, { id: typingId, role: 'typing' }]);
+      const maskedText = applyDlp(text, agent.dlp || {});
+      const dlpMasked = maskedText !== text;
+      setMessages(m => [...m, { id: uid(), role: 'user', content: maskedText, timestamp: new Date(), dlpMasked }, { id: typingId, role: 'typing' }]);
       setPending(true);
 
       const history = messages.filter(m => m.role === 'user' || m.role === 'agent').map(m => ({
         role: m.role === 'agent' ? 'assistant' : 'user', content: m.content,
       }));
-      history.push({ role: 'user', content: text });
+      history.push({ role: 'user', content: maskedText });
 
       try {
         const content = await callWithTools(agent, history, async (toolName, toolInput) => {
@@ -2134,8 +2135,9 @@ async function sendMsg(){
       }
 
       const typingId = uid();
-      const dlpMasked = applyDlp(text, agent.dlp || {}) !== text;
-      const newMsgs = [...messages, { id: uid(), role: 'user', content: text, timestamp: new Date(), dlpMasked }];
+      const maskedText = applyDlp(text, agent.dlp || {});
+      const dlpMasked = maskedText !== text;
+      const newMsgs = [...messages, { id: uid(), role: 'user', content: maskedText, timestamp: new Date(), dlpMasked }];
       if (skillBanner) newMsgs.push({ id: uid(), role: 'skill', name: skillBanner.name, description: skillBanner.description, prompt: skillBanner.prompt, timestamp: new Date() });
       newMsgs.push({ id: typingId, role: 'typing' });
       setMessages(newMsgs);
@@ -2144,7 +2146,7 @@ async function sendMsg(){
       const history = messages.filter(m => m.role === 'user' || m.role === 'agent').map(m => ({
         role: m.role === 'agent' ? 'assistant' : 'user', content: m.content,
       }));
-      history.push({ role: 'user', content: text });
+      history.push({ role: 'user', content: maskedText });
 
       try {
         const content = await callWithTools(agent, history, async (toolName, toolInput) => {
