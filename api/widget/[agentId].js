@@ -126,6 +126,7 @@ async function sendMsg(){
   var inp=document.getElementById('inp');
   var raw=inp.value.trim();
   var text=applyDlp(raw);
+  console.log('[DLP] config:', JSON.stringify(DLP), '| raw:', raw, '| masked:', text, '| changed:', text!==raw);
   if(!text||pending)return;
   inp.value='';inp.style.height='auto';
   chatHistory.push({role:'user',content:text});
