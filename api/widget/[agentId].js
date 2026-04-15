@@ -88,7 +88,7 @@ function applyDlp(t){
   if(DLP.creditCard)t=t.replace(/\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/g,'[MASKED]');
   if(DLP.israeliId)t=t.replace(/\b\d{9}\b/g,'[MASKED]');
   if(DLP.codeBlocks){
-    t=t.replace(/```[\s\S]*?```/g,'[CODE BLOCKED]');
+    t=t.replace(/\x60\x60\x60[\s\S]*?\x60\x60\x60/g,'[CODE BLOCKED]');
     t=t.replace(/<script\b[\s\S]*?<\/script>/gi,'[CODE BLOCKED]');
     t=t.replace(/^(\$|#!)\s*\S[^\n]*/gm,'[CODE BLOCKED]');
   }
