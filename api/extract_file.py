@@ -89,11 +89,7 @@ def _extract(filename: str, data: bytes) -> dict:
     else:
         return {"error": f"סוג קובץ לא נתמך: {ext}. נתמכים: .pdf, .docx"}
 
-    MAX_CHARS = 100_000
-    truncated = len(text) > MAX_CHARS
-    text = text[:MAX_CHARS]
-
-    result = {"title": title, "text": text, "truncated": truncated}
+    result = {"title": title, "text": text}
     if pages is not None:
         result["pages"] = pages
     return result
