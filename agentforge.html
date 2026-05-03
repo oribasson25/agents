@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>8Legs.ai</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='285 18 115 140'%3E%3Cellipse cx='340' cy='108' rx='21' ry='29' fill='%23EF9F27'/%3E%3Cellipse cx='340' cy='72' rx='14' ry='14' fill='%23EF9F27'/%3E%3Ccircle cx='335' cy='70' r='3.5' fill='%23854F0B'/%3E%3Ccircle cx='345' cy='70' r='3.5' fill='%23854F0B'/%3E%3Cpath d='M345,136 C372,138 390,122 390,98 C390,72 374,56 379,38' fill='none' stroke='%23EF9F27' stroke-width='8' stroke-linecap='round'/%3E%3Cpolygon points='375,40 382,24 389,40' fill='%23D85A30'/%3E%3Cpolyline points='319,95 293,80 278,72' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='319,105 291,102 276,100' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='319,115 291,119 276,124' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='319,125 293,136 281,146' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='361,95 387,80 402,72' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='361,105 389,102 404,100' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='361,115 389,119 404,124' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='361,125 387,136 399,146' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M328,62 L313,48' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round'/%3E%3Cpath d='M313,48 L304,40' fill='none' stroke='%23EF9F27' stroke-width='4' stroke-linecap='round'/%3E%3Cpath d='M313,48 L309,57' fill='none' stroke='%23EF9F27' stroke-width='4' stroke-linecap='round'/%3E%3Cpath d='M352,62 L367,48' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round'/%3E%3Cpath d='M367,48 L376,40' fill='none' stroke='%23EF9F27' stroke-width='4' stroke-linecap='round'/%3E%3Cpath d='M367,48 L371,57' fill='none' stroke='%23EF9F27' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -12,40 +15,44 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
   <style>
     :root {
-      --bg-app: #080808;
-      --bg-sidebar: #0c0c0c;
-      --bg-card: #111111;
-      --bg-panel: #161616;
-      --bg-input: #1c1c1c;
-      --bg-hover: #222222;
+      --bg-app: #07080a;
+      --bg-sidebar: #0b0d10;
+      --bg-card: #0f1114;
+      --bg-panel: #141720;
+      --bg-input: #181b22;
+      --bg-hover: #1e2230;
       --primary: #EF9F27;
       --primary-hover: #F5B34D;
+      --primary-dim: rgba(239,159,39,0.12);
+      --primary-glow: rgba(239,159,39,0.25);
       --success: #22c55e;
       --warning: #f59e0b;
       --danger: #ef4444;
       --teal: #14b8a6;
-      --text: #f0f0f5;
-      --text-2: #9ca3af;
-      --text-muted: #5c6380;
-      --border: #2a2a2a;
+      --teal-dim: rgba(20,184,166,0.12);
+      --text: #eeeef2;
+      --text-2: #8b90a0;
+      --text-muted: #4b5168;
+      --border: #1f2335;
       --border-focus: #EF9F27;
-      --r-sm: 6px;
+      --r-sm: 8px;
       --r-md: 12px;
-      --r-lg: 18px;
-      --r-xl: 24px;
-      --shadow: 0 4px 24px rgba(0,0,0,0.4);
+      --r-lg: 16px;
+      --r-xl: 20px;
+      --shadow: 0 4px 24px rgba(0,0,0,0.5);
+      --shadow-lg: 0 8px 40px rgba(0,0,0,0.6);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       background: var(--bg-app);
       color: var(--text);
-      font-family: 'Segoe UI', 'Arial', sans-serif;
+      font-family: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
       overflow: hidden;
       height: 100vh;
     }
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: var(--bg-hover); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
     @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
@@ -84,10 +91,13 @@
       font-family: inherit;
       font-size: 14px;
       outline: none;
-      transition: border-color 0.2s;
+      transition: border-color 0.2s, box-shadow 0.2s;
       width: 100%;
     }
-    input:focus, textarea:focus, select:focus { border-color: var(--border-focus); }
+    input:focus, textarea:focus, select:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 3px var(--primary-dim);
+    }
     input[type="range"] {
       padding: 0;
       height: 6px;
@@ -101,13 +111,43 @@
       cursor: pointer;
       border: none;
       font-family: inherit;
-      transition: all 0.15s;
+      transition: all 0.18s ease;
     }
     button:hover { opacity: 0.9; }
     button:active { transform: scale(0.97); }
     button:disabled { opacity: 0.4; cursor: not-allowed; }
 
     .monaco-container { border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--border); }
+
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+
+    .field-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 16px;
+    }
+
+    .field-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-2);
+      letter-spacing: 0.01em;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
   </style>
 </head>
 <body>
@@ -115,6 +155,27 @@
 
   <script type="text/babel" data-presets="react">
   const { useState, useReducer, useEffect, useRef, useCallback, createContext, useContext } = React;
+
+  /* ─────────────────── SVG ICONS ─────────────────── */
+  const Icons = {
+    home: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
+    docs: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>,
+    settings: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
+    admin: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
+    edit: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
+    chat: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>,
+    copy: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>,
+    export: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
+    trash: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>,
+    target: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>,
+    tool: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>,
+    plus: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
+    back: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>,
+    logout: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
+    bot: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg>,
+    user: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
+    lock: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>,
+  };
 
   /* ─────────────────── CONSTANTS ─────────────────── */
   const CLAUDE_MODELS = ['claude-opus-4-5', 'claude-sonnet-4-5', 'claude-haiku-4-5'];
@@ -228,11 +289,20 @@
 
   /* ─────────────────── EMPTY STATE ─────────────────── */
   function EmptyState({ icon, title, subtitle }) {
+    const isSvg = typeof icon !== 'string';
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: 48, opacity: 0.6 }}>
-        <div style={{ fontSize: 48 }}>{icon}</div>
-        <div style={{ color: 'var(--text)', fontWeight: 600 }}>{title}</div>
-        {subtitle && <div style={{ color: 'var(--text-2)', fontSize: 13 }}>{subtitle}</div>}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '40px 48px' }}>
+        <div style={{
+          width: 48, height: 48, borderRadius: 14,
+          background: 'var(--bg-hover)', border: '1px solid var(--border)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: 'var(--text-muted)',
+          fontSize: isSvg ? undefined : 24,
+        }}>{icon}</div>
+        <div>
+          <div style={{ color: 'var(--text)', fontWeight: 700, textAlign: 'center', marginBottom: 4 }}>{title}</div>
+          {subtitle && <div style={{ color: 'var(--text-muted)', fontSize: 13, textAlign: 'center' }}>{subtitle}</div>}
+        </div>
       </div>
     );
   }
@@ -669,7 +739,7 @@
           <button onClick={() => setAddOpen(v => !v)} style={{ background: 'var(--primary)', color: '#fff', padding: '8px 16px', borderRadius: 'var(--r-xl)', fontWeight: 600, fontSize: 13 }}>＋ Add Skill</button>
         </div>
 
-        {agent.skills.length === 0 && !addOpen && <EmptyState icon="🎯" title="No skills yet" subtitle="Add skills to give your agent special capabilities" />}
+        {agent.skills.length === 0 && !addOpen && <EmptyState icon={Icons.target} title="No skills yet" subtitle="Add skills to give your agent special capabilities" />}
 
         {agent.skills.map(skill => (
           <div key={skill.id} style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', overflow: 'hidden' }}>
@@ -679,7 +749,7 @@
                 <div style={{ fontWeight: 600, fontSize: 14 }}>{skill.name}</div>
                 {skill.description && <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 2 }}>{skill.description}</div>}
               </div>
-              <IconBtn onClick={e => { e.stopPropagation(); deleteSkill(skill.id); }} danger title="Delete skill">🗑</IconBtn>
+              <IconBtn onClick={e => { e.stopPropagation(); deleteSkill(skill.id); }} danger title="Delete skill">{Icons.trash}</IconBtn>
               <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>{expandedId === skill.id ? '▼' : '▶'}</span>
             </div>
             {expandedId === skill.id && (
@@ -905,17 +975,17 @@
           })}
         </div>
 
-        {agent.tools.length === 0 && !addOpen && <EmptyState icon="⚙️" title="No tools yet" subtitle="Add Python tools to extend your agent's capabilities" />}
+        {agent.tools.length === 0 && !addOpen && <EmptyState icon={Icons.tool} title="No tools yet" subtitle="Add Python tools to extend your agent's capabilities" />}
 
         {agent.tools.map(tool => (
           <div key={tool.id} style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', overflow: 'hidden' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', cursor: 'pointer' }} onClick={() => setExpandedId(expandedId === tool.id ? null : tool.id)}>
-              <span style={{ fontSize: 18 }}>⚙️</span>
+              <span style={{ color: 'var(--teal)', display: 'flex' }}>{Icons.tool}</span>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 600, fontSize: 14 }}>{tool.name}</div>
                 {tool.description && <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 2 }}>{tool.description}</div>}
               </div>
-              <IconBtn onClick={e => { e.stopPropagation(); deleteTool(tool.id); }} danger title="Delete tool">🗑</IconBtn>
+              <IconBtn onClick={e => { e.stopPropagation(); deleteTool(tool.id); }} danger title="Delete tool">{Icons.trash}</IconBtn>
               <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>{expandedId === tool.id ? '▼' : '▶'}</span>
             </div>
             {expandedId === tool.id && (
@@ -1716,8 +1786,8 @@
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <IconBtn onClick={() => { setEditingDocId(doc.id); setEditDoc({ title: doc.title, content: doc.content }); }} title="Edit document">✏️</IconBtn>
-                    <IconBtn onClick={() => deleteDoc(doc.id)} danger title="Delete document">🗑</IconBtn>
+                    <IconBtn onClick={() => { setEditingDocId(doc.id); setEditDoc({ title: doc.title, content: doc.content }); }} title="Edit document">{Icons.edit}</IconBtn>
+                    <IconBtn onClick={() => deleteDoc(doc.id)} danger title="Delete document">{Icons.trash}</IconBtn>
                   </div>
                 </div>
               )}
@@ -2299,16 +2369,30 @@ async function sendMsg(){
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* Back + title */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-          <button onClick={onBack} style={{ background: 'var(--bg-hover)', color: 'var(--text-2)', padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 13 }}>← Back</button>
-          <AvatarDisplay value={agent.avatar} size={22} />
-          <span style={{ fontWeight: 700, fontSize: 18 }}>{agent.name}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22 }}>
+          <button onClick={onBack}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'var(--bg-hover)', color: 'var(--text-2)', padding: '7px 12px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 600, border: '1px solid var(--border)', transition: 'all 0.18s' }}
+            onMouseEnter={e => { e.currentTarget.style.color = 'var(--text)'; e.currentTarget.style.background = 'var(--bg-input)'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-2)'; e.currentTarget.style.background = 'var(--bg-hover)'; }}
+          >
+            {Icons.back} Back
+          </button>
+          <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
+          <AvatarDisplay value={agent.avatar} size={24} />
+          <span style={{ fontWeight: 800, fontSize: 18, letterSpacing: '-0.02em' }}>{agent.name}</span>
         </div>
         {/* Tab bar */}
-        <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: 'var(--bg-panel)', padding: 4, borderRadius: 'var(--r-md)', width: 'fit-content', border: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', gap: 2, marginBottom: 22, background: 'var(--bg-panel)', padding: 4, borderRadius: 'var(--r-md)', width: 'fit-content', border: '1px solid var(--border)' }}>
           {TABS.map(t => (
             <button key={t} onClick={() => setTab(t)}
-              style={{ padding: '6px 16px', borderRadius: 'var(--r-sm)', fontWeight: 600, fontSize: 13, textTransform: 'capitalize', background: tab === t ? 'var(--primary)' : 'transparent', color: tab === t ? '#fff' : 'var(--text-2)' }}>
+              style={{
+                padding: '6px 16px', borderRadius: 8, fontWeight: 600, fontSize: 13,
+                textTransform: 'capitalize',
+                background: tab === t ? 'var(--primary)' : 'transparent',
+                color: tab === t ? '#0a0a0a' : 'var(--text-2)',
+                transition: 'all 0.18s ease',
+                boxShadow: tab === t ? '0 1px 8px var(--primary-glow)' : 'none',
+              }}>
               {t}
             </button>
           ))}
@@ -2329,6 +2413,14 @@ async function sendMsg(){
   function AgentCard({ agent, onEdit, onTest, onDuplicate, onDelete, onExport, isNew }) {
     const [hovered, setHovered] = useState(false);
 
+    const actions = [
+      { icon: Icons.edit, label: 'Edit', fn: onEdit },
+      { icon: Icons.chat, label: 'Test', fn: onTest },
+      { icon: Icons.copy, label: 'Copy', fn: onDuplicate },
+      { icon: Icons.export, label: 'Export', fn: onExport },
+      { icon: Icons.trash, label: 'Delete', fn: onDelete, danger: true },
+    ];
+
     return (
       <div
         className={isNew ? 'card-highlight fade-in' : 'fade-in'}
@@ -2337,8 +2429,8 @@ async function sendMsg(){
         style={{
           background: 'var(--bg-card)',
           borderRadius: 'var(--r-lg)',
-          border: `1px solid ${hovered ? 'var(--primary)' : 'var(--border)'}`,
-          boxShadow: hovered ? '0 0 16px rgba(239,159,39,0.2), var(--shadow)' : 'var(--shadow)',
+          border: `1px solid ${hovered ? 'rgba(239,159,39,0.35)' : 'var(--border)'}`,
+          boxShadow: hovered ? '0 0 24px rgba(239,159,39,0.12), var(--shadow)' : 'var(--shadow)',
           padding: 20,
           display: 'flex',
           flexDirection: 'column',
@@ -2349,34 +2441,41 @@ async function sendMsg(){
         onClick={onEdit}
       >
         {/* Avatar + name */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#1e1e1e', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
-            <AvatarDisplay value={agent.avatar} size={52} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 48, height: 48, borderRadius: 14, background: 'var(--bg-panel)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
+            <AvatarDisplay value={agent.avatar} size={48} />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agent.name}</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{new Date(agent.createdAt).toLocaleDateString()}</div>
+            <div style={{ fontWeight: 700, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.01em' }}>{agent.name}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, fontWeight: 500 }}>{new Date(agent.createdAt).toLocaleDateString()}</div>
           </div>
         </div>
         {/* Badges */}
         <div style={{ display: 'flex', gap: 6 }}>
-          <span style={{ background: 'rgba(239,159,39,0.15)', color: 'var(--primary)', borderRadius: 'var(--r-sm)', padding: '2px 8px', fontSize: 12, fontWeight: 600 }}>🎯 {agent.skills.length} skills</span>
-          <span style={{ background: 'rgba(20,184,166,0.15)', color: 'var(--teal)', borderRadius: 'var(--r-sm)', padding: '2px 8px', fontSize: 12, fontWeight: 600 }}>⚙️ {agent.tools.length} tools</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'var(--primary-dim)', color: 'var(--primary)', borderRadius: 'var(--r-sm)', padding: '3px 9px', fontSize: 11, fontWeight: 700, border: '1px solid rgba(239,159,39,0.15)' }}>
+            {Icons.target} {agent.skills.length} skills
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'var(--teal-dim)', color: 'var(--teal)', borderRadius: 'var(--r-sm)', padding: '3px 9px', fontSize: 11, fontWeight: 700, border: '1px solid rgba(20,184,166,0.15)' }}>
+            {Icons.tool} {agent.tools.length} tools
+          </span>
         </div>
         {/* Actions */}
         <div style={{ display: 'flex', gap: 4, borderTop: '1px solid var(--border)', paddingTop: 12 }} onClick={e => e.stopPropagation()}>
-          {[
-            { label: '✏️ Edit', fn: onEdit },
-            { label: '💬 Test', fn: onTest },
-            { label: '📋 Copy', fn: onDuplicate },
-            { label: '📤 Export', fn: onExport },
-            { label: '🗑', fn: onDelete, danger: true },
-          ].map(({ label, fn, danger }) => (
-            <button key={label} onClick={fn}
-              style={{ flex: label === '🗑' ? 0 : 1, padding: '6px 4px', borderRadius: 'var(--r-sm)', fontSize: 12, fontWeight: 500, background: 'var(--bg-hover)', color: danger ? 'var(--danger)' : 'var(--text-2)', border: 'none' }}
-              onMouseEnter={e => e.currentTarget.style.background = danger ? 'rgba(239,68,68,0.1)' : 'var(--bg-input)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-            >{label}</button>
+          {actions.map(({ icon, label, fn, danger }) => (
+            <button key={label} onClick={fn} title={label}
+              style={{
+                flex: label === 'Delete' ? 0 : 1, padding: '7px 6px', borderRadius: 'var(--r-sm)',
+                fontSize: 11, fontWeight: 600, background: 'var(--bg-hover)',
+                color: danger ? 'var(--danger)' : 'var(--text-2)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                transition: 'background 0.15s, color 0.15s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = danger ? 'rgba(239,68,68,0.12)' : 'var(--bg-input)'; if (!danger) e.currentTarget.style.color = 'var(--text)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = danger ? 'var(--danger)' : 'var(--text-2)'; }}
+            >
+              {icon}
+              {label !== 'Delete' && <span>{label}</span>}
+            </button>
           ))}
         </div>
       </div>
@@ -2675,14 +2774,40 @@ def run(**kwargs):
   function AgentListView({ agents, onNew, onEdit, onTest, onDuplicate, onDelete, onExport }) {
     return (
       <div style={{ position: 'relative', height: '100%' }}>
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ fontWeight: 700, fontSize: 24 }}>Agents</div>
-          <div style={{ color: 'var(--text-2)', fontSize: 14, marginTop: 4 }}>{agents.length} agent{agents.length !== 1 ? 's' : ''}</div>
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 28 }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 26, letterSpacing: '-0.02em', color: 'var(--text)' }}>Agents</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4, fontWeight: 500 }}>
+              {agents.length === 0 ? 'No agents yet' : `${agents.length} agent${agents.length !== 1 ? 's' : ''} configured`}
+            </div>
+          </div>
+          <button onClick={onNew}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 7,
+              background: 'var(--primary)', color: '#0a0a0a',
+              padding: '9px 18px', borderRadius: 'var(--r-md)',
+              fontWeight: 700, fontSize: 13,
+              boxShadow: '0 2px 12px var(--primary-glow)',
+              transition: 'all 0.18s ease',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--primary-hover)'; e.currentTarget.style.boxShadow = '0 4px 20px var(--primary-glow)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'var(--primary)'; e.currentTarget.style.boxShadow = '0 2px 12px var(--primary-glow)'; e.currentTarget.style.transform = 'none'; }}
+          >
+            {Icons.plus} New Agent
+          </button>
         </div>
         {agents.length === 0 ? (
-          <EmptyState icon="🤖" title="No agents yet" subtitle="Click + New Agent to create your first agent" />
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: '64px 48px', background: 'var(--bg-card)', borderRadius: 'var(--r-xl)', border: '1px dashed var(--border)' }}>
+            <div style={{ width: 56, height: 56, borderRadius: 16, background: 'var(--bg-panel)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
+              {Icons.bot}
+            </div>
+            <div>
+              <div style={{ color: 'var(--text)', fontWeight: 700, fontSize: 15, textAlign: 'center', marginBottom: 6 }}>No agents yet</div>
+              <div style={{ color: 'var(--text-muted)', fontSize: 13, textAlign: 'center' }}>Click "New Agent" to create your first agent</div>
+            </div>
+          </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(268px,1fr))', gap: 14 }}>
             {agents.map(a => (
               <AgentCard
                 key={a.id}
@@ -2697,12 +2822,6 @@ def run(**kwargs):
             ))}
           </div>
         )}
-        {/* FAB */}
-        <button onClick={onNew}
-          style={{ position: 'fixed', bottom: 32, right: 32, background: '#3a3a3a', color: '#fff', padding: '14px 24px', borderRadius: 'var(--r-xl)', fontWeight: 700, fontSize: 15, boxShadow: '0 4px 20px rgba(0,0,0,0.4)', zIndex: 50 }}
-          onMouseEnter={e => e.currentTarget.style.background = '#444444'}
-          onMouseLeave={e => e.currentTarget.style.background = '#3a3a3a'}
-        >＋ New Agent</button>
       </div>
     );
   }
@@ -2710,17 +2829,17 @@ def run(**kwargs):
   /* ─────────────────── SIDEBAR ─────────────────── */
   function Sidebar({ activeNav, onNav, user, onLogout }) {
     const items = [
-      { id: 'home', label: 'Home', icon: '🏠' },
-      { id: 'docs', label: 'Documentation', icon: '📖' },
-      { id: 'settings', label: 'Settings', icon: '⚙️' },
-      ...(user && user.isAdmin ? [{ id: 'admin', label: 'Admin', icon: '🛡️' }] : []),
+      { id: 'home', label: 'Home', icon: Icons.home },
+      { id: 'docs', label: 'Documentation', icon: Icons.docs },
+      { id: 'settings', label: 'Settings', icon: Icons.settings },
+      ...(user && user.isAdmin ? [{ id: 'admin', label: 'Admin', icon: Icons.admin }] : []),
     ];
 
     return (
-      <div style={{ width: 240, flexShrink: 0, background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      <div style={{ width: 232, flexShrink: 0, background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', height: '100vh' }}>
         {/* Logo */}
-        <div style={{ padding: '16px 20px 12px' }}>
-          <svg viewBox="200 20 280 205" width="148" height="58" role="img" xmlns="http://www.w3.org/2000/svg">
+        <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--border)' }}>
+          <svg viewBox="200 20 280 205" width="136" height="52" role="img" xmlns="http://www.w3.org/2000/svg">
             <ellipse cx="340" cy="108" rx="21" ry="29" fill="#EF9F27"/>
             <ellipse cx="340" cy="72" rx="14" ry="14" fill="#EF9F27"/>
             <circle cx="335" cy="70" r="3.5" fill="#854F0B"/>
@@ -2741,45 +2860,60 @@ def run(**kwargs):
             <path d="M352,62 L367,48" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round"/>
             <path d="M367,48 L376,40" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
             <path d="M367,48 L371,57" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
-            <text x="340" y="210" textAnchor="middle" fontFamily="'Segoe UI',Arial,sans-serif" fontSize="52" fontWeight="600">
-              <tspan fill="#f0f0f5">8Legs</tspan><tspan fill="#EF9F27">.ai</tspan>
+            <text x="340" y="210" textAnchor="middle" fontFamily="'Plus Jakarta Sans','Segoe UI',sans-serif" fontSize="52" fontWeight="700">
+              <tspan fill="#eeeef2">8Legs</tspan><tspan fill="#EF9F27">.ai</tspan>
             </text>
           </svg>
         </div>
-        <div style={{ flex: 1, padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {items.map(item => (
-            <button key={item.id} onClick={() => onNav(item.id)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 'var(--r-md)',
-                background: activeNav === item.id ? 'rgba(239,159,39,0.10)' : 'transparent',
-                color: activeNav === item.id ? 'var(--text)' : 'var(--text-2)',
-                fontWeight: activeNav === item.id ? 600 : 400,
-                borderLeft: `3px solid ${activeNav === item.id ? 'var(--primary)' : 'transparent'}`,
-                fontSize: 14, textAlign: 'left',
-              }}
-              onMouseEnter={e => { if (activeNav !== item.id) e.currentTarget.style.background = 'var(--bg-hover)'; }}
-              onMouseLeave={e => { if (activeNav !== item.id) e.currentTarget.style.background = 'transparent'; }}
-            >
-              <span>{item.icon}</span>{item.label}
-            </button>
-          ))}
+        {/* Nav label */}
+        <div style={{ padding: '16px 20px 8px' }}>
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Navigation</span>
         </div>
-        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)', background: 'var(--bg-hover)', borderRadius: 'var(--r-sm)', padding: '3px 8px', flex: 1 }}>
-            {user ? user.username : 'v1.0.0'}
-          </span>
+        <div style={{ flex: 1, padding: '0 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {items.map(item => {
+            const active = activeNav === item.id;
+            return (
+              <button key={item.id} onClick={() => onNav(item.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 'var(--r-md)',
+                  background: active ? 'var(--primary-dim)' : 'transparent',
+                  color: active ? 'var(--primary)' : 'var(--text-2)',
+                  fontWeight: active ? 600 : 500,
+                  fontSize: 14, textAlign: 'left',
+                  transition: 'all 0.18s ease',
+                  border: `1px solid ${active ? 'rgba(239,159,39,0.2)' : 'transparent'}`,
+                }}
+                onMouseEnter={e => { if (!active) { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text)'; }}}
+                onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-2)'; }}}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', opacity: active ? 1 : 0.7 }}>{item.icon}</span>
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+        {/* User footer */}
+        <div style={{ padding: '12px 10px', borderTop: '1px solid var(--border)' }}>
           {user && (
-            <button onClick={onLogout}
-              style={{ fontSize: 11, color: 'var(--text-2)', background: 'transparent', padding: '3px 8px', borderRadius: 'var(--r-sm)', border: '1px solid var(--border)' }}
-              onMouseEnter={e => e.currentTarget.style.color = 'var(--danger)'}
-              onMouseLeave={e => e.currentTarget.style.color = 'var(--text-2)'}
-            >Logout</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg-hover)' }}>
+              <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--primary-dim)', border: '1px solid rgba(239,159,39,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', flexShrink: 0 }}>
+                {Icons.user}
+              </div>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {user.username}
+              </span>
+              <button onClick={onLogout} title="Logout"
+                style={{ display: 'flex', alignItems: 'center', color: 'var(--text-muted)', background: 'transparent', padding: '4px', borderRadius: 6 }}
+                onMouseEnter={e => e.currentTarget.style.color = 'var(--danger)'}
+                onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+              >{Icons.logout}</button>
+            </div>
           )}
-        </div>
-        <div style={{ padding: '8px 16px 14px', textAlign: 'center' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.5px' }}>
-            Built by <span style={{ color: 'var(--primary)', fontWeight: 600 }}>Ori Basson</span>
-          </span>
+          <div style={{ padding: '8px 10px 2px', textAlign: 'center' }}>
+            <span style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+              Built by <span style={{ color: 'var(--primary)', fontWeight: 600 }}>Ori Basson</span>
+            </span>
+          </div>
         </div>
       </div>
     );
@@ -2855,10 +2989,13 @@ def run(**kwargs):
     const canSubmit = isLogin ? (username && password) : (username && password && phone);
 
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-app)' }}>
-        <div style={{ background: 'var(--bg-card)', borderRadius: 'var(--r-xl)', padding: 40, width: 380, boxShadow: 'var(--shadow)', border: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 24 }}>
-            <svg viewBox="200 20 280 230" width="200" height="82" role="img" xmlns="http://www.w3.org/2000/svg">
+      <div style={{ display: 'flex', height: '100vh', background: 'var(--bg-app)', overflow: 'hidden' }}>
+        {/* Left panel - branding */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #0b0d10 0%, #0f1320 100%)', borderRight: '1px solid var(--border)', position: 'relative', overflow: 'hidden' }}>
+          {/* Decorative glow */}
+          <div style={{ position: 'absolute', top: '30%', left: '50%', transform: 'translate(-50%,-50%)', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(239,159,39,0.08) 0%, transparent 70%)', pointerEvents: 'none' }} />
+          <div style={{ position: 'relative', zIndex: 1, textAlign: 'center' }}>
+            <svg viewBox="200 20 280 230" width="220" height="90" role="img" xmlns="http://www.w3.org/2000/svg">
               <ellipse cx="340" cy="108" rx="21" ry="29" fill="#EF9F27"/>
               <ellipse cx="340" cy="72" rx="14" ry="14" fill="#EF9F27"/>
               <circle cx="335" cy="70" r="3.5" fill="#854F0B"/>
@@ -2879,59 +3016,84 @@ def run(**kwargs):
               <path d="M352,62 L367,48" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round"/>
               <path d="M367,48 L376,40" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
               <path d="M367,48 L371,57" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
-              <text x="340" y="210" textAnchor="middle" fontFamily="'Segoe UI',Arial,sans-serif" fontSize="52" fontWeight="600">
-                <tspan fill="#f0f0f5">8Legs</tspan><tspan fill="#EF9F27">.ai</tspan>
+              <text x="340" y="210" textAnchor="middle" fontFamily="'Plus Jakarta Sans','Segoe UI',sans-serif" fontSize="52" fontWeight="700">
+                <tspan fill="#eeeef2">8Legs</tspan><tspan fill="#EF9F27">.ai</tspan>
               </text>
-              <text x="340" y="242" textAnchor="middle" fontFamily="'Segoe UI',Arial,sans-serif" fontSize="13" fontWeight="400" fill="#5c6380" letterSpacing="2">YOUR AGENTS. YOUR RULES.</text>
             </svg>
-            <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 4 }}>{isLogin ? 'Sign in to continue' : 'Create an account'}</div>
+            <div style={{ marginTop: 28 }}>
+              <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.02em', marginBottom: 10 }}>Your Agents. Your Rules.</div>
+              <div style={{ fontSize: 14, color: 'var(--text-muted)', maxWidth: 280, lineHeight: 1.7 }}>Build, configure and deploy AI agents in minutes — no code required.</div>
+            </div>
+            {/* Feature pills */}
+            <div style={{ display: 'flex', gap: 8, marginTop: 32, flexWrap: 'wrap', justifyContent: 'center' }}>
+              {['Claude & GPT models', 'RAG knowledge base', 'Custom tools'].map(f => (
+                <span key={f} style={{ fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 20, background: 'var(--bg-hover)', border: '1px solid var(--border)', color: 'var(--text-2)' }}>{f}</span>
+              ))}
+            </div>
           </div>
+        </div>
+        {/* Right panel - form */}
+        <div style={{ width: 420, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 48px' }}>
+          <div style={{ width: '100%', maxWidth: 340 }}>
+            <div style={{ marginBottom: 28 }}>
+              <div style={{ fontWeight: 800, fontSize: 22, letterSpacing: '-0.02em', color: 'var(--text)', marginBottom: 6 }}>
+                {isLogin ? 'Welcome back' : 'Create account'}
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500 }}>
+                {isLogin ? 'Sign in to access your agents' : 'Get started for free'}
+              </div>
+            </div>
 
-          {/* Tab toggle */}
-          <div style={{ display: 'flex', gap: 0, marginBottom: 20, background: 'var(--bg-panel)', borderRadius: 'var(--r-md)', padding: 4 }}>
-            {['login', 'register'].map(m => (
-              <button key={m} onClick={() => switchMode(m)}
-                style={{ flex: 1, padding: '7px 0', borderRadius: 'var(--r-sm)', fontWeight: 600, fontSize: 13,
-                  background: mode === m ? 'var(--primary)' : 'transparent',
-                  color: mode === m ? '#fff' : 'var(--text-2)',
-                  transition: 'background 0.15s' }}>
-                {m === 'login' ? 'Sign in' : 'Register'}
-              </button>
-            ))}
+            {/* Tab toggle */}
+            <div style={{ display: 'flex', gap: 0, marginBottom: 22, background: 'var(--bg-panel)', borderRadius: 'var(--r-md)', padding: 4, border: '1px solid var(--border)' }}>
+              {['login', 'register'].map(m => (
+                <button key={m} onClick={() => switchMode(m)}
+                  style={{ flex: 1, padding: '8px 0', borderRadius: 8, fontWeight: 600, fontSize: 13,
+                    background: mode === m ? 'var(--primary)' : 'transparent',
+                    color: mode === m ? '#0a0a0a' : 'var(--text-2)',
+                    transition: 'all 0.18s ease',
+                    boxShadow: mode === m ? '0 1px 8px var(--primary-glow)' : 'none',
+                  }}>
+                  {m === 'login' ? 'Sign in' : 'Register'}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ position: 'relative' }}>
+                <div style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}>{Icons.user}</div>
+                <input type="text" value={username} onChange={e => setUsername(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && (isLogin ? handleLogin() : handleRegister())}
+                  placeholder="Username" autoFocus style={{ paddingLeft: 38 }} />
+              </div>
+              <div style={{ position: 'relative' }}>
+                <div style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}>{Icons.lock}</div>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && (isLogin ? handleLogin() : handleRegister())}
+                  placeholder="Password" style={{ paddingLeft: 38 }} />
+              </div>
+              {!isLogin && (
+                <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleRegister()}
+                  placeholder="Phone number" />
+              )}
+            </div>
+
+            {error && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--danger)', fontSize: 13, marginTop: 12, padding: '10px 12px', background: 'rgba(239,68,68,0.08)', borderRadius: 'var(--r-sm)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                {error}
+              </div>
+            )}
+
+            <button onClick={isLogin ? handleLogin : handleRegister} disabled={loading || !canSubmit}
+              style={{ width: '100%', background: 'var(--primary)', color: '#0a0a0a', padding: '12px 16px', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 14, marginTop: 16, boxShadow: '0 2px 12px var(--primary-glow)', transition: 'all 0.18s ease' }}
+              onMouseEnter={e => { if (!loading && canSubmit) { e.currentTarget.style.background = 'var(--primary-hover)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}}
+              onMouseLeave={e => { e.currentTarget.style.background = 'var(--primary)'; e.currentTarget.style.transform = 'none'; }}
+            >
+              {loading ? (isLogin ? 'Signing in…' : 'Registering…') : (isLogin ? 'Sign in' : 'Create account')}
+            </button>
           </div>
-
-          <input
-            type="text"
-            value={username}
-            onChange={e => setUsername(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && (isLogin ? handleLogin() : handleRegister())}
-            placeholder="Username"
-            autoFocus
-            style={{ marginBottom: 10 }}
-          />
-          <input
-            type="password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && (isLogin ? handleLogin() : handleRegister())}
-            placeholder="Password"
-            style={{ marginBottom: 10 }}
-          />
-          {!isLogin && (
-            <input
-              type="tel"
-              value={phone}
-              onChange={e => setPhone(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleRegister()}
-              placeholder="Phone number"
-              style={{ marginBottom: 10 }}
-            />
-          )}
-          {error && <div style={{ color: 'var(--danger)', fontSize: 13, marginBottom: 10 }}>⚠ {error}</div>}
-          <button onClick={isLogin ? handleLogin : handleRegister} disabled={loading || !canSubmit}
-            style={{ width: '100%', background: 'var(--primary)', color: '#fff', padding: '11px 16px', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 15, marginTop: 2 }}>
-            {loading ? (isLogin ? 'Signing in…' : 'Registering…') : (isLogin ? 'Sign in →' : 'Create account →')}
-          </button>
         </div>
       </div>
     );
@@ -3337,9 +3499,9 @@ def run(**kwargs):
     const chatAgent = state.agents.find(a => a.id === state.chatAgentId);
 
     if (loading) return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-app)', flexDirection: 'column', gap: 16 }}>
-        <div style={{ width: 40, height: 40, border: '3px solid var(--border)', borderTop: '3px solid var(--primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-        <div style={{ color: 'var(--text-2)', fontSize: 14 }}>Loading agents…</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-app)', flexDirection: 'column', gap: 14 }}>
+        <div style={{ width: 36, height: 36, border: '2.5px solid var(--border)', borderTop: '2.5px solid var(--primary)', borderRadius: '50%', animation: 'spin 0.75s linear infinite' }} />
+        <div style={{ color: 'var(--text-muted)', fontSize: 13, fontWeight: 500 }}>Loading agents…</div>
       </div>
     );
 
@@ -3354,7 +3516,7 @@ def run(**kwargs):
       <React.Fragment>
       <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
         <Sidebar activeNav={nav} onNav={handleNav} user={user} onLogout={onLogout} />
-        <div style={{ flex: 1, overflowY: 'auto', padding: '32px 32px 80px', background: 'var(--bg-app)' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '32px 36px 80px', background: 'var(--bg-app)' }}>
           {nav === 'docs' ? (
             <DocsView />
           ) : nav === 'admin' ? (
@@ -3372,9 +3534,9 @@ def run(**kwargs):
             )
           ) : nav === 'settings' ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 60, gap: 12 }}>
-              <div style={{ fontSize: 48 }}>⚙️</div>
-              <div style={{ fontWeight: 700, fontSize: 20 }}>Settings</div>
-              <div style={{ color: 'var(--text-2)', fontSize: 14 }}>Coming soon</div>
+              <div style={{ width: 56, height: 56, borderRadius: 16, background: 'var(--bg-card)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>{Icons.settings}</div>
+              <div style={{ fontWeight: 800, fontSize: 20, letterSpacing: '-0.01em' }}>Settings</div>
+              <div style={{ color: 'var(--text-muted)', fontSize: 13, fontWeight: 500 }}>Coming soon</div>
             </div>
           ) : state.view === 'editor' && editingAgent ? (
             <AgentEditor
