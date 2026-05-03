@@ -2460,21 +2460,24 @@ async function sendMsg(){
           </span>
         </div>
         {/* Actions */}
-        <div style={{ display: 'flex', gap: 4, borderTop: '1px solid var(--border)', paddingTop: 12 }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', gap: 4, borderTop: '1px solid var(--border)', paddingTop: 12, overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
           {actions.map(({ icon, label, fn, danger }) => (
             <button key={label} onClick={fn} title={label}
               style={{
-                flex: label === 'Delete' ? 0 : 1, padding: '7px 6px', borderRadius: 'var(--r-sm)',
+                flex: label === 'Delete' ? '0 0 32px' : 1,
+                minWidth: 0,
+                padding: '7px 4px', borderRadius: 'var(--r-sm)',
                 fontSize: 11, fontWeight: 600, background: 'var(--bg-hover)',
                 color: danger ? 'var(--danger)' : 'var(--text-2)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
                 transition: 'background 0.15s, color 0.15s',
+                overflow: 'hidden',
               }}
               onMouseEnter={e => { e.currentTarget.style.background = danger ? 'rgba(239,68,68,0.12)' : 'var(--bg-input)'; if (!danger) e.currentTarget.style.color = 'var(--text)'; }}
               onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = danger ? 'var(--danger)' : 'var(--text-2)'; }}
             >
               {icon}
-              {label !== 'Delete' && <span>{label}</span>}
+              {label !== 'Delete' && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>}
             </button>
           ))}
         </div>
