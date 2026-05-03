@@ -142,6 +142,18 @@
       letter-spacing: 0.01em;
     }
 
+    @keyframes bgLogoSpin {
+      from { transform: rotate(0deg) scale(1); }
+      50%  { transform: rotate(180deg) scale(1.04); }
+      to   { transform: rotate(360deg) scale(1); }
+    }
+
+    .bg-logo-watermark {
+      opacity: 0.038;
+      animation: bgLogoSpin 90s linear infinite;
+      will-change: transform;
+    }
+
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after {
         animation-duration: 0.01ms !important;
@@ -155,6 +167,53 @@
 
   <script type="text/babel" data-presets="react">
   const { useState, useReducer, useEffect, useRef, useCallback, createContext, useContext } = React;
+
+  /* ─────────────────── BG WATERMARK ─────────────────── */
+  const spiderSvgPaths = (
+    <>
+      <ellipse cx="340" cy="108" rx="21" ry="29" fill="#EF9F27"/>
+      <ellipse cx="340" cy="72" rx="14" ry="14" fill="#EF9F27"/>
+      <circle cx="335" cy="70" r="3.5" fill="#854F0B"/>
+      <circle cx="345" cy="70" r="3.5" fill="#854F0B"/>
+      <path d="M345,136 C372,138 390,122 390,98 C390,72 374,56 379,38" fill="none" stroke="#EF9F27" strokeWidth="8" strokeLinecap="round"/>
+      <polygon points="375,40 382,24 389,40" fill="#D85A30"/>
+      <polyline points="319,95 293,80 278,72" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <polyline points="319,105 291,102 276,100" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <polyline points="319,115 291,119 276,124" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <polyline points="319,125 293,136 281,146" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <polyline points="361,95 387,80 402,72" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <polyline points="361,105 389,102 404,100" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <polyline points="361,115 389,119 404,124" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <polyline points="361,125 387,136 399,146" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M328,62 L313,48" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round"/>
+      <path d="M313,48 L304,40" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
+      <path d="M313,48 L309,57" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
+      <path d="M352,62 L367,48" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round"/>
+      <path d="M367,48 L376,40" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
+      <path d="M367,48 L371,57" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
+    </>
+  );
+
+  function BgLogo({ size = 560, wrapStyle = {} }) {
+    return (
+      <div style={{
+        position: 'absolute', pointerEvents: 'none', userSelect: 'none',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        ...wrapStyle,
+      }}>
+        <svg
+          className="bg-logo-watermark"
+          viewBox="285 18 115 140"
+          width={size} height={size}
+          aria-hidden="true"
+          xmlns="http://www.w3.org/2000/svg"
+          style={{ position: 'static' }}
+        >
+          {spiderSvgPaths}
+        </svg>
+      </div>
+    );
+  }
 
   /* ─────────────────── SVG ICONS ─────────────────── */
   const Icons = {
@@ -2997,6 +3056,8 @@ def run(**kwargs):
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #0b0d10 0%, #0f1320 100%)', borderRight: '1px solid var(--border)', position: 'relative', overflow: 'hidden' }}>
           {/* Decorative glow */}
           <div style={{ position: 'absolute', top: '30%', left: '50%', transform: 'translate(-50%,-50%)', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(239,159,39,0.08) 0%, transparent 70%)', pointerEvents: 'none' }} />
+          {/* Watermark logo */}
+          <BgLogo size={520} wrapStyle={{ top: 0, left: 0, right: 0, bottom: 0 }} />
           <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <svg viewBox="200 20 280 230" width="220" height="90" role="img" xmlns="http://www.w3.org/2000/svg">
               <ellipse cx="340" cy="108" rx="21" ry="29" fill="#EF9F27"/>
@@ -3523,7 +3584,8 @@ def run(**kwargs):
       <React.Fragment>
       <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
         <Sidebar activeNav={nav} onNav={handleNav} user={user} onLogout={onLogout} />
-        <div style={{ flex: 1, overflowY: 'auto', padding: '32px 36px 80px', background: 'var(--bg-app)' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '32px 36px 80px', background: 'var(--bg-app)', position: 'relative' }}>
+          <BgLogo size={560} wrapStyle={{ bottom: '-80px', right: '-80px' }} />
           {nav === 'docs' ? (
             <DocsView />
           ) : nav === 'admin' ? (
