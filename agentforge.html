@@ -629,47 +629,6 @@
           );
         })()}
 
-        {/* Site Scraping */}
-        {(() => {
-          const urls = agent.scrapeUrls || (agent.scrapeUrl ? [agent.scrapeUrl] : []);
-          function setUrls(newUrls) { update(['scrapeUrls'], newUrls); }
-          function addUrl() { setUrls([...urls, '']); }
-          function removeUrl(i) { setUrls(urls.filter((_, idx) => idx !== i)); }
-          function changeUrl(i, val) { const u = [...urls]; u[i] = val; setUrls(u); }
-          function normalizeUrl(i) {
-            const v = (urls[i] || '').trim();
-            if (v && !v.startsWith('http')) changeUrl(i, 'https://' + v);
-          }
-          return (
-            <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 24, border: '1px solid var(--border)' }}>
-              <div style={{ fontWeight: 700, marginBottom: 16, fontSize: 15 }}>Site Scraping</div>
-              <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 8, display: 'block' }}>Predefined URLs</label>
-              {urls.map((url, i) => (
-                <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                  <input
-                    type="url"
-                    value={url}
-                    onChange={e => changeUrl(i, e.target.value)}
-                    onBlur={() => normalizeUrl(i)}
-                    placeholder="https://example.com/docs"
-                    dir="ltr"
-                    style={{ flex: 1 }}
-                  />
-                  <button
-                    onClick={() => removeUrl(i)}
-                    style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', fontSize: 16, lineHeight: 1 }}
-                  >✕</button>
-                </div>
-              ))}
-              <button
-                onClick={addUrl}
-                style={{ marginTop: 4, background: 'var(--bg-input)', color: 'var(--text-2)', padding: '7px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', fontSize: 13 }}
-              >+ Add URL</button>
-              <div style={{ fontSize: 11, color: 'var(--text-2)', marginTop: 8 }}>If set, the scrape_website tool will scrape these URLs and ignore any URL the model or user provides.</div>
-            </div>
-          );
-        })()}
-
         {/* Base Prompt */}
         <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 24, border: '1px solid var(--border)' }}>
           <div style={{ fontWeight: 700, marginBottom: 16, fontSize: 15 }}>Base Prompt</div>
@@ -867,46 +826,7 @@
     );
   }
 
-  /* ── TOOL_PRESETS: ready-made tools users can add in one click ── */
-  const TOOL_PRESETS = [
-    {
-      name: 'scrape_website',
-      description: 'Scrape a URL and return its title and text content',
-      parameters: [{ name: 'url', type: 'string', description: 'The URL to scrape' }],
-      packages: '',
-      envVars: [],
-      code: [
-        'import urllib.request, json, os',
-        '',
-        'def run(**kwargs):',
-        '    url = kwargs.get("url","").strip()',
-        '    if not url: return "Error: url is required"',
-        '    if not url.startswith("http"): url = "https://" + url',
-        '    # Call the browser-based scraper endpoint (Playwright)',
-        '    vercel_url = os.environ.get("VERCEL_URL", "")',
-        '    if vercel_url:',
-        '        base = f"https://{vercel_url}"',
-        '    else:',
-        '        base = "http://localhost:3000"',
-        '    try:',
-        '        req = urllib.request.Request(',
-        '            f"{base}/api/scrape-browser",',
-        '            data=json.dumps({"url": url}).encode(),',
-        '            headers={"Content-Type": "application/json"},',
-        '            method="POST"',
-        '        )',
-        '        with urllib.request.urlopen(req, timeout=30) as r:',
-        '            data = json.loads(r.read())',
-        '        if data.get("error"): return f"Error: {data[\'error\']}"',
-        '        title = data.get("title", "")',
-        '        text = data.get("text", "")',
-        '        if not text: return f"Could not extract content from {url}"',
-        '        return f"Title: {title}\\n\\n{text}"',
-        '    except Exception as e:',
-        '        return f"Error: {e}"',
-      ].join('\n'),
-    },
-  ];
+  const TOOL_PRESETS = [];
 
   /* ─────────────────── FILE ICON HELPER ─────────────────── */
   function fileIcon(title) {
@@ -2473,7 +2393,6 @@ async function sendMsg(){
       { id: 'config',  label: 'הגדרות בסיסיות' },
       { id: 'tools',   label: 'כלים (Tools)' },
       { id: 'rag',     label: 'בסיס ידע (RAG)' },
-      { id: 'scrape',  label: 'סריקת אתרים' },
       { id: 'test',    label: 'בדיקת הסוכן' },
       { id: 'tips',    label: 'טיפים מתקדמים' },
     ];
