@@ -143,7 +143,7 @@
     }
 
     .bg-logo-watermark {
-      opacity: 0.042;
+      opacity: 0.018;
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -3048,7 +3048,7 @@ def run(**kwargs):
           {/* Decorative glow */}
           <div style={{ position: 'absolute', top: '30%', left: '50%', transform: 'translate(-50%,-50%)', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(239,159,39,0.08) 0%, transparent 70%)', pointerEvents: 'none' }} />
           {/* Watermark logo */}
-          <BgLogo size={520} wrapStyle={{ top: 0, left: 0, right: 0, bottom: 0 }} />
+          <BgLogo size={420} wrapStyle={{ bottom: '-60px', left: '-60px' }} />
           <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <svg viewBox="200 20 280 230" width="220" height="90" role="img" xmlns="http://www.w3.org/2000/svg">
               <ellipse cx="340" cy="108" rx="21" ry="29" fill="#EF9F27"/>
