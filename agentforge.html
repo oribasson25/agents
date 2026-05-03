@@ -1517,6 +1517,7 @@
     const [saving, setSaving] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState('');
+    const [uploadProgress, setUploadProgress] = useState('');
     const [editingDocId, setEditingDocId] = useState(null);
     const [editDoc, setEditDoc] = useState({ title: '', content: '' });
     const fileInputRef = useRef(null);
@@ -1577,39 +1578,78 @@
     }
 
     async function handleFileUpload(e) {
-      const file = e.target.files?.[0];
-      if (!fileInputRef.current) return;
-      fileInputRef.current.value = '';
-      if (!file) return;
+      const files = Array.from(e.target.files || []);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (!files.length) return;
 
       setUploadError('');
+      setUploadProgress('');
       setUploading(true);
 
-      try {
-        const arrayBuf = await file.arrayBuffer();
-        const bytes = new Uint8Array(arrayBuf);
-        let binary = '';
-        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-        const content_b64 = btoa(binary);
+      const skillId = selectedSkillId === '__global__' ? null : selectedSkillId;
+      const errors = [];
+      const saved = [];
 
-        const resp = await apiFetch('/api/extract-file', {
-          method: 'POST',
-          body: JSON.stringify({ filename: file.name, content_b64 }),
-        });
-        const data = await resp.json();
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        setUploadProgress(`מעבד ${file.name} (${i + 1}/${files.length})…`);
 
-        if (data.error) {
-          setUploadError(data.error);
-          return;
+        try {
+          // Read file as base64
+          const arrayBuf = await file.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuf);
+          const chunkSize = 0x8000;
+          let binary = '';
+          for (let j = 0; j < bytes.length; j += chunkSize) {
+            binary += String.fromCharCode(...bytes.subarray(j, j + chunkSize));
+          }
+          const content_b64 = btoa(binary);
+
+          // Extract text via Python
+          const extractResp = await apiFetch('/api/extract-file', {
+            method: 'POST',
+            body: JSON.stringify({ filename: file.name, content_b64 }),
+          });
+          const data = await extractResp.json();
+
+          if (data.error) {
+            errors.push(`${file.name}: ${data.error}`);
+            continue;
+          }
+
+          const text = (data.text || '').trim();
+          if (!text) {
+            errors.push(`${file.name}: לא נמצא טקסט בקובץ`);
+            continue;
+          }
+
+          // Auto-save directly to database
+          const docId = uid();
+          const saveResp = await apiFetch(`/api/agents/${agent.id}/documents`, {
+            method: 'POST',
+            body: JSON.stringify({ docId, skillId, title: data.title || file.name, content: text }),
+          });
+
+          if (saveResp.ok) {
+            const doc = await saveResp.json();
+            saved.push(doc);
+          } else {
+            const err = await saveResp.json().catch(() => ({}));
+            errors.push(`${file.name}: ${err.error || 'שגיאה בשמירה'}`);
+          }
+        } catch (err) {
+          errors.push(`${file.name}: ${err.message}`);
         }
-
-        setNewDoc({ title: data.title || file.name, content: data.text || '' });
-        setAddOpen(true);
-      } catch (err) {
-        setUploadError('Upload failed: ' + err.message);
-      } finally {
-        setUploading(false);
       }
+
+      if (saved.length > 0) {
+        setDocs(d => [...saved.reverse(), ...d]);
+      }
+      if (errors.length > 0) {
+        setUploadError(errors.join(' | '));
+      }
+      setUploading(false);
+      setUploadProgress('');
     }
 
     const activeSkillName = selectedSkillId === '__global__'
@@ -1658,16 +1698,17 @@
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.docx,.xlsx,.xls"
+              accept=".pdf,.docx"
+              multiple
               style={{ display: 'none' }}
               onChange={handleFileUpload}
             />
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
-              title="Upload PDF, Word, or Excel file"
+              title="העלה קבצי PDF או Word (ניתן לבחור מספר קבצים)"
               style={{ background: 'var(--bg-panel)', color: 'var(--teal)', border: '1px solid var(--teal)', padding: '8px 14px', borderRadius: 'var(--r-xl)', fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
-              {uploading ? '⏳ Extracting…' : '📎 Upload File'}
+              {uploading ? (uploadProgress || '⏳ מעבד…') : '📎 העלה מסמך'}
             </button>
             <button onClick={() => setAddOpen(v => !v)}
               style={{ background: 'var(--primary)', color: '#fff', padding: '8px 16px', borderRadius: 'var(--r-xl)', fontWeight: 600, fontSize: 13 }}>

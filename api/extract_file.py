@@ -28,16 +28,34 @@ def _extract_docx(data: bytes) -> str:
     with zipfile.ZipFile(io.BytesIO(data)) as z:
         xml_bytes = z.read("word/document.xml")
     root = ET.fromstring(xml_bytes)
-    paragraphs = []
-    for para in root.iter(f"{{{NS}}}p"):
+    lines = []
+
+    def _para_text(para) -> str:
         parts = []
         for t in para.iter(f"{{{NS}}}t"):
             if t.text:
                 parts.append(t.text)
-        line = "".join(parts).strip()
-        if line:
-            paragraphs.append(line)
-    return "\n".join(paragraphs)
+        return "".join(parts).strip()
+
+    for node in root.iter():
+        if node.tag == f"{{{NS}}}p":
+            line = _para_text(node)
+            if line:
+                lines.append(line)
+        elif node.tag == f"{{{NS}}}tr":
+            # Table row: collect cells separated by tab
+            cells = []
+            for tc in node.iter(f"{{{NS}}}tc"):
+                cell_parts = []
+                for t in tc.iter(f"{{{NS}}}t"):
+                    if t.text:
+                        cell_parts.append(t.text)
+                cells.append("".join(cell_parts).strip())
+            row = "\t".join(cells)
+            if row.strip():
+                lines.append(row)
+
+    return "\n".join(lines)
 
 
 # ─── XLSX (stdlib) ─────────────────────────────────────────────────────────────
@@ -90,7 +108,25 @@ def _extract_xlsx(data: bytes) -> str:
     return "\n".join(all_rows).strip()
 
 
-# ─── PDF (pypdf via pip) ───────────────────────────────────────────────────────
+# ─── PDF (pymupdf primary, pypdf fallback) ────────────────────────────────────
+
+def _ensure_pymupdf():
+    if PKG_DIR not in sys.path:
+        sys.path.insert(0, PKG_DIR)
+    try:
+        import fitz  # noqa: F401
+        return None
+    except ImportError:
+        pass
+    import subprocess
+    result = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "--quiet", "--target", PKG_DIR, "pymupdf"],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        return f"pip install pymupdf failed: {(result.stderr or result.stdout)[:400]}"
+    return None
+
 
 def _ensure_pypdf():
     if PKG_DIR not in sys.path:
@@ -110,20 +146,42 @@ def _ensure_pypdf():
     return None
 
 
-def _extract_pdf(data: bytes) -> tuple[str, int]:
-    """Returns (text, page_count)."""
-    err = _ensure_pypdf()
-    if err:
-        raise RuntimeError(err)
+def _extract_pdf_pymupdf(data: bytes) -> tuple[str, int]:
+    import fitz
+    doc = fitz.open(stream=data, filetype="pdf")
+    page_count = doc.page_count
+    pages = []
+    for page in doc:
+        text = page.get_text()
+        if text.strip():
+            pages.append(text.strip())
+    doc.close()
+    return "\n\n".join(pages), page_count
 
-    import pypdf  # noqa: E402  (installed above)
 
+def _extract_pdf_pypdf(data: bytes) -> tuple[str, int]:
+    import pypdf
     reader = pypdf.PdfReader(io.BytesIO(data))
     pages = []
     for page in reader.pages:
         text = page.extract_text() or ""
         pages.append(text.strip())
     return "\n\n".join(p for p in pages if p), len(reader.pages)
+
+
+def _extract_pdf(data: bytes) -> tuple[str, int]:
+    """Returns (text, page_count). Tries pymupdf first, falls back to pypdf."""
+    err = _ensure_pymupdf()
+    if not err:
+        try:
+            return _extract_pdf_pymupdf(data)
+        except Exception:
+            pass
+
+    err2 = _ensure_pypdf()
+    if err2:
+        raise RuntimeError(f"Both pymupdf and pypdf unavailable: {err}; {err2}")
+    return _extract_pdf_pypdf(data)
 
 
 # ─── XLS (xlrd via pip) ────────────────────────────────────────────────────────
