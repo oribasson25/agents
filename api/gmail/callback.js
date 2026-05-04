@@ -1,0 +1,70 @@
+import crypto from 'crypto';
+import { sql } from '../_db.js';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
+
+function verifyState(state) {
+  try {
+    const [payload, sig] = state.split('.');
+    const expected = crypto.createHmac('sha256', JWT_SECRET).update(payload).digest('base64url');
+    if (sig !== expected) return null;
+    return JSON.parse(Buffer.from(payload, 'base64url').toString());
+  } catch { return null; }
+}
+
+export default async function handler(req, res) {
+  const { code, state, error } = req.query;
+  const appUrl = process.env.APP_URL || `https://${req.headers.host}`;
+
+  if (error) {
+    return res.redirect(302, `${appUrl}/?gmail_error=${encodeURIComponent(error)}`);
+  }
+
+  const stateData = verifyState(state || '');
+  if (!stateData) {
+    return res.redirect(302, `${appUrl}/?gmail_error=invalid_state`);
+  }
+
+  const { userId } = stateData;
+  const redirectUri = `${appUrl}/api/gmail/callback`;
+
+  // Exchange code for tokens
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code,
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: redirectUri,
+      grant_type: 'authorization_code',
+    }),
+  });
+
+  const tokens = await tokenRes.json();
+  if (!tokenRes.ok) {
+    return res.redirect(302, `${appUrl}/?gmail_error=${encodeURIComponent(tokens.error_description || 'token_exchange_failed')}`);
+  }
+
+  // Get Gmail address
+  const profileRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+    headers: { Authorization: `Bearer ${tokens.access_token}` },
+  });
+  const profile = await profileRes.json();
+  const gmailEmail = profile.email || '';
+
+  const expiry = Math.floor(Date.now() / 1000) + (tokens.expires_in || 3600);
+
+  await sql`
+    insert into gmail_tokens (user_id, email, access_token, refresh_token, expiry)
+    values (${userId}, ${gmailEmail}, ${tokens.access_token}, ${tokens.refresh_token || ''}, ${expiry})
+    on conflict (user_id) do update set
+      email         = excluded.email,
+      access_token  = excluded.access_token,
+      refresh_token = case when excluded.refresh_token != '' then excluded.refresh_token
+                          else gmail_tokens.refresh_token end,
+      expiry        = excluded.expiry
+  `;
+
+  res.redirect(302, `${appUrl}/?gmail_connected=1`);
+}

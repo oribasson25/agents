@@ -9,6 +9,11 @@
     { "source": "/api/scrape", "destination": "/api/scrape.py" },
     { "source": "/api/scrape-browser", "destination": "/api/scrape_browser.js" },
     { "source": "/api/extract-file", "destination": "/api/extract_file.py" },
+    { "source": "/api/gmail/auth", "destination": "/api/gmail/auth.js" },
+    { "source": "/api/gmail/callback", "destination": "/api/gmail/callback.js" },
+    { "source": "/api/gmail/status", "destination": "/api/gmail/status.js" },
+    { "source": "/api/gmail/send", "destination": "/api/gmail/send.js" },
+    { "source": "/api/gmail/disconnect", "destination": "/api/gmail/disconnect.js" },
     { "source": "/", "destination": "/agentforge.html" }
   ]
 }
