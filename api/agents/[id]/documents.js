@@ -8,7 +8,7 @@ export default async function handler(req, res) {
 
   if (req.method === 'GET') {
     const rows = await sql`
-      select id, agent_id, skill_id, title, content, created_at
+      select id, agent_id, skill_id, title, content, source_type, source_url, created_at
       from documents
       where agent_id = ${id}
       order by created_at desc

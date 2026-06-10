@@ -1,7 +1,17 @@
 {
+  "crons": [
+    { "path": "/api/cron/crawl-all", "schedule": "0 4 * * *" },
+    { "path": "/api/cron/crawl-all", "schedule": "0 10 * * *" }
+  ],
   "functions": {
     "api/scrape_browser.js": {
       "maxDuration": 30
+    },
+    "api/agents/[id]/crawl.js": {
+      "maxDuration": 300
+    },
+    "api/cron/crawl-all.js": {
+      "maxDuration": 300
     }
   },
   "rewrites": [

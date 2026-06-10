@@ -23,7 +23,7 @@ export default async function handler(req, res) {
             and (skill_id is null or skill_id = ${skill_id})
             and tsv @@ plainto_tsquery('simple', ${query})
           order by rank desc
-          limit 5
+          limit 10
         `;
       } else {
         // No skill specified: return only global docs
@@ -35,7 +35,7 @@ export default async function handler(req, res) {
             and skill_id is null
             and tsv @@ plainto_tsquery('simple', ${query})
           order by rank desc
-          limit 5
+          limit 10
         `;
       }
       

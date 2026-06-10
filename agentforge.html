@@ -1648,6 +1648,88 @@
     const [editDoc, setEditDoc] = useState({ title: '', content: '' });
     const fileInputRef = useRef(null);
 
+    // Web Crawler state
+    const [crawlConfig, setCrawlConfig] = useState(agent.crawlConfig || { urls: [], status: 'idle' });
+    const [crawlUrlInput, setCrawlUrlInput] = useState('');
+    const [crawlUrlError, setCrawlUrlError] = useState('');
+    const crawlPollRef = useRef(null);
+
+    useEffect(() => {
+      // Poll for crawl status while running
+      if (crawlConfig.status === 'running') {
+        crawlPollRef.current = setInterval(async () => {
+          try {
+            const r = await apiFetch(`/api/agents/${agent.id}/crawl`);
+            if (r.ok) {
+              const cfg = await r.json();
+              setCrawlConfig(cfg);
+              if (cfg.status !== 'running') {
+                clearInterval(crawlPollRef.current);
+                // Reload docs list to show newly crawled pages
+                apiFetch(`/api/agents/${agent.id}/documents`)
+                  .then(r => r.json()).then(rows => setDocs(rows)).catch(() => {});
+              }
+            }
+          } catch {}
+        }, 2000);
+      }
+      return () => clearInterval(crawlPollRef.current);
+    }, [crawlConfig.status]);
+
+    async function addCrawlUrl() {
+      const url = crawlUrlInput.trim();
+      if (!url) return;
+      try { new URL(url); } catch {
+        setCrawlUrlError('כתובת URL לא תקינה');
+        return;
+      }
+      setCrawlUrlError('');
+      setCrawlUrlInput('');
+      await startCrawl(url);
+    }
+
+    async function startCrawl(url) {
+      setCrawlConfig(c => ({ ...c, status: 'running' }));
+      try {
+        const r = await apiFetch(`/api/agents/${agent.id}/crawl`, {
+          method: 'POST',
+          body: JSON.stringify({ url, maxPages: crawlConfig.maxPages || 100 }),
+        });
+        const data = await r.json();
+        if (r.ok) {
+          setCrawlConfig(c => ({ ...c, ...data.crawlConfig, status: 'done', pagesCrawled: data.pagesCrawled }));
+          apiFetch(`/api/agents/${agent.id}/documents`)
+            .then(r => r.json()).then(rows => setDocs(rows)).catch(() => {});
+          // Reload agent crawlConfig from server
+          const cfg = await apiFetch(`/api/agents/${agent.id}/crawl`).then(r => r.json()).catch(() => null);
+          if (cfg) setCrawlConfig(cfg);
+        } else {
+          setCrawlConfig(c => ({ ...c, status: 'error', errorMessage: data.error }));
+        }
+      } catch (err) {
+        setCrawlConfig(c => ({ ...c, status: 'error', errorMessage: err.message }));
+      }
+    }
+
+    async function removeCrawlUrl(url) {
+      try {
+        await apiFetch(`/api/agents/${agent.id}/crawl`, {
+          method: 'DELETE',
+          body: JSON.stringify({ url }),
+        });
+        setCrawlConfig(c => ({ ...c, urls: (c.urls || []).filter(u => u !== url) }));
+        // Reload docs
+        apiFetch(`/api/agents/${agent.id}/documents`)
+          .then(r => r.json()).then(rows => setDocs(rows)).catch(() => {});
+      } catch {}
+    }
+
+    function formatCrawlTime(iso) {
+      if (!iso) return '—';
+      const d = new Date(iso);
+      return d.toLocaleDateString('he-IL') + ' ' + d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    }
+
     useEffect(() => {
       apiFetch(`/api/agents/${agent.id}/documents`)
         .then(r => r.json())
@@ -1881,6 +1963,79 @@
           </div>
         )}
 
+        {/* ─── Web Crawler Section ─── */}
+        <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+            🌐 Web Crawler
+            <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)', background: 'var(--bg-hover)', padding: '2px 8px', borderRadius: 'var(--r-xl)' }}>
+              סריקה אוטומטית 07:00 + 13:00
+            </span>
+          </div>
+
+          {/* URL input row */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+            <input
+              value={crawlUrlInput}
+              onChange={e => { setCrawlUrlInput(e.target.value); setCrawlUrlError(''); }}
+              onKeyDown={e => e.key === 'Enter' && addCrawlUrl()}
+              placeholder="https://example.com"
+              dir="ltr"
+              style={{ flex: 1, fontSize: 13 }}
+              disabled={crawlConfig.status === 'running'}
+            />
+            <button
+              onClick={addCrawlUrl}
+              disabled={crawlConfig.status === 'running' || !crawlUrlInput.trim()}
+              style={{ background: 'var(--primary)', color: '#fff', padding: '8px 16px', borderRadius: 'var(--r-md)', fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}>
+              {crawlConfig.status === 'running' ? '⏳ סורק…' : '＋ הוסף וסרוק'}
+            </button>
+          </div>
+
+          {crawlUrlError && (
+            <div style={{ fontSize: 12, color: 'var(--danger)', marginBottom: 8 }}>{crawlUrlError}</div>
+          )}
+
+          {/* Configured URLs list */}
+          {(crawlConfig.urls || []).length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+              {(crawlConfig.urls || []).map(url => (
+                <div key={url} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg-input)', borderRadius: 'var(--r-md)', padding: '6px 10px', fontSize: 12 }}>
+                  <span style={{ flex: 1, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: 'ltr' }}>{url}</span>
+                  <button
+                    onClick={() => startCrawl(url)}
+                    disabled={crawlConfig.status === 'running'}
+                    title="סרוק עכשיו"
+                    style={{ background: 'var(--bg-hover)', color: 'var(--primary)', border: '1px solid var(--primary)', padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 600 }}>
+                    {crawlConfig.status === 'running' ? '⏳' : '↺ סרוק'}
+                  </button>
+                  <IconBtn onClick={() => removeCrawlUrl(url)} danger title="הסר URL">{Icons.trash}</IconBtn>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Status row */}
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            {crawlConfig.status === 'running' && (
+              <span style={{ color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⏳</span> סורק…
+              </span>
+            )}
+            {crawlConfig.status === 'done' && (
+              <span style={{ color: 'var(--teal)' }}>✓ סריקה אחרונה: {formatCrawlTime(crawlConfig.lastCrawledAt)} | {crawlConfig.pagesCrawled || 0} עמודים</span>
+            )}
+            {crawlConfig.status === 'error' && (
+              <span style={{ color: 'var(--danger)' }}>✗ שגיאה: {crawlConfig.errorMessage}</span>
+            )}
+            {(!crawlConfig.status || crawlConfig.status === 'idle') && (crawlConfig.urls || []).length === 0 && (
+              <span>הוסף URL לסריקה אוטומטית של אתר שלם</span>
+            )}
+            {crawlConfig.status !== 'running' && (crawlConfig.urls || []).length > 0 && !crawlConfig.lastCrawledAt && (
+              <span>ממתין לסריקה ראשונה</span>
+            )}
+          </div>
+        </div>
+
         {/* Doc list */}
         {loading ? (
           <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: 8 }}>Loading…</div>
@@ -1916,7 +2071,10 @@
               ) : (
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6 }}>{fileIcon(doc.title)} {doc.title}</div>
+                    <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6 }}>
+                      {doc.source_type === 'crawl' ? '🌐' : fileIcon(doc.title)} {doc.title}
+                      {doc.source_type === 'crawl' && <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 6, fontWeight: 400 }}>web</span>}
+                    </div>
                     <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6, maxHeight: 64, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>
                       {doc.content}
                     </div>
