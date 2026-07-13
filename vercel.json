@@ -12,6 +12,9 @@
     },
     "api/cron/crawl-all.js": {
       "maxDuration": 300
+    },
+    "api/whatsapp/webhook.js": {
+      "maxDuration": 90
     }
   },
   "rewrites": [
@@ -24,6 +27,8 @@
     { "source": "/api/gmail/status", "destination": "/api/gmail/status.js" },
     { "source": "/api/gmail/send", "destination": "/api/gmail/send.js" },
     { "source": "/api/gmail/disconnect", "destination": "/api/gmail/disconnect.js" },
+    { "source": "/api/whatsapp/webhook", "destination": "/api/whatsapp/webhook.js" },
+    { "source": "/api/whatsapp/test", "destination": "/api/whatsapp/test.js" },
     { "source": "/", "destination": "/agentforge.html" }
   ]
 }

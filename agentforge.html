@@ -322,6 +322,7 @@
       dlp: { creditCard: false, israeliId: false },
       scrapeUrls: [],
       emailEnabled: false,
+      whatsapp: { enabled: false, phoneNumberId: '', accessToken: '', appSecret: '', verifyToken: '' },
       createdAt: new Date().toISOString(),
       ...overrides,
     };
@@ -2233,6 +2234,175 @@
     );
   }
 
+  /* ─────────────────── WHATSAPP TAB ─────────────────── */
+  function WhatsAppTab({ agent, onUpdate }) {
+    const [showToken, setShowToken] = useState(false);
+    const [showSecret, setShowSecret] = useState(false);
+    const [copied, setCopied] = useState(false);
+    const [testing, setTesting] = useState(false);
+    const [testResult, setTestResult] = useState(null); // { ok, displayPhoneNumber, verifiedName, error }
+
+    const wa = agent.whatsapp || {};
+    const set = (key, val) => onUpdate({ ...agent, whatsapp: { ...wa, [key]: val } });
+
+    const baseUrl = window.location.origin.startsWith('file') ? 'https://8legs.vercel.app' : window.location.origin;
+    const webhookUrl = `${baseUrl}/api/whatsapp/webhook`;
+
+    function copy(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      });
+    }
+
+    function generateVerifyToken() {
+      const bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      const token = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+      set('verifyToken', token);
+    }
+
+    async function testConnection() {
+      if (!wa.phoneNumberId || !wa.accessToken) return;
+      setTesting(true);
+      setTestResult(null);
+      try {
+        const r = await apiFetch('/api/whatsapp/test', {
+          method: 'POST',
+          body: JSON.stringify({ phoneNumberId: wa.phoneNumberId, accessToken: wa.accessToken }),
+        });
+        const d = await r.json();
+        setTestResult(d);
+      } catch (err) {
+        setTestResult({ ok: false, error: err.message });
+      } finally {
+        setTesting(false);
+      }
+    }
+
+    const inputStyle = { flex: 1 };
+    const labelStyle = { fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' };
+    const rowStyle = { marginBottom: 16 };
+
+    return (
+      <div style={{ maxWidth: 720, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* Enable toggle */}
+        <div style={{ background: 'var(--bg-card)', borderRadius: 'var(--r-lg)', border: '1px solid var(--border)', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--bg-panel)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>💬</div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>WhatsApp Channel</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Let people chat with this agent over WhatsApp</div>
+            </div>
+          </div>
+          <button
+            onClick={() => set('enabled', !wa.enabled)}
+            title={wa.enabled ? 'Disable WhatsApp channel' : 'Enable WhatsApp channel'}
+            style={{
+              width: 44, height: 24, borderRadius: 12, padding: 0, flexShrink: 0,
+              background: wa.enabled ? 'var(--teal)' : 'var(--bg-hover)',
+              border: '1px solid ' + (wa.enabled ? 'var(--teal)' : 'var(--border)'),
+              position: 'relative', cursor: 'pointer', transition: 'background 0.2s',
+            }}
+          >
+            <div style={{
+              position: 'absolute', top: 2, width: 18, height: 18, borderRadius: '50%', background: '#fff',
+              left: wa.enabled ? 22 : 2, transition: 'left 0.15s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+            }} />
+          </button>
+        </div>
+
+        {/* Credentials */}
+        <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 24, border: '1px solid var(--border)' }}>
+          <div style={{ fontWeight: 700, marginBottom: 16, fontSize: 15 }}>Meta Cloud API Credentials</div>
+
+          <div style={rowStyle}>
+            <label style={labelStyle}>Phone Number ID</label>
+            <input type="text" value={wa.phoneNumberId || ''} onChange={e => set('phoneNumberId', e.target.value)} placeholder="123456789012345" style={{ width: '100%' }} />
+          </div>
+
+          <div style={rowStyle}>
+            <label style={labelStyle}>Access Token</label>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input type={showToken ? 'text' : 'password'} value={wa.accessToken || ''} onChange={e => set('accessToken', e.target.value)} placeholder="EAAG..." style={inputStyle} />
+              <button onClick={() => setShowToken(v => !v)} style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', fontSize: 16 }}>{showToken ? '🙈' : '👁'}</button>
+            </div>
+          </div>
+
+          <div style={rowStyle}>
+            <label style={labelStyle}>App Secret</label>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input type={showSecret ? 'text' : 'password'} value={wa.appSecret || ''} onChange={e => set('appSecret', e.target.value)} placeholder="from Meta App Settings → Basic" style={inputStyle} />
+              <button onClick={() => setShowSecret(v => !v)} style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', fontSize: 16 }}>{showSecret ? '🙈' : '👁'}</button>
+            </div>
+          </div>
+
+          <div style={{ ...rowStyle, marginBottom: 0 }}>
+            <label style={labelStyle}>Verify Token</label>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input type="text" value={wa.verifyToken || ''} onChange={e => set('verifyToken', e.target.value)} placeholder="choose any string" style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 13 }} />
+              <button onClick={generateVerifyToken} style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>🎲 Generate</button>
+            </div>
+          </div>
+        </div>
+
+        {/* Webhook URL */}
+        <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 24, border: '1px solid var(--border)' }}>
+          <div style={{ fontWeight: 700, marginBottom: 4, fontSize: 15 }}>Webhook URL</div>
+          <div style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 12 }}>Paste this into Meta App Dashboard → WhatsApp → Configuration → Callback URL</div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <pre style={{ flex: 1, background: 'var(--bg-app)', borderRadius: 'var(--r-md)', padding: '10px 14px', fontSize: 12, fontFamily: "'JetBrains Mono','Fira Code',monospace", color: 'var(--text-2)', overflowX: 'auto', whiteSpace: 'nowrap', margin: 0 }}>{webhookUrl}</pre>
+            <button onClick={() => copy(webhookUrl)} style={{ background: copied ? 'var(--success)' : 'var(--primary)', color: '#fff', padding: '10px 16px', borderRadius: 'var(--r-md)', fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}>
+              {copied ? '✓ Copied!' : '📋 Copy'}
+            </button>
+          </div>
+        </div>
+
+        {/* Test connection */}
+        <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 24, border: '1px solid var(--border)' }}>
+          <div style={{ fontWeight: 700, marginBottom: 12, fontSize: 15 }}>Test Connection</div>
+          <button
+            onClick={testConnection}
+            disabled={testing || !wa.phoneNumberId || !wa.accessToken}
+            style={{ background: 'var(--primary)', color: '#fff', padding: '10px 16px', borderRadius: 'var(--r-md)', fontWeight: 600, fontSize: 13, opacity: (testing || !wa.phoneNumberId || !wa.accessToken) ? 0.5 : 1 }}
+          >
+            {testing ? 'Testing…' : 'Test Connection'}
+          </button>
+          {testResult && (
+            <div style={{
+              marginTop: 12, padding: '10px 14px', borderRadius: 'var(--r-md)', fontSize: 13,
+              background: testResult.ok ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+              border: '1px solid ' + (testResult.ok ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'),
+              color: testResult.ok ? 'var(--success)' : '#ef4444',
+            }}>
+              {testResult.ok
+                ? `✓ Connected: ${testResult.displayPhoneNumber}${testResult.verifiedName ? ' (' + testResult.verifiedName + ')' : ''}`
+                : `✗ ${testResult.error || 'Connection failed'}`}
+            </div>
+          )}
+        </div>
+
+        {/* Setup instructions */}
+        <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 24, border: '1px solid var(--border)' }}>
+          <div style={{ fontWeight: 700, marginBottom: 12, fontSize: 15 }}>Setup Instructions</div>
+          <ol style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.9, paddingLeft: 20 }}>
+            <li>Create an app at <span style={{ color: 'var(--primary)' }}>developers.facebook.com</span> and add the <b>WhatsApp</b> product.</li>
+            <li>Copy the <b>Phone Number ID</b> from WhatsApp → API Setup and paste it above.</li>
+            <li>Generate a permanent token for a system user and paste it as the <b>Access Token</b>.</li>
+            <li>Copy the <b>App Secret</b> from App Settings → Basic.</li>
+            <li>Fill in a <b>Verify Token</b> (or click Generate) — changes save automatically.</li>
+            <li>In Meta's dashboard, set the <b>Callback URL</b> above and the same <b>Verify Token</b>, then click Verify and Save.</li>
+            <li>Subscribe the app to the <b>messages</b> webhook field.</li>
+            <li>Enable the toggle above, then message the number from WhatsApp.</li>
+          </ol>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 12 }}>
+            Note: the access token and app secret are stored as-is in the database, same as the agent's API key.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function generateIframeHtml(agent, { title, accent, radius, widgetHeight, placeholder }) {
     const systemPrompt = buildSystemPrompt(agent);
     const apiKey = (agent.apiConfig && agent.apiConfig.apiKey) || '';
@@ -2658,7 +2828,7 @@ async function sendMsg(){
   /* ─────────────────── AGENT EDITOR ─────────────────── */
   function AgentEditor({ agent, onUpdate, onBack }) {
     const [tab, setTab] = useState('configuration');
-    const TABS = ['configuration','skills','tools','knowledge','export'];
+    const TABS = ['configuration','skills','tools','knowledge','export','whatsapp'];
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -2698,6 +2868,7 @@ async function sendMsg(){
           {tab === 'tools' && <ToolsTab agent={agent} onUpdate={onUpdate} />}
           {tab === 'knowledge' && <KnowledgeTab agent={agent} />}
           {tab === 'export' && <ExportTab agent={agent} />}
+          {tab === 'whatsapp' && <WhatsAppTab agent={agent} onUpdate={onUpdate} />}
         </div>
       </div>
     );
