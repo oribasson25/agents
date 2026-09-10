@@ -40,21 +40,31 @@ export function buildStarterAgent(template, ownerLabel = '') {
 }
 
 /**
+ * The template is the newest admin-owned agent with exactly this name. Requiring
+ * an admin owner matters: otherwise any user could name an agent "weather" and
+ * have their prompt and tools handed to every new account.
+ */
+export async function findTemplateAgent() {
+  const [row] = await sql`
+    select a.id, a.data, u.username
+    from agents a
+    join users u on u.id = a.user_id
+    where lower(trim(coalesce(a.data->>'name', ''))) = ${TEMPLATE_AGENT_NAME}
+      and u.is_admin
+    order by a.updated_at desc
+    limit 1
+  `;
+  return row || null;
+}
+
+/**
  * Copies the starter agent (and its knowledge documents) to a new user.
  * Returns the created agent id, or null when there is nothing to copy.
  * Never throws: a missing template must not fail a sign-up.
  */
 export async function seedDefaultAgent(userId) {
   try {
-    const [row] = await sql`
-      select a.id, a.data
-      from agents a
-      join users u on u.id = a.user_id
-      where lower(a.data->>'name') = ${TEMPLATE_AGENT_NAME}
-        and u.is_admin
-      order by a.updated_at desc
-      limit 1
-    `;
+    const row = await findTemplateAgent();
     if (!row) {
       console.warn(`[seed] no admin-owned template agent named "${TEMPLATE_AGENT_NAME}" — new user starts empty`);
       return null;

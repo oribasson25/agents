@@ -328,6 +328,10 @@
   async function adminListUsers() { return apiFetch('/api/admin/users').then(r => r.json()); }
   async function adminListUserAgents(userId) { return apiFetch(`/api/admin/users/${userId}/agents`).then(r => r.json()); }
   async function adminResetPassword(userId) { return apiFetch(`/api/admin/users/${userId}/reset-password`, { method: 'POST' }).then(r => r.json()); }
+  async function adminStarterAgent() {
+    const r = await apiFetch('/api/admin/starter-agent');
+    return r.json();
+  }
   async function adminDeleteUser(userId, confirmUsername) {
     const r = await apiFetch(`/api/admin/users/${userId}?confirm=${encodeURIComponent(confirmUsername)}`, { method: 'DELETE' });
     const d = await r.json().catch(() => ({}));
@@ -4936,6 +4940,11 @@ npm run migrate            # הרצה בפועל`}</Block>
     const [confirmText, setConfirmText] = useState('');
     const [deleteBusy, setDeleteBusy] = useState(false);
     const [deleteError, setDeleteError] = useState({});
+    const [starter, setStarter] = useState(null);   // { found, reason, … }
+
+    useEffect(() => {
+      adminStarterAgent().then(setStarter).catch(() => setStarter({ found: false, reason: 'Could not check.' }));
+    }, []);
 
     useEffect(() => {
       adminListUsers().then(setUsers).catch(() => setUsers([]));
@@ -4993,6 +5002,35 @@ npm run migrate            # הרצה בפועל`}</Block>
             </div>
           </div>
           <div style={{ color: 'var(--text-2)', fontSize: 14 }}>{users.length} registered user{users.length !== 1 ? 's' : ''}</div>
+
+          {/* The starter agent is matched by name, so a rename can silently
+              stop new sign-ups from getting one. Say so out loud. */}
+          {starter && (
+            <div style={{
+              marginTop: 12, padding: '10px 14px', borderRadius: 'var(--r-md)', fontSize: 13, lineHeight: 1.6,
+              background: starter.found ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.10)',
+              border: `1px solid ${starter.found ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.35)'}`,
+              color: 'var(--text-2)',
+            }}>
+              {starter.found ? (
+                <>
+                  <span style={{ color: 'var(--success)', fontWeight: 700 }}>✓ Starter agent: </span>
+                  every new account gets a copy of <strong>{starter.name}</strong> (owner {starter.owner})
+                  {` — ${starter.skills} skills, ${starter.tools} tools, ${starter.documents} documents`}
+                </>
+              ) : (
+                <>
+                  <span style={{ color: 'var(--warning)', fontWeight: 700 }}>⚠ No starter agent: </span>
+                  {starter.reason} New accounts start empty. Name an agent you own <strong>{starter.templateName}</strong> to fix it.
+                  {(starter.candidates || []).length > 0 && (
+                    <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-muted)' }}>
+                      נמצאו: {starter.candidates.map(c => `"${c.name}" (${c.username || 'ללא בעלים'}${c.owner_is_admin ? ', admin' : ''})`).join(' · ')}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
         <div style={{ background: 'var(--bg-card)', borderRadius: 'var(--r-lg)', border: '1px solid var(--border)', overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
