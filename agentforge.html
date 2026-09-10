@@ -923,6 +923,7 @@
     const skills = agent.skills || [];
     const [target, setTarget] = useState(() => (skills.length ? { kind: 'skill', id: skills[0].id } : { kind: 'new' }));
     const [draft, setDraft] = useState(emptySkill);
+    const [panelTab, setPanelTab] = useState('config');   // config | assistant
 
     const isDraft = target.kind === 'new';
     const selected = isDraft ? draft : skills.find(sk => sk.id === target.id) || null;
@@ -1007,6 +1008,10 @@
               <span style={{ fontSize: 12, fontFamily: "'JetBrains Mono','Fira Code',monospace", color: 'var(--text)', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '6px 6px 0 0', padding: '5px 12px', marginBottom: -10 }}>
                 {(selected.name || 'untitled').replace(/\s+/g, '_')}.md
               </span>
+              <button onClick={() => setPanelTab('assistant')} title="Ask AI to write or change this prompt"
+                style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, padding: '4px 11px', borderRadius: 'var(--r-xl)', background: panelTab === 'assistant' ? 'var(--teal)' : 'var(--teal-dim)', color: panelTab === 'assistant' ? '#04211e' : 'var(--teal)', border: '1px solid var(--teal)' }}>
+                ✨ Ask AI
+              </button>
             </div>
             <div style={{ flex: 1, minHeight: 0, padding: 10, display: 'flex', flexDirection: 'column' }}>
               <RichPromptEditor fill value={selected.prompt} onChange={v => patch({ prompt: v })} />
@@ -1015,8 +1020,15 @@
 
           {/* Configuration */}
           <div style={{ ...WORKSPACE_PANEL, width: 'clamp(300px, 30%, 420px)', flexShrink: 0 }}>
-            <WorkspacePanelTabs tabs={[{ id: 'config', label: 'Configuration' }]} active="config" onChange={() => {}} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 14, overflowY: 'auto' }}>
+            <WorkspacePanelTabs
+              tabs={[
+                { id: 'config', label: 'Configuration' },
+                { id: 'assistant', label: '✨ Assistant' },
+              ]}
+              active={panelTab}
+              onChange={setPanelTab}
+            />
+            <div style={{ display: panelTab === 'config' ? 'flex' : 'none', flexDirection: 'column', gap: 14, padding: 14, overflowY: 'auto' }}>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Name</label>
                 <input value={selected.name} onChange={e => patch({ name: e.target.value })} dir="auto" placeholder="e.g. Code Reviewer" />
@@ -1028,6 +1040,17 @@
               <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6, background: 'var(--bg-hover)', borderRadius: 'var(--r-sm)', padding: '8px 10px' }}>
                 💡 The agent reads the description to decide when to invoke this skill. Type <span style={{ color: 'var(--teal)' }}>#{(selected.name || 'SkillName').replace(/\s+/g, '')}</span> in chat to force-switch, and <span style={{ color: 'var(--primary)' }}>@toolName</span> in the prompt to call a tool.
               </div>
+            </div>
+
+            {/* Kept mounted so the conversation survives tab switches */}
+            <div style={{ display: panelTab === 'assistant' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+              <AssistantPanel
+                agent={agent}
+                kind="skill"
+                subject={selected}
+                targetKey={isDraft ? 'new' : target.id}
+                onApply={patch}
+              />
             </div>
           </div>
         </div>
@@ -1269,11 +1292,62 @@
     ].join('\n');
   }
 
+  // Returns the first fenced block whose language tag the caller accepts, so a
+  // stray ```json in the reply can't be mistaken for the payload.
+  function extractFencedBlock(text, tagPattern) {
+    const re = /```([a-zA-Z0-9_+-]*)[ \t]*\r?\n([\s\S]*?)```/g;
+    let m;
+    while ((m = re.exec(text || '')) !== null) {
+      if (!tagPattern.test(m[1].toLowerCase())) continue;
+      const body = m[2].replace(/\s+$/, '');
+      if (body) return body + '\n';
+    }
+    return null;
+  }
+
   function extractPythonBlock(text) {
-    const m = /```(?:python|py)?[ \t]*\r?\n([\s\S]*?)```/i.exec(text || '');
-    if (!m) return null;
-    const code = m[1].replace(/\s+$/, '');
-    return code ? code + '\n' : null;
+    return extractFencedBlock(text, /^(python|py)?$/);
+  }
+
+  function extractPromptBlock(text) {
+    return extractFencedBlock(text, /^(markdown|md|text|txt|prompt)?$/);
+  }
+
+  function buildSkillAssistantPrompt(agent, skill) {
+    const tools = (agent.tools || []).filter(t => t.name);
+    const others = (agent.skills || []).filter(sk => sk.name && sk.id !== skill.id);
+    const base = (agent.basePrompt || '').trim();
+
+    return [
+      'You are a prompt-writing assistant built into the 8Legs.ai agent builder.',
+      "You write and revise ONE skill's prompt — the instructions the agent follows while that skill is active.",
+      '',
+      'How skills work here:',
+      "- The agent reads the skill's short description to decide when to switch to it. The prompt is what it follows once the skill is active, appended to the agent's base prompt.",
+      '- Inside the prompt, `@tool_name` refers to one of the agent\'s tools and `#SkillName` switches to another skill. Only reference ones that exist.',
+      '- Markdown `## Section` headings structure the prompt and the builder can collapse them, so prefer short named sections and numbered steps over long paragraphs.',
+      '- Write the user-facing wording in the language the skill should speak.',
+      '',
+      'How to answer:',
+      '- Answer in the language the user writes in, briefly, with no preamble.',
+      '- Whenever you write or change the prompt, output the COMPLETE new prompt inside ONE ```markdown block.',
+      "  Never a diff, never a fragment — that block replaces what is in the user's editor.",
+      '- If the user only asks a question, answer it without a block.',
+      '',
+      `The agent: ${agent.name || '(unnamed)'}`,
+      base ? `Its base prompt:\n${base.length > 1500 ? base.slice(0, 1500) + '\n…(truncated)' : base}` : 'Its base prompt is empty.',
+      `Its tools: ${tools.length ? tools.map(t => `@${t.name}${t.description ? ' — ' + t.description : ''}`).join('; ') : '(none)'}`,
+      `Its other skills: ${others.length ? others.map(sk => '#' + sk.name.replace(/\s+/g, '')).join(', ') : '(none)'}`,
+      '',
+      'The skill being edited right now:',
+      `- Name: ${skill.name || '(unnamed)'}`,
+      `- Description (when to switch to it): ${skill.description || '(none)'}`,
+      '',
+      'Current prompt:',
+      '```markdown',
+      skill.prompt || '(empty)',
+      '```',
+    ].join('\n');
   }
 
   function extractPackagesLine(text) {
@@ -1297,22 +1371,55 @@
     return parts.filter(pt => pt.content.trim() !== '');
   }
 
-  const ASSISTANT_QUICK_PROMPTS = [
-    { label: 'Write it for me', prompt: 'Write the full code for this tool based on its name, description and parameters.' },
-    { label: 'Explain the code', prompt: 'Explain what the current code does, step by step, and point out anything risky.' },
-    { label: 'Add error handling', prompt: 'Harden the current code: validate the inputs, handle network and parsing failures, and return clear error strings.' },
-    { label: 'Review it', prompt: 'Review the current code against the runtime contract and fix anything that would break at runtime.' },
-  ];
+  // One chat panel, two jobs: writing a tool's Python and writing a skill's
+  // prompt. A profile says how to prompt the model and what to do with its reply.
+  const ASSISTANT_PROFILES = {
+    tool: {
+      hint: 'Writes straight into the editor',
+      placeholder: 'Describe what the tool should do…',
+      buildPrompt: (agent, tool) => buildToolAssistantPrompt(tool),
+      parse: (reply, tool) => {
+        const fields = {};
+        const code = extractPythonBlock(reply);
+        const packages = extractPackagesLine(reply);
+        if (code && code !== tool.code) fields.code = code;
+        if (packages && packages !== tool.packages) fields.packages = packages;
+        return fields;
+      },
+      quickPrompts: [
+        { label: 'Write it for me', prompt: 'Write the full code for this tool based on its name, description and parameters.' },
+        { label: 'Explain the code', prompt: 'Explain what the current code does, step by step, and point out anything risky.' },
+        { label: 'Add error handling', prompt: 'Harden the current code: validate the inputs, handle network and parsing failures, and return clear error strings.' },
+        { label: 'Review it', prompt: 'Review the current code against the runtime contract and fix anything that would break at runtime.' },
+      ],
+    },
+    skill: {
+      hint: 'Writes straight into the prompt',
+      placeholder: 'Describe what this skill should do…',
+      buildPrompt: (agent, skill) => buildSkillAssistantPrompt(agent, skill),
+      parse: (reply, skill) => {
+        const prompt = extractPromptBlock(reply);
+        return prompt && prompt !== skill.prompt ? { prompt } : {};
+      },
+      quickPrompts: [
+        { label: 'Write it for me', prompt: 'Write the full prompt for this skill based on its name and description.' },
+        { label: 'Add steps', prompt: 'Restructure the current prompt into clear ## sections with numbered steps.' },
+        { label: 'Tighten it', prompt: 'Tighten the current prompt: cut repetition and ambiguity, keep every instruction that matters.' },
+        { label: 'Review it', prompt: 'Review the current prompt: what would the agent get wrong, and what is missing? Then fix it.' },
+      ],
+    },
+  };
 
-  function ToolCodeAssistant({ agent, tool, targetKey, onApply }) {
+  function AssistantPanel({ agent, kind, subject, targetKey, onApply }) {
+    const profile = ASSISTANT_PROFILES[kind];
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [pending, setPending] = useState(false);
     const listRef = useRef(null);
-    const toolRef = useRef(tool);
-    useEffect(() => { toolRef.current = tool; }, [tool]);
+    const subjectRef = useRef(subject);
+    useEffect(() => { subjectRef.current = subject; }, [subject]);
 
-    // Switching to a different tool starts a fresh conversation.
+    // Switching to a different tool or skill starts a fresh conversation.
     useEffect(() => { setMessages([]); setInput(''); }, [targetKey]);
 
     useEffect(() => {
@@ -1334,22 +1441,18 @@
       setMessages(m => [...m, { id: uid(), role: 'user', content: question }]);
       setPending(true);
       try {
-        const reply = await callPlainLLM(agent, buildToolAssistantPrompt(toolRef.current), history);
-        const code = extractPythonBlock(reply);
-        const packages = extractPackagesLine(reply);
+        const current = subjectRef.current;
+        const reply = await callPlainLLM(agent, profile.buildPrompt(agent, current), history);
+        const fields = profile.parse(reply, current);
 
         // "Writes it straight into the interface": apply immediately, and keep
         // what was there so a single click can put it back.
         let applied = null;
-        if (code || packages) {
+        if (Object.keys(fields).length > 0) {
           const before = {};
-          const fields = {};
-          if (code && code !== toolRef.current.code) { before.code = toolRef.current.code; fields.code = code; }
-          if (packages && packages !== toolRef.current.packages) { before.packages = toolRef.current.packages || ''; fields.packages = packages; }
-          if (Object.keys(fields).length > 0) {
-            onApply(fields);
-            applied = { fields: Object.keys(fields), before };
-          }
+          Object.keys(fields).forEach(key => { before[key] = current[key] || ''; });
+          onApply(fields);
+          applied = { fields: Object.keys(fields), before };
         }
         setMessages(m => [...m, { id: uid(), role: 'assistant', content: reply, applied }]);
       } catch (err) {
@@ -1368,7 +1471,7 @@
       // Lives as a tab inside the workspace's side panel.
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
         <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          Writes straight into the editor · {(agent.apiConfig || {}).model || 'no model'}
+          {profile.hint} · {(agent.apiConfig || {}).model || 'no model'}
         </div>
 
         {noKey && (
@@ -1383,8 +1486,9 @@
         <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12, background: 'var(--bg-app)' }}>
           {messages.length === 0 && (
             <div style={{ color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.6 }}>
-              Ask for the tool's code and it is written straight into the editor on the left.
-              You can also ask questions about the current code or request changes.
+              {kind === 'tool'
+                ? "Ask for the tool's code and it is written straight into the editor on the left. You can also ask questions about the current code or request changes."
+                : "Ask for this skill's prompt and it is written straight into the editor on the left. You can also ask questions about it or request changes."}
             </div>
           )}
 
@@ -1433,7 +1537,7 @@
 
         {/* Quick prompts */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '10px 12px 0', background: 'var(--bg-panel)', borderTop: '1px solid var(--border)' }}>
-          {ASSISTANT_QUICK_PROMPTS.map(qp => (
+          {profile.quickPrompts.map(qp => (
             <button key={qp.label} onClick={() => send(qp.prompt)} disabled={pending || noKey}
               style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 'var(--r-xl)', background: 'var(--bg-hover)', border: '1px solid var(--border)', color: 'var(--text-2)', opacity: pending || noKey ? 0.5 : 1 }}>
               {qp.label}
@@ -1451,7 +1555,7 @@
               dir="auto"
               rows={2}
               disabled={pending || noKey}
-              placeholder="Describe what the tool should do…"
+              placeholder={profile.placeholder}
               style={{ flex: 1, resize: 'none', fontSize: 13, padding: '8px 12px', borderRadius: 'var(--r-md)' }}
             />
             <button onClick={() => send(input)} disabled={pending || noKey || !input.trim()}
@@ -1680,9 +1784,10 @@
 
             {/* Kept mounted so the conversation survives tab switches */}
             <div style={{ display: panelTab === 'assistant' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-              <ToolCodeAssistant
+              <AssistantPanel
                 agent={agent}
-                tool={selected}
+                kind="tool"
+                subject={selected}
                 targetKey={isDraft ? 'new' : target.id}
                 onApply={patch}
               />
