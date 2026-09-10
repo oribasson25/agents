@@ -265,6 +265,49 @@
   }
   function fmtDuration(ms) { return (ms / 1000).toFixed(2) + 's'; }
 
+  /* ─────────────────── ERROR LOG ─────────────────── */
+  // What failed in this browser session. The server keeps its own log for the
+  // widget and WhatsApp; together they are what the assistants read when asked
+  // to fix something, so nobody has to copy a traceback into the chat.
+  const SESSION_ERRORS = [];
+  const SESSION_ERROR_LIMIT = 40;
+
+  function recordError(source, message, context = {}) {
+    const text = String((message && message.message) || message || '').slice(0, 4000);
+    if (!text) return;
+    SESSION_ERRORS.unshift({ at: new Date().toISOString(), source, message: text, context });
+    if (SESSION_ERRORS.length > SESSION_ERROR_LIMIT) SESSION_ERRORS.length = SESSION_ERROR_LIMIT;
+  }
+
+  function sessionErrors({ agentId = null, toolName = null, limit = 8 } = {}) {
+    return SESSION_ERRORS
+      .filter(e => !agentId || e.context.agentId === agentId)
+      .filter(e => !toolName || e.context.tool === toolName)
+      .slice(0, limit);
+  }
+
+  function formatErrors(errors) {
+    if (!errors || errors.length === 0) return '(none recorded)';
+    return errors.map(e => {
+      const when = e.at || e.created_at;
+      const where = e.context && (e.context.tool || e.context.skill) ? ` ${e.context.tool || e.context.skill}` : '';
+      const agent = e.agent_name ? ` [${e.agent_name}]` : '';
+      return `- ${when} · ${e.source}${where}${agent}: ${e.message}`;
+    }).join('\n');
+  }
+
+  async function fetchServerErrors(params = {}) {
+    try {
+      const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null));
+      const r = await apiFetch(`/api/errors?${qs}`);
+      if (!r.ok) return [];
+      const d = await r.json();
+      return d.errors || [];
+    } catch (_) {
+      return [];
+    }
+  }
+
   /* ─────────────────── ACCOUNT API SETTINGS ─────────────────── */
   // One key, provider and model for the whole account: every agent, every
   // channel and every assistant. Kept in a module variable so the many call
@@ -1103,7 +1146,7 @@
   }
 
   /* ── ToolRunPanel: Input / Output / Errors + Run, under the code editor ── */
-  function ToolRunPanel({ tool }) {
+  function ToolRunPanel({ tool, onResult }) {
     const [tab, setTab] = useState('input');
     const [running, setRunning] = useState(false);
     const [result, setResult] = useState(null); // { ok, text, ms }
@@ -1135,9 +1178,14 @@
         const ms = Math.round(performance.now() - t0);
         const res = data.error ? { ok: false, text: data.error, ms } : { ok: true, text: data.result, ms };
         setResult(res);
+        if (onResult) onResult({ ...res, inputs: typedInputs });
+        if (!res.ok) recordError('tool', data.error, { tool: tool.name, inputs: typedInputs });
         setTab(res.ok ? 'output' : 'errors');
       } catch (err) {
-        setResult({ ok: false, text: err.message, ms: Math.round(performance.now() - t0) });
+        const res = { ok: false, text: err.message, ms: Math.round(performance.now() - t0) };
+        setResult(res);
+        if (onResult) onResult({ ...res, inputs: {} });
+        recordError('tool', err.message, { tool: tool.name });
         setTab('errors');
       } finally {
         setRunning(false);
@@ -1240,7 +1288,10 @@
         body: JSON.stringify({ model, max_tokens: maxTokens, system, messages: history }),
       });
       const d = await r.json();
-      if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
+      if (!r.ok) {
+        recordError('provider', d.error?.message || JSON.stringify(d), { provider: 'claude', model });
+        throw new Error(d.error?.message || JSON.stringify(d));
+      }
       return d.content.find(c => c.type === 'text')?.text || '';
     }
 
@@ -1262,7 +1313,10 @@
       body: JSON.stringify({ model, max_tokens: maxTokens, messages: [{ role: 'system', content: system }, ...history] }),
     });
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
+    if (!r.ok) {
+      recordError('provider', d.error?.message || JSON.stringify(d), { provider, model });
+      throw new Error(d.error?.message || JSON.stringify(d));
+    }
     return d.choices?.[0]?.message?.content || '';
   }
 
@@ -1277,8 +1331,9 @@
     'Raise nothing on the happy path: catch expected failures and return a short human-readable error string instead.',
   ];
 
-  function buildToolAssistantPrompt(tool) {
+  function buildToolAssistantPrompt(tool, diagnostics = {}) {
     const params = (tool.parameters || []).filter(p => p.name);
+    const { lastRun, errors } = diagnostics;
     return [
       'You are a Python tool-writing assistant built into the 8Legs.ai agent builder.',
       'You write and revise the code of ONE tool, which an AI agent will call at runtime.',
@@ -1314,6 +1369,15 @@
       '```python',
       tool.code || '(empty)',
       '```',
+      '',
+      'Last time this tool ran in the editor:',
+      lastRun
+        ? `${lastRun.ok ? 'SUCCESS' : 'FAILED'} after ${lastRun.ms}ms with inputs ${JSON.stringify(lastRun.inputs || {})}\n` +
+          `${lastRun.ok ? 'Output' : 'Error'}: ${String(lastRun.text || '').slice(0, 1500)}`
+        : '(it has not been run in this session)',
+      '',
+      'Recent failures involving this tool (newest first) — fix the cause, do not guess:',
+      formatErrors(errors),
     ].join('\n');
   }
 
@@ -1338,7 +1402,7 @@
     return extractFencedBlock(text, /^(markdown|md|text|txt|prompt)?$/);
   }
 
-  function buildSkillAssistantPrompt(agent, skill) {
+  function buildSkillAssistantPrompt(agent, skill, diagnostics = {}) {
     const tools = (agent.tools || []).filter(t => t.name);
     const others = (agent.skills || []).filter(sk => sk.name && sk.id !== skill.id);
     const base = (agent.basePrompt || '').trim();
@@ -1389,6 +1453,9 @@
       '```markdown',
       skill.prompt || '(empty)',
       '```',
+      '',
+      "Recent failures on this agent (newest first). If one of them is caused by what this prompt asks the agent to do — a tool that isn't there, a parameter it never passes — fix the prompt:",
+      formatErrors(diagnostics.errors),
     ].join('\n');
   }
 
@@ -1459,7 +1526,7 @@
     tool: {
       hint: 'Writes straight into the editor',
       placeholder: 'Describe what the tool should do…',
-      buildPrompt: (agent, tool) => buildToolAssistantPrompt(tool),
+      buildPrompt: (agent, tool, diagnostics) => buildToolAssistantPrompt(tool, diagnostics),
       parse: (reply, tool) => {
         const fields = {};
         const meta = withoutFencedBlocks(reply);
@@ -1485,7 +1552,7 @@
     skill: {
       hint: 'Writes straight into the prompt',
       placeholder: 'Describe what this skill should do…',
-      buildPrompt: (agent, skill) => buildSkillAssistantPrompt(agent, skill),
+      buildPrompt: (agent, skill, diagnostics) => buildSkillAssistantPrompt(agent, skill, diagnostics),
       parse: (reply, skill) => {
         const fields = {};
         const meta = withoutFencedBlocks(reply);
@@ -1506,7 +1573,7 @@
     },
   };
 
-  function AssistantPanel({ agent, kind, subject, targetKey, onApply }) {
+  function AssistantPanel({ agent, kind, subject, targetKey, onApply, lastRun }) {
     const profile = ASSISTANT_PROFILES[kind];
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
@@ -1514,6 +1581,8 @@
     const listRef = useRef(null);
     const subjectRef = useRef(subject);
     useEffect(() => { subjectRef.current = subject; }, [subject]);
+    const lastRunRef = useRef(lastRun);
+    useEffect(() => { lastRunRef.current = lastRun; }, [lastRun]);
 
     // Switching to a different tool or skill starts a fresh conversation.
     useEffect(() => { setMessages([]); setInput(''); }, [targetKey]);
@@ -1536,7 +1605,17 @@
       setPending(true);
       try {
         const current = subjectRef.current;
-        const reply = await callPlainLLM(profile.buildPrompt(agent, current), history);
+        // Hand it what actually failed, from this session and from the server,
+        // so "fix it" doesn't require pasting a traceback.
+        const serverErrors = await fetchServerErrors({ agentId: agent.id, limit: 8 });
+        const diagnostics = {
+          lastRun: lastRunRef.current,
+          errors: [
+            ...sessionErrors({ agentId: agent.id, toolName: kind === 'tool' ? current.name : null }),
+            ...serverErrors.filter(e => kind !== 'tool' || !e.context || !e.context.tool || e.context.tool === current.name),
+          ].slice(0, 10),
+        };
+        const reply = await callPlainLLM(profile.buildPrompt(agent, current, diagnostics), history);
         const fields = profile.parse(reply, current);
 
         // "Writes it straight into the interface": apply immediately, and keep
@@ -1676,9 +1755,13 @@
     // { kind: 'builtin' } | { kind: 'tool', id } | { kind: 'new' }
     const [target, setTarget] = useState(() => (tools.length ? { kind: 'tool', id: tools[0].id } : { kind: 'builtin' }));
     const [panelTab, setPanelTab] = useState('config');   // config | secrets | assistant
+    const [lastRun, setLastRun] = useState(null);         // shared with the assistant
 
     const isBuiltIn = target.kind === 'builtin';
     const selected = isBuiltIn ? null : tools.find(t => t.id === target.id) || null;
+
+    // A run result belongs to the tool it ran on.
+    useEffect(() => { setLastRun(null); }, [target.kind, target.id]);
 
     // The open tool can disappear (deleted here or elsewhere) — pick another.
     useEffect(() => {
@@ -1822,7 +1905,7 @@
             <div style={{ flex: 1, minHeight: 0 }}>
               <MonacoPython value={selected.code} onChange={v => patch({ code: v })} height="100%" bare />
             </div>
-            <ToolRunPanel tool={selected} />
+            <ToolRunPanel tool={selected} onResult={setLastRun} />
           </div>
 
           {/* Configuration / Secrets / Assistant */}
@@ -1874,6 +1957,7 @@
                 subject={selected}
                 targetKey={target.id}
                 onApply={patch}
+                lastRun={lastRun}
               />
             </div>
           </div>
@@ -3836,6 +3920,9 @@ def run(**kwargs):
           <H3>שפה</H3>
           <P>ההודעה הפותחת שלו מפרטת את כל מה שהוא יודע לעשות, ואפשר לבחור בין <strong>אסיסטנט בעברית</strong> ל<strong>אסיסטנט באנגלית</strong> במסך Settings.</P>
 
+          <H3>הוא רואה מה נשבר</H3>
+          <P>יש לו כלי <Code>get_recent_errors</Code> שמחזיר כשלים אמיתיים משבועיים אחורה: כלי שזרק חריגה בשיחה אמיתית, תשובה שהווידג'ט לא הצליח לייצר, טוקן WhatsApp שפג, שגיאת ספק. כשאומרים לו "משהו לא עובד" הוא מונחה לבדוק את הלוג לפני שהוא מנחש, ואחרי שהוא מתקן כלי — להריץ אותו ולבדוק.</P>
+
           <H3>שקיפות</H3>
           <P>כל קריאה לכלי מוצגת בשיחה עם הפרמטרים והתוצאה, כך שרואים בדיוק מה הוא עשה. הוא רץ על המפתח והמודל של החשבון, ומודל חזק יותר נותן תוצאות טובות יותר במשימות מורכבות.</P>
           <Tip>נסה: "בנה סוכן שירות לקוחות לחברת ביטוח, עם סקיל לפתיחת תביעה" או "תוסיף לסוכן weather כלי לתחזית חמישה ימים ותריץ אותו".</Tip>
@@ -3865,6 +3952,9 @@ def run(**kwargs):
           <H3>מה הוא ממלא</H3>
           <P>בכלי הוא כותב את הקוד וגם את השם, התיאור, הפרמטרים וה-Packages. בסקיל הוא כותב את הפרומפט וגם את השם והתיאור. הפרומפט של סקיל נכתב <strong>תמיד באנגלית</strong>, חוץ ממשפטים שהסוכן אמור לומר למשתמש מילה-במילה בשפה אחרת.</P>
           <P>רשימת הפרמטרים שהוא מחזיר מחליפה את הרשימה כולה, כך שההצהרה והקוד תמיד מסכימים על ה-<Code>kwargs</Code>.</P>
+
+          <H3>הם רואים את השגיאות</H3>
+          <P>אסיסטנט הכלי מקבל אוטומטית את <strong>ההרצה האחרונה</strong> של הכלי — הקלטים, ההצלחה או הכשל, וטקסט השגיאה המלא — ואת הכשלים שנרשמו לכלי הזה בשיחות אמיתיות. אסיסטנט הסקיל מקבל את הכשלים של הסוכן. כלומר אחרי הרצה שנפלה אפשר לכתוב פשוט "תתקן" — בלי להעתיק traceback.</P>
 
           <H3>קיצורי דרך</H3>
           <UL>
@@ -4598,6 +4688,19 @@ npm run migrate            # הרצה בפועל`}</Block>
       },
     },
     {
+      name: 'get_recent_errors',
+      description: 'Recent failures across the account: tools that raised, replies the widget or WhatsApp could not produce, expired WhatsApp tokens, provider errors. Call this whenever the user says something is broken, or before claiming something works.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          agent_id: STR('Only this agent'),
+          source: STR('Only this source: tool, widget, whatsapp, provider or save'),
+          limit: { type: 'integer', description: 'How many (default 15, max 50)' },
+        },
+        required: [],
+      },
+    },
+    {
       name: 'list_interactions',
       description: 'Recent conversations with the account\'s agents: agent, channel, when, duration, message count and the first user message. Use it to answer questions about usage.',
       input_schema: {
@@ -4646,6 +4749,7 @@ npm run migrate            # הרצה בפועל`}</Block>
       '- Never delete anything without asking in chat first.',
       '- When you have changed something, say in one line what changed and where to see it.',
       '- If a tool call fails, explain what failed and what you need in order to retry — do not silently give up.',
+      '- When the user reports that something is broken, call get_recent_errors before theorising, and after you change a tool offer to run_tool it and check.',
       '',
       language === 'en'
         ? 'Reply in English, briefly and concretely, with no preamble.'
@@ -4832,6 +4936,22 @@ npm run migrate            # הרצה בפועל`}</Block>
           });
           const data = await resp.json();
           return done(data.error ? `Error: ${data.error}` : `Output: ${data.result}`);
+        }
+
+        if (name === 'get_recent_errors') {
+          const limit = Math.min(Math.max(parseInt(input.limit, 10) || 15, 1), 50);
+          const server = await fetchServerErrors({ agentId: input.agent_id || '', source: input.source || '', limit });
+          const local = sessionErrors({ agentId: input.agent_id || null, limit }).filter(e => !input.source || e.source === input.source);
+          if (server.length === 0 && local.length === 0) {
+            return done('No failures recorded. Note this only covers the last 14 days on the server plus this browser session.');
+          }
+          return done([
+            `From the server (widget, WhatsApp, tools in production) — ${server.length}:`,
+            formatErrors(server),
+            '',
+            `From this browser session (test runs, provider errors) — ${local.length}:`,
+            formatErrors(local),
+          ].join('\n'));
         }
 
         if (name === 'list_interactions') {

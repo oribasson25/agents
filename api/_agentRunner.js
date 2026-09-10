@@ -1,5 +1,6 @@
 import { sql } from './_db.js';
 import { sendGmail } from './_gmail.js';
+import { logError } from './_errorLog.js';
 
 function applyDlp(text, dlp) {
   if (!dlp || typeof text !== 'string') return text;
@@ -160,6 +161,7 @@ async function executeTool(toolName, inputs, agent, baseUrl, agentId) {
       return message;
     } catch (err) {
       console.error(`[send_email] agentId=${agentId} ${err.code || 'ERROR'}:`, err.message);
+      await logError({ agentId, source: 'tool', message: `send_email: ${err.message}`, context: { tool: 'send_email', code: err.code || null, to: inputs.to || null } });
       return `Error: ${err.message}`;
     }
   }
@@ -201,7 +203,14 @@ async function executeTool(toolName, inputs, agent, baseUrl, agentId) {
     body: JSON.stringify({ code: tool.code || '', inputs, packages, env_vars: envVars }),
   });
   const data = await resp.json();
-  return String(data.result ?? data.error ?? 'No output');
+
+  // A tool that fails mid-conversation is the failure an assistant most needs
+  // to see, and nobody is watching the logs when it happens.
+  if (data.error) {
+    await logError({ agentId, source: 'tool', message: String(data.error), context: { tool: toolName, inputs } });
+    return String(data.error);
+  }
+  return String(data.result ?? 'No output');
 }
 
 /**

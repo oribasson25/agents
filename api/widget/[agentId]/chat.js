@@ -1,6 +1,7 @@
 import { sql } from '../../_db.js';
 import { runAgentTurn, saveSession } from '../../_agentRunner.js';
 import { resolveAgentApiConfig } from '../../_settings.js';
+import { logError } from '../../_errorLog.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -33,9 +34,11 @@ export default async function handler(req, res) {
 
   } catch (err) {
     if (err.code === 'NO_API_KEY') {
+      await logError({ agentId, source: 'widget', message: err.message, context: { code: 'NO_API_KEY' } });
       return res.status(503).json({ error: err.message });
     }
     console.error(`[widget chat] agentId=${agentId} error:`, err.message);
+    await logError({ agentId, source: 'widget', message: err.message, context: { sessionId: sessionId || null } });
     return res.status(500).json({ error: err.message });
   }
 }

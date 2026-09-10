@@ -78,6 +78,18 @@ migration `010` backfills them from each user's most recently updated agent that
 
 `user_settings.assistant_language` (`he` or `en`) selects the platform assistant's language.
 
+## Error log
+
+Failures are recorded in `error_log` (migration `011`) so the assistants can read them back:
+tool exceptions raised mid-conversation, turns the widget or WhatsApp could not produce, Graph
+API rejections including an expired token, and provider errors. `api/_errorLog.js` writes them
+— never throwing, since it runs inside somebody else's catch — prunes rows older than 14 days
+on write, and `GET /api/errors` returns them scoped to the caller's own agents.
+
+The browser keeps its own session log for test runs and provider errors. Together they are what
+the tool assistant, the skill assistant and the platform assistant receive, so "fix it" works
+without pasting a traceback.
+
 ## The starter agent
 
 Every new account is seeded with a copy of the agent named `weather` owned by an admin

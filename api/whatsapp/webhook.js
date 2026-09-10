@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { sql } from '../_db.js';
 import { runAgentTurn, dlpMessages } from '../_agentRunner.js';
 import { resolveAgentApiConfig } from '../_settings.js';
+import { logError } from '../_errorLog.js';
 
 const GRAPH = 'https://graph.facebook.com/v20.0';
 
@@ -127,6 +128,7 @@ async function handleInbound(req, res) {
         await handleMessage(owner.id, agent, agent.whatsapp || {}, msg, baseUrl);
       } catch (err) {
         console.error(`[whatsapp webhook] agentId=${owner.id} handleMessage error:`, err.message);
+        await logError({ agentId: owner.id, source: 'whatsapp', message: err.message, context: { messageId: msg?.id || null } });
       }
     }
   }
@@ -198,7 +200,7 @@ async function respond(agentId, agent, wa, msg, baseUrl) {
   if (msg.type === 'reaction') return; // ack silently, nothing to reply to
 
   if (msg.type !== 'text') {
-    await sendText(wa, from, 'Sorry, I can only read text messages right now.');
+    await sendText(wa, from, 'Sorry, I can only read text messages right now.', agentId);
     return;
   }
 
@@ -221,10 +223,12 @@ async function respond(agentId, agent, wa, msg, baseUrl) {
     // rejects it, and it poisons the stored history for every later turn.
     if (!reply) {
       console.error(`[whatsapp webhook] agentId=${agentId} empty reply from provider`);
+      await logError({ agentId, source: 'whatsapp', message: 'The provider returned an empty reply', context: { from } });
       reply = 'Sorry, I could not generate a reply. Please try again.';
     }
   } catch (err) {
     console.error(`[whatsapp webhook] agentId=${agentId} runAgentTurn error:`, err.message);
+    await logError({ agentId, source: 'whatsapp', message: err.message, context: { code: err.code || null, from } });
     reply = err.code === 'NO_API_KEY'
       ? "This agent isn't fully configured yet. Please contact the owner."
       : 'Sorry, something went wrong. Please try again in a moment.';
@@ -246,7 +250,7 @@ async function respond(agentId, agent, wa, msg, baseUrl) {
           updated_at = now()
   `;
 
-  await sendText(wa, from, reply);
+  await sendText(wa, from, reply, agentId);
 }
 
 // Claude requires strict user/assistant role alternation. WhatsApp users can
@@ -268,7 +272,7 @@ function normalizeHistory(messages) {
   return merged;
 }
 
-async function sendText(wa, to, text) {
+async function sendText(wa, to, text, agentId = null) {
   if (!text) return;
   for (const chunk of splitMessage(text)) {
     try {
@@ -287,14 +291,18 @@ async function sendText(wa, to, text) {
       });
       if (!resp.ok) {
         const errBody = await resp.json().catch(() => ({}));
+        const detail = errBody?.error?.message || JSON.stringify(errBody);
         if (errBody?.error?.code === 190) {
           console.error(`[whatsapp send] access token expired/invalid for phoneNumberId=${wa.phoneNumberId}`);
+          await logError({ agentId, source: 'whatsapp', message: `Access token expired or invalid: ${detail}`, context: { graphCode: 190 } });
         } else {
           console.error('[whatsapp send] Graph API error:', JSON.stringify(errBody));
+          await logError({ agentId, source: 'whatsapp', message: `Could not send the reply: ${detail}`, context: { graphCode: errBody?.error?.code || null } });
         }
       }
     } catch (err) {
       console.error('[whatsapp send] request failed:', err.message);
+      await logError({ agentId, source: 'whatsapp', message: `Could not reach the Graph API: ${err.message}`, context: {} });
     }
   }
 }
