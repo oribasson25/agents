@@ -598,6 +598,15 @@
   function MonacoPython({ value, onChange, height = 420, bare }) {
     const containerRef = useRef(null);
     const editorRef = useRef(null);
+    // The editor is created once and outlives every re-render, so the change
+    // handler has to reach the *current* onChange. Capturing the first one made
+    // it write into a stale agent, which could undo edits made since — such as
+    // wiping a tool that was created after this editor mounted.
+    const onChangeRef = useRef(onChange);
+    useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
+    // Loading a different tool's code calls setValue, which fires a change
+    // event; without this the echo would be reported as a user edit.
+    const applyingExternal = useRef(false);
 
     useEffect(() => {
       let editor;
@@ -618,7 +627,8 @@
         });
         editorRef.current = editor;
         editor.onDidChangeModelContent(() => {
-          if (onChange) onChange(editor.getValue());
+          if (applyingExternal.current) return;
+          if (onChangeRef.current) onChangeRef.current(editor.getValue());
         });
       });
       return () => { if (editorRef.current) editorRef.current.dispose(); };
@@ -627,7 +637,9 @@
     // Sync external value changes without causing loops
     useEffect(() => {
       const ed = editorRef.current;
-      if (ed && ed.getValue() !== value) ed.setValue(value || '');
+      if (!ed || ed.getValue() === value) return;
+      applyingExternal.current = true;
+      try { ed.setValue(value || ''); } finally { applyingExternal.current = false; }
     }, [value]);
 
     return <div ref={containerRef} className={bare ? undefined : 'monaco-container'} style={{ height }} />;
@@ -915,52 +927,48 @@
   }
 
   /* ─────────────────── SKILLS ─────────────────── */
-  function emptySkill() {
-    return { name: '', description: '', prompt: '' };
-  }
-
   function SkillsTab({ agent, onUpdate }) {
     const skills = agent.skills || [];
-    const [target, setTarget] = useState(() => (skills.length ? { kind: 'skill', id: skills[0].id } : { kind: 'new' }));
-    const [draft, setDraft] = useState(emptySkill);
+    const [target, setTarget] = useState(() => (skills.length ? { kind: 'skill', id: skills[0].id } : null));
     const [panelTab, setPanelTab] = useState('config');   // config | assistant
 
-    const isDraft = target.kind === 'new';
-    const selected = isDraft ? draft : skills.find(sk => sk.id === target.id) || null;
+    const selected = target ? skills.find(sk => sk.id === target.id) || null : null;
 
     // The open skill can disappear (deleted here or elsewhere) — pick another.
     useEffect(() => {
-      if (target.kind === 'skill' && !selected) {
-        setTarget(skills.length ? { kind: 'skill', id: skills[0].id } : { kind: 'new' });
-      }
-    }, [target.kind, !!selected, skills.length]);
-
-    if (!selected) return null;
+      if (!selected) setTarget(skills.length ? { kind: 'skill', id: skills[0].id } : null);
+    }, [!!selected, skills.length]);
 
     function patch(fields) {
-      if (isDraft) setDraft(prev => ({ ...prev, ...fields }));
-      else onUpdate({ ...agent, skills: skills.map(sk => sk.id === target.id ? { ...sk, ...fields } : sk) });
+      if (selected) onUpdate({ ...agent, skills: skills.map(sk => sk.id === target.id ? { ...sk, ...fields } : sk) });
     }
 
-    function createFromDraft() {
-      if (!draft.name.trim()) return;
-      const created = { id: uid(), ...draft };
+    function addSkill() {
+      const created = {
+        id: uid(),
+        name: uniqueName(skills.map(sk => sk.name), 'New Skill', ' '),
+        description: '',
+        prompt: '',
+      };
       onUpdate({ ...agent, skills: [...skills, created] });
       setTarget({ kind: 'skill', id: created.id });
     }
 
-    function startDraft() {
-      setDraft(emptySkill());
-      setTarget({ kind: 'new' });
-    }
-
-    function discardDraft() {
-      setTarget(skills.length ? { kind: 'skill', id: skills[0].id } : { kind: 'new' });
-      setDraft(emptySkill());
-    }
-
     function deleteCurrent() {
       onUpdate({ ...agent, skills: skills.filter(sk => sk.id !== target.id) });
+    }
+
+    // An agent with no skills at all: offer the one action that makes sense.
+    if (!selected) {
+      return (
+        <div style={{ maxWidth: 720 }}>
+          <EmptyState icon={Icons.target} title="No skills yet" subtitle="Skills give the agent focused modes it can switch into" />
+          <button onClick={addSkill}
+            style={{ marginTop: 14, background: 'var(--primary)', color: '#0a0a0a', padding: '9px 18px', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 13 }}>
+            ＋ New skill
+          </button>
+        </div>
+      );
     }
 
     return (
@@ -968,21 +976,13 @@
         <WorkspaceHeader
           badge="#"
           name={selected.name || 'untitled skill'}
-          subtitle={selected.description || (isDraft ? 'New skill — not created yet' : 'No description — the agent uses it to decide when to switch')}
-          actions={isDraft ? (
-            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-              <button onClick={discardDraft} style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 13 }}>Discard</button>
-              <button onClick={createFromDraft} disabled={!draft.name.trim()} title={draft.name.trim() ? 'Create this skill' : 'Give the skill a name first'}
-                style={{ background: draft.name.trim() ? 'var(--primary)' : 'var(--bg-hover)', color: draft.name.trim() ? '#0a0a0a' : 'var(--text-muted)', padding: '7px 16px', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 13 }}>
-                Create skill
-              </button>
-            </div>
-          ) : (
+          subtitle={selected.description || 'No description — the agent uses it to decide when to switch'}
+          actions={
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
               <span style={{ fontSize: 11, color: 'var(--success)' }}>saved automatically</span>
               <IconBtn onClick={deleteCurrent} danger title="Delete skill">{Icons.trash}</IconBtn>
             </div>
-          )}
+          }
         />
 
         <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12 }}>
@@ -992,13 +992,12 @@
               items: [
                 ...skills.map(sk => ({
                   key: sk.id, label: sk.name || 'untitled',
-                  active: !isDraft && sk.id === target.id,
+                  active: sk.id === target.id,
                   onClick: () => setTarget({ kind: 'skill', id: sk.id }),
                 })),
-                ...(isDraft ? [{ key: '__draft', label: draft.name.trim() || 'new skill…', active: true }] : []),
               ],
             }]}
-            footer={<WorkspaceNewButton label="＋ New skill" onClick={startDraft} disabled={isDraft} />}
+            footer={<WorkspaceNewButton label="＋ New skill" onClick={addSkill} />}
           />
 
           {/* Prompt */}
@@ -1048,7 +1047,7 @@
                 agent={agent}
                 kind="skill"
                 subject={selected}
-                targetKey={isDraft ? 'new' : target.id}
+                targetKey={target.id}
                 onApply={patch}
               />
             </div>
@@ -1648,48 +1647,47 @@
 
   const DEFAULT_TOOL_CODE = '# Parameters arrive as kwargs\n# Access env vars with os.environ["MY_KEY"]\nimport os\nimport urllib.request, json\n\ndef run(**kwargs):\n    # Example: call an external API\n    # url = os.environ.get("API_URL", "")\n    # with urllib.request.urlopen(url) as r:\n    #     data = json.loads(r.read())\n    # return str(data)\n    return "result"\n';
 
-  function emptyDraft() {
-    return { name: '', description: '', parameters: [], packages: '', envVars: [], code: DEFAULT_TOOL_CODE };
+  // Everything is saved as you type, so a new item is created straight away and
+  // just needs a name nothing else is using.
+  function uniqueName(taken, base, separator = '_') {
+    if (!taken.includes(base)) return base;
+    let n = 2;
+    while (taken.includes(`${base}${separator}${n}`)) n++;
+    return `${base}${separator}${n}`;
   }
 
   function ToolsTab({ agent, onUpdate }) {
     const tools = agent.tools || [];
     // { kind: 'builtin' } | { kind: 'tool', id } | { kind: 'new' }
-    const [target, setTarget] = useState(() => (tools.length ? { kind: 'tool', id: tools[0].id } : { kind: 'new' }));
-    const [draft, setDraft] = useState(emptyDraft);
+    const [target, setTarget] = useState(() => (tools.length ? { kind: 'tool', id: tools[0].id } : { kind: 'builtin' }));
     const [panelTab, setPanelTab] = useState('config');   // config | secrets | assistant
 
-    const isDraft = target.kind === 'new';
     const isBuiltIn = target.kind === 'builtin';
-    const selected = isDraft ? draft : isBuiltIn ? null : tools.find(t => t.id === target.id) || null;
+    const selected = isBuiltIn ? null : tools.find(t => t.id === target.id) || null;
 
     // The open tool can disappear (deleted here or elsewhere) — pick another.
     useEffect(() => {
       if (target.kind === 'tool' && !selected) {
-        setTarget(tools.length ? { kind: 'tool', id: tools[0].id } : { kind: 'new' });
+        setTarget(tools.length ? { kind: 'tool', id: tools[0].id } : { kind: 'builtin' });
       }
     }, [target.kind, !!selected, tools.length]);
 
     function patch(fields) {
-      if (isDraft) setDraft(prev => ({ ...prev, ...fields }));
-      else if (selected) onUpdate({ ...agent, tools: tools.map(t => t.id === selected.id ? { ...t, ...fields } : t) });
+      if (selected) onUpdate({ ...agent, tools: tools.map(t => t.id === selected.id ? { ...t, ...fields } : t) });
     }
 
-    function createFromDraft() {
-      if (!draft.name.trim()) return;
-      const created = { id: uid(), ...draft };
+    function addTool() {
+      const created = {
+        id: uid(),
+        name: uniqueName(tools.map(t => t.name), 'new_tool'),
+        description: '',
+        parameters: [],
+        packages: '',
+        envVars: [],
+        code: DEFAULT_TOOL_CODE,
+      };
       onUpdate({ ...agent, tools: [...tools, created] });
       setTarget({ kind: 'tool', id: created.id });
-    }
-
-    function startDraft() {
-      setDraft(emptyDraft());
-      setTarget({ kind: 'new' });
-    }
-
-    function discardDraft() {
-      setTarget(tools.length ? { kind: 'tool', id: tools[0].id } : { kind: 'builtin' });
-      setDraft(emptyDraft());
     }
 
     function deleteCurrent() {
@@ -1712,14 +1710,13 @@
             items: [
               ...tools.map(t => ({
                 key: t.id, label: t.name || 'untitled', mono: true,
-                active: !isDraft && !isBuiltIn && t.id === target.id,
+                active: !isBuiltIn && t.id === target.id,
                 onClick: () => setTarget({ kind: 'tool', id: t.id }),
               })),
-              ...(isDraft ? [{ key: '__draft', label: draft.name.trim() || 'new tool…', mono: true, active: true }] : []),
             ],
           },
         ]}
-        footer={<WorkspaceNewButton label="＋ New tool" onClick={startDraft} disabled={isDraft} />}
+        footer={<WorkspaceNewButton label="＋ New tool" onClick={addTool} />}
       />
     );
 
@@ -1783,21 +1780,13 @@
           badge={'</>'}
           mono
           name={selected.name || 'untitled'}
-          subtitle={selected.description || (isDraft ? 'New tool — not created yet' : 'No description')}
-          actions={isDraft ? (
-            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-              <button onClick={discardDraft} style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 13 }}>Discard</button>
-              <button onClick={createFromDraft} disabled={!draft.name.trim()} title={draft.name.trim() ? 'Create this tool' : 'Give the tool a name first'}
-                style={{ background: draft.name.trim() ? 'var(--primary)' : 'var(--bg-hover)', color: draft.name.trim() ? '#0a0a0a' : 'var(--text-muted)', padding: '7px 16px', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 13 }}>
-                Create tool
-              </button>
-            </div>
-          ) : (
+          subtitle={selected.description || 'No description'}
+          actions={
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
               <span style={{ fontSize: 11, color: 'var(--success)' }}>saved automatically</span>
               <IconBtn onClick={deleteCurrent} danger title="Delete tool">{Icons.trash}</IconBtn>
             </div>
-          )}
+          }
         />
 
         <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12 }}>
@@ -1868,7 +1857,7 @@
                 agent={agent}
                 kind="tool"
                 subject={selected}
-                targetKey={isDraft ? 'new' : target.id}
+                targetKey={target.id}
                 onApply={patch}
               />
             </div>
