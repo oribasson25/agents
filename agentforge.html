@@ -594,7 +594,7 @@
     return monacoLoadPromise;
   }
 
-  function MonacoPython({ value, onChange }) {
+  function MonacoPython({ value, onChange, height = 420, bare }) {
     const containerRef = useRef(null);
     const editorRef = useRef(null);
 
@@ -629,7 +629,7 @@
       if (ed && ed.getValue() !== value) ed.setValue(value || '');
     }, [value]);
 
-    return <div ref={containerRef} className="monaco-container" style={{ height: 420 }} />;
+    return <div ref={containerRef} className={bare ? undefined : 'monaco-container'} style={{ height }} />;
   }
 
   /* ─────────────────── PARAMETER EDITOR ─────────────────── */
@@ -947,26 +947,28 @@
     );
   }
 
-  /* ── ToolRunner: inline test panel for a single tool ── */
-  function ToolRunner({ tool }) {
+  /* ── ToolRunPanel: Input / Output / Errors + Run, under the code editor ── */
+  function ToolRunPanel({ tool }) {
+    const [tab, setTab] = useState('input');
     const [running, setRunning] = useState(false);
-    const [result, setResult] = useState(null); // { ok: bool, text: string, ms: number }
+    const [result, setResult] = useState(null); // { ok, text, ms }
+    const formRef = useRef(null);
+    const params = (tool.parameters || []).filter(p => p.name);
 
-    async function handleSubmit(e) {
-      e.preventDefault();
+    async function run() {
       setRunning(true);
       setResult(null);
       const t0 = performance.now();
       try {
-        const packages = (tool.packages || '').split(',').map(s => s.trim()).filter(Boolean);
+        const packages = (tool.packages || '').split(',').map(x => x.trim()).filter(Boolean);
         const envVars = Object.fromEntries((tool.envVars || []).filter(ev => ev.key).map(ev => [ev.key, ev.value]));
-        // FormData reads current input values at submit time — browser-native, no React state needed
-        const formData = new FormData(e.target);
+        // Read the input values straight off the form at submit time.
+        const formData = new FormData(formRef.current);
         const typedInputs = {};
-        (tool.parameters || []).forEach(p => {
-          const raw = formData.get(p.name) || '';
-          typedInputs[p.name] = p.type === 'integer' ? parseInt(raw, 10) || 0
-                               : p.type === 'number'  ? parseFloat(raw) || 0
+        params.forEach(pp => {
+          const raw = formData.get(pp.name) || '';
+          typedInputs[pp.name] = pp.type === 'integer' ? parseInt(raw, 10) || 0
+                               : pp.type === 'number'  ? parseFloat(raw) || 0
                                : raw;
         });
         const resp = await fetch('/api/run-tool', {
@@ -976,46 +978,81 @@
         });
         const data = await resp.json();
         const ms = Math.round(performance.now() - t0);
-        if (data.error) setResult({ ok: false, text: data.error, ms });
-        else setResult({ ok: true, text: data.result, ms });
+        const res = data.error ? { ok: false, text: data.error, ms } : { ok: true, text: data.result, ms };
+        setResult(res);
+        setTab(res.ok ? 'output' : 'errors');
       } catch (err) {
         setResult({ ok: false, text: err.message, ms: Math.round(performance.now() - t0) });
+        setTab('errors');
       } finally {
         setRunning(false);
       }
     }
 
-    return (
-      <form onSubmit={handleSubmit} style={{ borderTop: '1px solid var(--border)', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {(tool.parameters || []).length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {(tool.parameters || []).map(p => (
-              <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 12, color: 'var(--text-2)', fontFamily: 'monospace', minWidth: 120, flexShrink: 0 }}>{p.name}<span style={{ color: 'var(--text-muted)' }}>: {p.type || 'string'}</span></span>
-                <input name={p.name} placeholder={p.description || p.name} style={{ flex: 1, fontSize: 13, fontFamily: 'monospace' }} />
-              </div>
-            ))}
-          </div>
-        )}
+    const tabs = [
+      { id: 'input',  label: 'Input' },
+      { id: 'output', label: 'Output', dot: result?.ok ? 'var(--success)' : null },
+      { id: 'errors', label: 'Errors', dot: result && !result.ok ? 'var(--danger)' : null },
+    ];
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600 }}>Test Run</span>
-          <button type="submit" disabled={running} style={{ background: running ? 'var(--bg-hover)' : 'var(--success)', color: running ? 'var(--text-muted)' : '#fff', border: 'none', borderRadius: 'var(--r-md)', padding: '6px 16px', fontWeight: 700, fontSize: 13, cursor: running ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-            {running ? <><span style={{ display: 'inline-block', width: 12, height: 12, border: '2px solid var(--text-muted)', borderTop: '2px solid var(--text)', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} /> Running…</> : '▶ Run'}
-          </button>
+    return (
+      <div style={{ borderTop: '1px solid var(--border)', background: 'var(--bg-panel)', display: 'flex', flexDirection: 'column', height: 208, flexShrink: 0 }}>
+        {/* Tab bar + Run */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '0 8px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              style={{
+                background: 'transparent', padding: '9px 12px', fontSize: 12,
+                fontWeight: tab === t.id ? 700 : 500,
+                color: tab === t.id ? 'var(--text)' : 'var(--text-muted)',
+                borderBottom: `2px solid ${tab === t.id ? 'var(--primary)' : 'transparent'}`,
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}>
+              {t.label}
+              {t.dot && <span style={{ width: 6, height: 6, borderRadius: '50%', background: t.dot }} />}
+            </button>
+          ))}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+            {result && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>⏱ {result.ms}ms</span>}
+            <button onClick={run} disabled={running}
+              style={{ background: running ? 'var(--bg-hover)' : 'var(--success)', color: running ? 'var(--text-muted)' : '#04240f', borderRadius: 'var(--r-sm)', padding: '5px 14px', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+              {running
+                ? <><span style={{ display: 'inline-block', width: 11, height: 11, border: '2px solid var(--text-muted)', borderTop: '2px solid var(--text)', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} /> Running…</>
+                : '▶ Run'}
+            </button>
+          </div>
         </div>
 
-        {result && (
-          <div style={{ borderRadius: 'var(--r-md)', overflow: 'hidden', border: `1px solid ${result.ok ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.35)'}` }}>
-            <div style={{ padding: '6px 12px', background: result.ok ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.12)', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 13 }}>{result.ok ? '✓' : '✗'}</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: result.ok ? 'var(--success)' : 'var(--danger)' }}>{result.ok ? 'Success' : 'Error'}</span>
-              <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>⏱ {result.ms}ms</span>
-            </div>
-            <pre style={{ margin: 0, padding: '10px 12px', fontSize: 12, fontFamily: 'monospace', color: result.ok ? 'var(--text)' : 'var(--danger)', background: 'var(--bg-input)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 200, overflowY: 'auto' }}>{result.text}</pre>
+        {/* Panels — all stay mounted so the form keeps its values */}
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+          <form ref={formRef} onSubmit={e => { e.preventDefault(); run(); }}
+            style={{ display: tab === 'input' ? 'flex' : 'none', flexDirection: 'column', gap: 7, padding: '12px 14px' }}>
+            {params.length === 0 ? (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: "'JetBrains Mono','Fira Code',monospace" }}>// No inputs configured.</div>
+            ) : params.map(pp => (
+              <div key={pp.name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 12, color: 'var(--text-2)', fontFamily: 'monospace', minWidth: 130, flexShrink: 0 }}>
+                  {pp.name}<span style={{ color: 'var(--text-muted)' }}>: {pp.type || 'string'}</span>
+                </span>
+                <input name={pp.name} placeholder={pp.description || pp.name} style={{ flex: 1, fontSize: 13, fontFamily: 'monospace' }} />
+              </div>
+            ))}
+            <button type="submit" style={{ display: 'none' }} />
+          </form>
+
+          <div style={{ display: tab === 'output' ? 'block' : 'none', padding: '12px 14px' }}>
+            {result?.ok
+              ? <pre style={{ margin: 0, fontSize: 12, fontFamily: "'JetBrains Mono','Fira Code',monospace", color: 'var(--text)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{result.text}</pre>
+              : <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Run the tool to see its output.</div>}
           </div>
-        )}
-      </form>
+
+          <div style={{ display: tab === 'errors' ? 'block' : 'none', padding: '12px 14px' }}>
+            {result && !result.ok
+              ? <pre style={{ margin: 0, fontSize: 12, fontFamily: "'JetBrains Mono','Fira Code',monospace", color: 'var(--danger)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{result.text}</pre>
+              : <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>No errors.</div>}
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -1153,7 +1190,7 @@
     { label: 'Review it', prompt: 'Review the current code against the runtime contract and fix anything that would break at runtime.' },
   ];
 
-  function ToolCodeAssistant({ agent, tool, targetKey, onApply, onClose }) {
+  function ToolCodeAssistant({ agent, tool, targetKey, onApply }) {
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [pending, setPending] = useState(false);
@@ -1214,17 +1251,10 @@
     }
 
     return (
-      <div className="slide-in-right" style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(520px, 96vw)', background: 'var(--bg-sidebar)', borderLeft: '1px solid var(--border)', zIndex: 201, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.5)' }}>
-        {/* Header */}
-        <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--teal-dim)', border: '1px solid var(--teal)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--teal)', flexShrink: 0 }}>{Icons.tool}</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>Tool Assistant</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {tool.name ? `Editing ${tool.name}` : 'New tool'} · {(agent.apiConfig || {}).model || 'no model'}
-            </div>
-          </div>
-          <IconBtn onClick={onClose} title="Close">✕</IconBtn>
+      // Lives as a tab inside the workspace's side panel.
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+        <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          Writes straight into the editor · {(agent.apiConfig || {}).model || 'no model'}
         </div>
 
         {noKey && (
@@ -1318,63 +1348,55 @@
     );
   }
 
+  const DEFAULT_TOOL_CODE = '# Parameters arrive as kwargs\n# Access env vars with os.environ["MY_KEY"]\nimport os\nimport urllib.request, json\n\ndef run(**kwargs):\n    # Example: call an external API\n    # url = os.environ.get("API_URL", "")\n    # with urllib.request.urlopen(url) as r:\n    #     data = json.loads(r.read())\n    # return str(data)\n    return "result"\n';
+
+  function emptyDraft() {
+    return { name: '', description: '', parameters: [], packages: '', envVars: [], code: DEFAULT_TOOL_CODE };
+  }
+
   function ToolsTab({ agent, onUpdate }) {
-    const [expandedId, setExpandedId] = useState(null);
-    const [addOpen, setAddOpen] = useState(false);
-    const defaultCode = '# Parameters arrive as kwargs\n# Access env vars with os.environ["MY_KEY"]\nimport os\nimport urllib.request, json\n\ndef run(**kwargs):\n    # Example: call an external API\n    # url = os.environ.get("API_URL", "")\n    # with urllib.request.urlopen(url) as r:\n    #     data = json.loads(r.read())\n    # return str(data)\n    return "result"\n';
-    const [newTool, setNewTool] = useState({ name: '', description: '', parameters: [], packages: '', envVars: [], code: defaultCode });
-    // { kind: 'tool', id } | { kind: 'new' } — which tool the assistant is on
-    const [assistantTarget, setAssistantTarget] = useState(null);
+    // null = the tool list; otherwise the tool open in the workspace.
+    const [target, setTarget] = useState(null);   // { kind: 'tool', id } | { kind: 'new' }
+    const [draft, setDraft] = useState(emptyDraft);
 
-    const assistantTool = !assistantTarget ? null
-      : assistantTarget.kind === 'new' ? newTool
-      : (agent.tools || []).find(t => t.id === assistantTarget.id) || null;
-
-    // The assistant hands back whole fields (code, packages) at once, so patch
-    // them in a single update — two updateTool calls would drop the first.
-    function applyFromAssistant(fields) {
-      if (!assistantTarget) return;
-      if (assistantTarget.kind === 'new') setNewTool(prev => ({ ...prev, ...fields }));
-      else patchTool(assistantTarget.id, fields);
-    }
+    const tools = agent.tools || [];
 
     function addPreset(preset) {
-      const already = agent.tools.some(t => t.name === preset.name);
-      if (already) return;
-      const tool = { id: uid(), ...preset };
-      onUpdate({ ...agent, tools: [...agent.tools, tool] });
-    }
-
-    function addTool() {
-      if (!newTool.name.trim()) return;
-      const tool = { id: uid(), ...newTool };
-      onUpdate({ ...agent, tools: [...agent.tools, tool] });
-      setNewTool({ name: '', description: '', parameters: [], packages: '', envVars: [], code: defaultCode });
-      setAddOpen(false);
-      setAssistantTarget(t => t && t.kind === 'new' ? null : t);
-    }
-
-    function updateTool(id, field, val) {
-      onUpdate({ ...agent, tools: agent.tools.map(t => t.id === id ? { ...t, [field]: val } : t) });
-    }
-
-    function patchTool(id, fields) {
-      onUpdate({ ...agent, tools: agent.tools.map(t => t.id === id ? { ...t, ...fields } : t) });
+      if (tools.some(t => t.name === preset.name)) return;
+      onUpdate({ ...agent, tools: [...tools, { id: uid(), ...preset }] });
     }
 
     function deleteTool(id) {
-      onUpdate({ ...agent, tools: agent.tools.filter(t => t.id !== id) });
+      onUpdate({ ...agent, tools: tools.filter(t => t.id !== id) });
+    }
+
+    function startDraft() {
+      setDraft(emptyDraft());
+      setTarget({ kind: 'new' });
+    }
+
+    if (target) {
+      return (
+        <ToolWorkspace
+          agent={agent}
+          onUpdate={onUpdate}
+          target={target}
+          setTarget={setTarget}
+          draft={draft}
+          setDraft={setDraft}
+          onStartDraft={startDraft}
+          onExit={() => setTarget(null)}
+        />
+      );
     }
 
     return (
-      // While the assistant panel is open, keep the editor narrow enough that
-      // the fixed panel doesn't cover it on mid-size windows.
-      <div style={{ maxWidth: assistantTool ? 'min(720px, max(360px, calc(100vw - 860px)))' : 720, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ maxWidth: 720, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
           <span style={{ fontSize: 12, color: 'var(--text-muted)', flex: 1 }}>
             ⚙️ Invoke tools in prompts using <span style={{ color: 'var(--primary)' }}>@toolName</span>
           </span>
-          <button onClick={() => setAddOpen(v => !v)} style={{ background: 'var(--primary)', color: '#fff', padding: '8px 16px', borderRadius: 'var(--r-xl)', fontWeight: 600, fontSize: 13 }}>＋ Add Tool</button>
+          <button onClick={startDraft} style={{ background: 'var(--primary)', color: '#0a0a0a', padding: '8px 16px', borderRadius: 'var(--r-xl)', fontWeight: 700, fontSize: 13 }}>＋ Add Tool</button>
         </div>
 
         {/* Built-in system tools */}
@@ -1410,7 +1432,7 @@
         {/* Preset tools */}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {TOOL_PRESETS.map(preset => {
-            const added = agent.tools.some(t => t.name === preset.name);
+            const added = tools.some(t => t.name === preset.name);
             return (
               <button
                 key={preset.name}
@@ -1421,121 +1443,222 @@
                   background: added ? 'var(--bg-hover)' : 'var(--bg-panel)',
                   color: added ? 'var(--text-muted)' : 'var(--teal)',
                   border: `1px solid ${added ? 'var(--border)' : 'var(--teal)'}`,
-                  borderRadius: 'var(--r-xl)',
-                  padding: '5px 13px',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 5,
+                  borderRadius: 'var(--r-xl)', padding: '5px 13px', fontSize: 12, fontWeight: 600,
+                  display: 'flex', alignItems: 'center', gap: 5,
                 }}
               >
                 <span>{added ? '✓' : '＋'}</span>
-                <span>scrape_website</span>
+                <span>{preset.name}</span>
               </button>
             );
           })}
         </div>
 
-        {agent.tools.length === 0 && !addOpen && <EmptyState icon={Icons.tool} title="No tools yet" subtitle="Add Python tools to extend your agent's capabilities" />}
+        {tools.length === 0 && <EmptyState icon={Icons.tool} title="No tools yet" subtitle="Add Python tools to extend your agent's capabilities" />}
 
-        {agent.tools.map(tool => (
-          <div key={tool.id} style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', cursor: 'pointer' }} onClick={() => setExpandedId(expandedId === tool.id ? null : tool.id)}>
-              <span style={{ color: 'var(--teal)', display: 'flex' }}>{Icons.tool}</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, fontSize: 14 }}>{tool.name}</div>
-                {tool.description && <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 2 }}>{tool.description}</div>}
+        {tools.length > 0 && (
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', overflow: 'hidden' }}>
+            {tools.map((tool, i) => (
+              <div key={tool.id}
+                onClick={() => setTarget({ kind: 'tool', id: tool.id })}
+                style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '12px 16px', cursor: 'pointer', borderBottom: i < tools.length - 1 ? '1px solid var(--border)' : 'none' }}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              >
+                <span style={{ color: 'var(--teal)', display: 'flex' }}>{Icons.tool}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, fontFamily: "'JetBrains Mono','Fira Code',monospace" }}>{tool.name || 'untitled'}</div>
+                  {tool.description && <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tool.description}</div>}
+                </div>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>
+                  {(tool.parameters || []).filter(pp => pp.name).length} params
+                </span>
+                <IconBtn onClick={e => { e.stopPropagation(); deleteTool(tool.id); }} danger title="Delete tool">{Icons.trash}</IconBtn>
+                <span style={{ color: 'var(--text-muted)', fontSize: 15, flexShrink: 0 }}>›</span>
               </div>
-              <IconBtn onClick={e => { e.stopPropagation(); deleteTool(tool.id); }} danger title="Delete tool">{Icons.trash}</IconBtn>
-              <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>{expandedId === tool.id ? '▼' : '▶'}</span>
-            </div>
-            {expandedId === tool.id && (
-              <div style={{ padding: '0 16px 16px', borderTop: '1px solid var(--border)', paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div>
-                  <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Name</label>
-                  <input value={tool.name} onChange={e => updateTool(tool.id, 'name', e.target.value)} dir="auto" />
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Description</label>
-                  <input value={tool.description} onChange={e => updateTool(tool.id, 'description', e.target.value)} dir="auto" />
-                </div>
-                <div style={{ background: 'var(--bg-hover)', borderRadius: 'var(--r-md)', padding: 14 }}>
-                  <ParameterEditor parameters={tool.parameters || []} onChange={v => updateTool(tool.id, 'parameters', v)} />
-                </div>
-                <div style={{ background: 'var(--bg-hover)', borderRadius: 'var(--r-md)', padding: 14 }}>
-                  <EnvVarEditor envVars={tool.envVars || []} onChange={v => updateTool(tool.id, 'envVars', v)} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Packages <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(pip, comma-separated — e.g. requests, httpx)</span></label>
-                  <input value={tool.packages || ''} onChange={e => updateTool(tool.id, 'packages', e.target.value)} placeholder="requests, httpx, beautifulsoup4" style={{ fontFamily: 'monospace', fontSize: 13 }} />
-                </div>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, gap: 8 }}>
-                    <label style={{ fontSize: 12, color: 'var(--text-2)' }}>Code (Python)</label>
-                    <button onClick={() => setAssistantTarget({ kind: 'tool', id: tool.id })}
-                      title="Ask AI to write or change this tool's code"
-                      style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, padding: '4px 11px', borderRadius: 'var(--r-xl)', background: assistantTarget && assistantTarget.id === tool.id ? 'var(--teal)' : 'var(--teal-dim)', color: assistantTarget && assistantTarget.id === tool.id ? '#04211e' : 'var(--teal)', border: '1px solid var(--teal)' }}>
-                      ✨ Ask AI
-                    </button>
-                  </div>
-                  <MonacoPython value={tool.code} onChange={v => updateTool(tool.id, 'code', v)} />
-                </div>
-                <ToolRunner tool={tool} />
-              </div>
-            )}
+            ))}
           </div>
-        ))}
+        )}
+      </div>
+    );
+  }
 
-        {addOpen && (
-          <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--primary)', borderRadius: 'var(--r-lg)', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>New Tool</div>
-            <div>
-              <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Name</label>
-              <input value={newTool.name} onChange={e => setNewTool(v => ({ ...v, name: e.target.value }))} dir="auto" placeholder="e.g. fetch_weather" />
+  /* ─────────────────── TOOL WORKSPACE ─────────────────── */
+  function ToolWorkspace({ agent, onUpdate, target, setTarget, draft, setDraft, onStartDraft, onExit }) {
+    const [panelTab, setPanelTab] = useState('config');   // config | secrets | assistant
+    const tools = agent.tools || [];
+    const isDraft = target.kind === 'new';
+    const tool = isDraft ? draft : tools.find(t => t.id === target.id);
+
+    // The open tool can disappear (deleted elsewhere) — fall back to the list.
+    useEffect(() => { if (!tool) onExit(); }, [!!tool]);
+    if (!tool) return null;
+
+    function patch(fields) {
+      if (isDraft) setDraft(prev => ({ ...prev, ...fields }));
+      else onUpdate({ ...agent, tools: tools.map(t => t.id === target.id ? { ...t, ...fields } : t) });
+    }
+
+    function createFromDraft() {
+      if (!draft.name.trim()) return;
+      const created = { id: uid(), ...draft };
+      onUpdate({ ...agent, tools: [...tools, created] });
+      setTarget({ kind: 'tool', id: created.id });
+    }
+
+    function deleteCurrent() {
+      onUpdate({ ...agent, tools: tools.filter(t => t.id !== target.id) });
+      onExit();
+    }
+
+    const fileName = `${(tool.name || 'untitled').replace(/\s+/g, '_')}.py`;
+    const panelTabs = [
+      { id: 'config', label: 'Configuration' },
+      { id: 'secrets', label: 'Secrets' },
+      { id: 'assistant', label: '✨ Assistant' },
+    ];
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 620, gap: 12 }}>
+        {/* Title bar */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+          <button onClick={onExit}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'var(--bg-hover)', color: 'var(--text-2)', padding: '6px 11px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 600, border: '1px solid var(--border)' }}>
+            {Icons.back} Tools
+          </button>
+          <div style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--bg-panel)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--teal)', flexShrink: 0, fontSize: 13, fontFamily: 'monospace' }}>{'</>'}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 800, fontSize: 17, fontFamily: "'JetBrains Mono','Fira Code',monospace", letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {tool.name || 'untitled'}
             </div>
-            <div>
-              <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Description</label>
-              <input value={newTool.description} onChange={e => setNewTool(v => ({ ...v, description: e.target.value }))} dir="auto" placeholder="What does this tool do?" />
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {tool.description || (isDraft ? 'New tool — not created yet' : 'No description')}
             </div>
-            <div style={{ background: 'var(--bg-hover)', borderRadius: 'var(--r-md)', padding: 14 }}>
-              <ParameterEditor parameters={newTool.parameters} onChange={v => setNewTool(p => ({ ...p, parameters: v }))} />
+          </div>
+          {isDraft ? (
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              <button onClick={onExit} style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 13 }}>Discard</button>
+              <button onClick={createFromDraft} disabled={!draft.name.trim()} title={draft.name.trim() ? 'Create this tool' : 'Give the tool a name first'}
+                style={{ background: draft.name.trim() ? 'var(--primary)' : 'var(--bg-hover)', color: draft.name.trim() ? '#0a0a0a' : 'var(--text-muted)', padding: '7px 16px', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 13 }}>
+                Create tool
+              </button>
             </div>
-            <div style={{ background: 'var(--bg-hover)', borderRadius: 'var(--r-md)', padding: 14 }}>
-              <EnvVarEditor envVars={newTool.envVars} onChange={v => setNewTool(p => ({ ...p, envVars: v }))} />
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+              <span style={{ fontSize: 11, color: 'var(--success)' }}>saved automatically</span>
+              <IconBtn onClick={deleteCurrent} danger title="Delete tool">{Icons.trash}</IconBtn>
             </div>
-            <div>
-              <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Packages <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(pip, comma-separated)</span></label>
-              <input value={newTool.packages} onChange={e => setNewTool(v => ({ ...v, packages: e.target.value }))} placeholder="requests, httpx, beautifulsoup4" style={{ fontFamily: 'monospace', fontSize: 13 }} />
+          )}
+        </div>
+
+        {/* Workspace */}
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12 }}>
+          {/* Tool list */}
+          <div style={{ width: 186, flexShrink: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Tools</div>
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {tools.map(t => {
+                const active = !isDraft && t.id === target.id;
+                return (
+                  <button key={t.id} onClick={() => setTarget({ kind: 'tool', id: t.id })} title={t.name}
+                    style={{
+                      textAlign: 'left', padding: '7px 9px', borderRadius: 'var(--r-sm)', fontSize: 12,
+                      fontFamily: "'JetBrains Mono','Fira Code',monospace",
+                      background: active ? 'var(--primary-dim)' : 'transparent',
+                      color: active ? 'var(--primary)' : 'var(--text-2)',
+                      fontWeight: active ? 700 : 500,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                    {t.name || 'untitled'}
+                  </button>
+                );
+              })}
+              {isDraft && (
+                <div style={{ padding: '7px 9px', borderRadius: 'var(--r-sm)', fontSize: 12, background: 'var(--primary-dim)', color: 'var(--primary)', fontWeight: 700, fontFamily: "'JetBrains Mono','Fira Code',monospace", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {draft.name.trim() || 'new tool…'}
+                </div>
+              )}
             </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, gap: 8 }}>
-                <label style={{ fontSize: 12, color: 'var(--text-2)' }}>Code (Python)</label>
-                <button onClick={() => setAssistantTarget({ kind: 'new' })}
-                  title="Ask AI to write this tool's code"
-                  style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, padding: '4px 11px', borderRadius: 'var(--r-xl)', background: assistantTarget && assistantTarget.kind === 'new' ? 'var(--teal)' : 'var(--teal-dim)', color: assistantTarget && assistantTarget.kind === 'new' ? '#04211e' : 'var(--teal)', border: '1px solid var(--teal)' }}>
-                  ✨ Ask AI
+            <button onClick={onStartDraft} disabled={isDraft}
+              style={{ margin: 6, padding: '7px 9px', borderRadius: 'var(--r-sm)', fontSize: 12, fontWeight: 700, background: 'var(--bg-hover)', border: '1px solid var(--border)', color: isDraft ? 'var(--text-muted)' : 'var(--primary)' }}>
+              ＋ New tool
+            </button>
+          </div>
+
+          {/* Code + run */}
+          <div style={{ flex: 1, minWidth: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)', flexShrink: 0 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Code Editor</span>
+              <span style={{ fontSize: 12, fontFamily: "'JetBrains Mono','Fira Code',monospace", color: 'var(--text)', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '6px 6px 0 0', padding: '5px 12px', marginBottom: -10 }}>
+                {fileName}
+              </span>
+              <button onClick={() => setPanelTab('assistant')} title="Ask AI to write or change this code"
+                style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, padding: '4px 11px', borderRadius: 'var(--r-xl)', background: panelTab === 'assistant' ? 'var(--teal)' : 'var(--teal-dim)', color: panelTab === 'assistant' ? '#04211e' : 'var(--teal)', border: '1px solid var(--teal)' }}>
+                ✨ Ask AI
+              </button>
+            </div>
+            <div style={{ flex: 1, minHeight: 0 }}>
+              <MonacoPython value={tool.code} onChange={v => patch({ code: v })} height="100%" bare />
+            </div>
+            <ToolRunPanel tool={tool} />
+          </div>
+
+          {/* Configuration / Secrets / Assistant */}
+          <div style={{ width: 'clamp(300px, 30%, 420px)', flexShrink: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', gap: 2, padding: '0 6px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)', flexShrink: 0 }}>
+              {panelTabs.map(t => (
+                <button key={t.id} onClick={() => setPanelTab(t.id)}
+                  style={{
+                    background: 'transparent', padding: '10px 10px', fontSize: 12,
+                    fontWeight: panelTab === t.id ? 700 : 500,
+                    color: panelTab === t.id ? 'var(--text)' : 'var(--text-muted)',
+                    borderBottom: `2px solid ${panelTab === t.id ? 'var(--primary)' : 'transparent'}`,
+                  }}>
+                  {t.label}
                 </button>
-              </div>
-              <MonacoPython value={newTool.code} onChange={v => setNewTool(p => ({ ...p, code: v }))} />
+              ))}
             </div>
-            <ToolRunner tool={newTool} />
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={() => { setAddOpen(false); setAssistantTarget(t => t && t.kind === 'new' ? null : t); }} style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '8px 16px', borderRadius: 'var(--r-md)' }}>Cancel</button>
-              <button onClick={addTool} style={{ background: 'var(--primary)', color: '#fff', padding: '8px 16px', borderRadius: 'var(--r-md)', fontWeight: 600 }}>Add Tool</button>
+
+            <div style={{ display: panelTab === 'config' ? 'flex' : 'none', flexDirection: 'column', gap: 14, padding: 14, overflowY: 'auto' }}>
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Name</label>
+                <input value={tool.name} onChange={e => patch({ name: e.target.value })} dir="auto" placeholder="e.g. fetch_weather" style={{ fontFamily: "'JetBrains Mono','Fira Code',monospace", fontSize: 13 }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Description</label>
+                <input value={tool.description} onChange={e => patch({ description: e.target.value })} dir="auto" placeholder="What does this tool do?" />
+              </div>
+              <div style={{ background: 'var(--bg-hover)', borderRadius: 'var(--r-md)', padding: 12 }}>
+                <ParameterEditor parameters={tool.parameters || []} onChange={v => patch({ parameters: v })} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>
+                  Packages <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(pip, comma-separated)</span>
+                </label>
+                <input value={tool.packages || ''} onChange={e => patch({ packages: e.target.value })} placeholder="requests, httpx, beautifulsoup4" style={{ fontFamily: 'monospace', fontSize: 13 }} />
+              </div>
+            </div>
+
+            <div style={{ display: panelTab === 'secrets' ? 'flex' : 'none', flexDirection: 'column', gap: 10, padding: 14, overflowY: 'auto' }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                Available to the code as <span style={{ fontFamily: 'monospace', color: 'var(--text-2)' }}>os.environ["KEY"]</span>. Values are never sent to the assistant.
+              </div>
+              <div style={{ background: 'var(--bg-hover)', borderRadius: 'var(--r-md)', padding: 12 }}>
+                <EnvVarEditor envVars={tool.envVars || []} onChange={v => patch({ envVars: v })} />
+              </div>
+            </div>
+
+            {/* Kept mounted so the conversation survives tab switches */}
+            <div style={{ display: panelTab === 'assistant' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+              <ToolCodeAssistant
+                agent={agent}
+                tool={tool}
+                targetKey={isDraft ? 'new' : target.id}
+                onApply={patch}
+              />
             </div>
           </div>
-        )}
-
-        {assistantTool && (
-          <ToolCodeAssistant
-            agent={agent}
-            tool={assistantTool}
-            targetKey={assistantTarget.kind === 'new' ? 'new' : assistantTarget.id}
-            onApply={applyFromAssistant}
-            onClose={() => setAssistantTarget(null)}
-          />
-        )}
+        </div>
       </div>
     );
   }
