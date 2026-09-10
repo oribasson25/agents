@@ -278,7 +278,14 @@
     return apiFetch('/api/agents', { method: 'POST', body: JSON.stringify(agent) }).then(r => r.json());
   }
   async function apiUpdate(agent) {
-    return apiFetch(`/api/agents/${agent.id}`, { method: 'PUT', body: JSON.stringify(agent) }).then(r => r.json());
+    const r = await apiFetch(`/api/agents/${agent.id}`, { method: 'PUT', body: JSON.stringify(agent) });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const err = new Error(data.error || `Save failed (${r.status})`);
+      err.status = r.status;
+      throw err;
+    }
+    return data;
   }
   async function apiDelete(id) {
     return apiFetch(`/api/agents/${id}`, { method: 'DELETE' });
@@ -2269,7 +2276,7 @@
       try {
         const r = await apiFetch('/api/whatsapp/test', {
           method: 'POST',
-          body: JSON.stringify({ phoneNumberId: wa.phoneNumberId, accessToken: wa.accessToken }),
+          body: JSON.stringify({ phoneNumberId: wa.phoneNumberId, accessToken: wa.accessToken, agentId: agent.id }),
         });
         const d = await r.json();
         setTestResult(d);
@@ -4070,9 +4077,22 @@ def run(**kwargs):
     }, []);
 
     // Debounced save
+    const saveErrorRef = useRef('');
     const saveAgent = useCallback(async (agent) => {
       dispatch({ type: 'UPDATE_AGENT', agent });
-      await apiUpdate(agent).catch(() => {});
+      try {
+        await apiUpdate(agent);
+        saveErrorRef.current = '';
+      } catch (err) {
+        // The save is debounced and otherwise invisible, so a rejected change
+        // (e.g. a WhatsApp number already connected to another agent) has to be
+        // reported here or the user would think it stuck. Every later keystroke
+        // retries the same rejected save, so only report a message once.
+        if (err && err.status === 409 && err.message !== saveErrorRef.current) {
+          saveErrorRef.current = err.message;
+          alert(err.message);
+        }
+      }
     }, []);
     const saveAgentDebounced = useDebounce(saveAgent, 600);
 

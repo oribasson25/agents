@@ -8,7 +8,7 @@ function applyDlp(text, dlp) {
   return out;
 }
 
-function dlpMessages(messages, dlp) {
+export function dlpMessages(messages, dlp) {
   if (!dlp) return messages;
   return messages.map(m => {
     if (m.role !== 'user' || typeof m.content !== 'string') return m;

@@ -1,4 +1,5 @@
 import { checkAuth } from '../_auth.js';
+import { findPhoneNumberConflict, PHONE_CONFLICT_MESSAGE } from '../_whatsappClaim.js';
 
 const GRAPH = 'https://graph.facebook.com/v20.0';
 
@@ -7,9 +8,13 @@ export default async function handler(req, res) {
   const user = checkAuth(req, res);
   if (!user) return;
 
-  const { phoneNumberId, accessToken } = req.body || {};
+  const { phoneNumberId, accessToken, agentId } = req.body || {};
   if (!phoneNumberId || !accessToken) {
     return res.status(400).json({ ok: false, error: 'phoneNumberId and accessToken are required' });
+  }
+
+  if (await findPhoneNumberConflict(phoneNumberId, agentId)) {
+    return res.status(200).json({ ok: false, error: PHONE_CONFLICT_MESSAGE });
   }
 
   try {

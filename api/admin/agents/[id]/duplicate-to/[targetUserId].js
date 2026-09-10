@@ -22,6 +22,10 @@ export default async function handler(req, res) {
     id: newId,
     name: sourceRow.data.name + ' (Copy)',
     createdAt: new Date().toISOString(),
+    // The WhatsApp channel is not duplicable: the phone number can only be
+    // claimed by one agent, and its access token / app secret must not be
+    // handed to another user.
+    whatsapp: { enabled: false, phoneNumberId: '', accessToken: '', appSecret: '', verifyToken: '' },
   };
 
   await sql`insert into agents (id, data, user_id) values (${newId}, ${JSON.stringify(copy)}::jsonb, ${targetUserId})`;
