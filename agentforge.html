@@ -231,6 +231,7 @@
     docs: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>,
     settings: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
     admin: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
+    sparkle: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M18 16l.9 2.1L21 19l-2.1.9L18 22l-.9-2.1L15 19l2.1-.9z"/></svg>,
     interactions: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"/></svg>,
     edit: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
     chat: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>,
@@ -264,6 +265,22 @@
   }
   function fmtDuration(ms) { return (ms / 1000).toFixed(2) + 's'; }
 
+  /* ─────────────────── ACCOUNT API SETTINGS ─────────────────── */
+  // One key, provider and model for the whole account: every agent, every
+  // channel and every assistant. Kept in a module variable so the many call
+  // sites don't each have to thread it through props; App owns the state and
+  // mirrors it here, so a change re-renders the tree that reads it.
+  const MODELS_BY_PROVIDER = { claude: CLAUDE_MODELS, openai: OPENAI_MODELS, ollama: OLLAMA_MODELS };
+  const DEFAULT_MODEL = { claude: CLAUDE_MODELS[1], openai: OPENAI_MODELS[0], ollama: OLLAMA_MODELS[0] };
+
+  let ACCOUNT_API = { provider: 'claude', apiKey: '', model: DEFAULT_MODEL.claude, ollamaHost: '', assistantLanguage: 'he' };
+  function accountApi() { return ACCOUNT_API; }
+  function setAccountApi(cfg) { ACCOUNT_API = { ...ACCOUNT_API, ...(cfg || {}) }; }
+  function accountApiUsable(cfg) {
+    const c = cfg || ACCOUNT_API;
+    return c.provider === 'ollama' ? !!c.ollamaHost : !!c.apiKey;
+  }
+
   /* ─────────────────── API ─────────────────── */
   function getAuth() {
     try { return JSON.parse(sessionStorage.getItem('agentforge_auth') || 'null'); } catch { return null; }
@@ -286,7 +303,14 @@
     return Array.isArray(agents) ? agents.map(stripUiFields) : agents;
   }
   async function apiCreate(agent) {
-    return apiFetch('/api/agents', { method: 'POST', body: JSON.stringify(stripUiFields(agent)) }).then(r => r.json());
+    const r = await apiFetch('/api/agents', { method: 'POST', body: JSON.stringify(stripUiFields(agent)) });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const err = new Error(data.error || `Create failed (${r.status})`);
+      err.status = r.status;
+      throw err;
+    }
+    return data;
   }
   async function apiUpdate(agent) {
     const r = await apiFetch(`/api/agents/${agent.id}`, { method: 'PUT', body: JSON.stringify(stripUiFields(agent)) });
@@ -300,6 +324,18 @@
   }
   async function apiDelete(id) {
     return apiFetch(`/api/agents/${id}`, { method: 'DELETE' });
+  }
+
+  async function apiGetSettings() {
+    const r = await apiFetch('/api/settings');
+    if (!r.ok) throw new Error(`Could not load settings (${r.status})`);
+    return r.json();
+  }
+  async function apiSaveSettings(patch) {
+    const r = await apiFetch('/api/settings', { method: 'PUT', body: JSON.stringify(patch) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `Could not save settings (${r.status})`);
+    return d;
   }
 
   async function apiListInteractions(params = {}) {
@@ -698,10 +734,8 @@
   const EMOJI_OPTIONS = ['🤖','🧠','💼','🎯','🔥','🚀','⚡','💡','🛡️','🌟','👾','🎨','🔬','📊','🗺️','🎤','🌐','🔑','⚙️','🦁'];
 
   function ConfigurationTab({ agent, onUpdate }) {
-    const [showKey, setShowKey] = useState(false);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const fileInputRef = React.useRef(null);
-    const models = agent.apiConfig.provider === 'claude' ? CLAUDE_MODELS : agent.apiConfig.provider === 'ollama' ? OLLAMA_MODELS : OPENAI_MODELS;
 
     function update(path, val) {
       const updated = JSON.parse(JSON.stringify(agent));
@@ -772,45 +806,24 @@
           </div>
         </div>
 
-        {/* API Config */}
-        <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 24, border: '1px solid var(--border)' }}>
-          <div style={{ fontWeight: 700, marginBottom: 16, fontSize: 15 }}>API Configuration</div>
-          {/* Provider toggle */}
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 6, display: 'block' }}>Provider</label>
-            <div style={{ display: 'inline-flex', background: 'var(--bg-input)', borderRadius: 'var(--r-xl)', padding: 3, gap: 2 }}>
-              {['claude','openai','ollama'].map(p => (
-                <button key={p} onClick={() => { const u = JSON.parse(JSON.stringify(agent)); u.apiConfig.provider = p; u.apiConfig.model = p === 'claude' ? CLAUDE_MODELS[1] : p === 'ollama' ? OLLAMA_MODELS[0] : OPENAI_MODELS[0]; onUpdate(u); }}
-                  style={{ padding: '6px 18px', borderRadius: 'var(--r-xl)', fontWeight: 600, fontSize: 13, background: agent.apiConfig.provider === p ? 'var(--primary)' : 'transparent', color: agent.apiConfig.provider === p ? '#fff' : 'var(--text-2)' }}>
-                  {p === 'claude' ? '🟣 Claude' : p === 'ollama' ? '🦙 Ollama' : '🟢 OpenAI'}
-                </button>
-              ))}
+        {/* The key, provider and model are account-wide — see Settings */}
+        <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: '16px 24px', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 18 }}>🔑</span>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>Model &amp; API key</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.6 }}>
+              {accountApiUsable()
+                ? `כל הסוכנים בחשבון רצים על ${accountApi().provider} · ${accountApi().model}. להחלפה — מסך Settings.`
+                : 'עדיין לא הוגדר מפתח API לחשבון. עד שיוגדר במסך Settings, אף סוכן לא יענה.'}
             </div>
           </div>
-          {/* Ollama Host */}
-          {agent.apiConfig.provider === 'ollama' && (
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Ollama Server IP</label>
-              <input type="text" value={agent.apiConfig.ollamaHost || ''} onChange={e => update(['apiConfig','ollamaHost'], e.target.value)} placeholder="http://192.168.1.100:11434" style={{ width: '100%' }} />
-            </div>
-          )}
-          {/* API Key */}
-          {agent.apiConfig.provider !== 'ollama' && (
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>API Key</label>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input type={showKey ? 'text' : 'password'} value={agent.apiConfig.apiKey} onChange={e => update(['apiConfig','apiKey'], e.target.value)} placeholder="sk-..." style={{ flex: 1 }} />
-              <button onClick={() => setShowKey(v=>!v)} style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', fontSize: 16 }}>{showKey ? '🙈' : '👁'}</button>
-            </div>
-          </div>
-          )}
-          {/* Model */}
-          <div>
-            <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Model</label>
-            <select value={agent.apiConfig.model} onChange={e => update(['apiConfig','model'], e.target.value)} style={{ borderRadius: 'var(--r-md)' }}>
-              {models.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </div>
+          <span style={{
+            fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 'var(--r-sm)',
+            background: accountApiUsable() ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.14)',
+            color: accountApiUsable() ? 'var(--success)' : 'var(--warning)',
+          }}>
+            {accountApiUsable() ? 'מוגדר' : 'חסר מפתח'}
+          </span>
         </div>
 
         {/* DLP */}
@@ -1212,8 +1225,8 @@
   // One-shot chat completion against the agent's own provider/key/model — no
   // agent tools, no RAG, no DLP. This is the builder talking to the model, not
   // an end user talking to the agent.
-  async function callPlainLLM(agent, system, history, maxTokens = 4096) {
-    const { apiKey, provider, model } = agent.apiConfig || {};
+  async function callPlainLLM(system, history, maxTokens = 4096) {
+    const { apiKey, provider, model } = accountApi();
 
     if (provider === 'claude') {
       const r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -1232,7 +1245,7 @@
     }
 
     if (provider === 'ollama') {
-      const host = (agent.apiConfig.ollamaHost || 'http://localhost:11434').replace(/\/$/, '');
+      const host = (accountApi().ollamaHost || 'http://localhost:11434').replace(/\/$/, '');
       const r = await fetch('/api/ollama-proxy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1509,9 +1522,7 @@
       if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
     }, [messages, pending]);
 
-    const noKey = (agent.apiConfig || {}).provider === 'ollama'
-      ? !agent.apiConfig.ollamaHost
-      : !(agent.apiConfig || {}).apiKey;
+    const noKey = !accountApiUsable();
 
     async function send(text) {
       const question = (text || '').trim();
@@ -1525,7 +1536,7 @@
       setPending(true);
       try {
         const current = subjectRef.current;
-        const reply = await callPlainLLM(agent, profile.buildPrompt(agent, current), history);
+        const reply = await callPlainLLM(profile.buildPrompt(agent, current), history);
         const fields = profile.parse(reply, current);
 
         // "Writes it straight into the interface": apply immediately, and keep
@@ -1554,14 +1565,14 @@
       // Lives as a tab inside the workspace's side panel.
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
         <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {profile.hint} · {(agent.apiConfig || {}).model || 'no model'}
+          {profile.hint} · {accountApi().model || 'no model'}
         </div>
 
         {noKey && (
           <div style={{ background: 'rgba(245,158,11,0.15)', borderBottom: '1px solid rgba(245,158,11,0.3)', padding: '8px 16px', fontSize: 12, color: 'var(--warning)', textAlign: 'center' }}>
-            {(agent.apiConfig || {}).provider === 'ollama'
-              ? 'Set the Ollama server in Configuration to use the assistant'
-              : 'Add an API key in Configuration to use the assistant'}
+            {accountApi().provider === 'ollama'
+              ? 'Set the Ollama server in Settings to use the assistant'
+              : 'Add an API key in Settings to use the assistant'}
           </div>
         )}
 
@@ -1920,7 +1931,7 @@
       }
     }
 
-    const noKey = agent.apiConfig.provider === 'ollama' ? !agent.apiConfig.ollamaHost : !agent.apiConfig.apiKey;
+    const noKey = !accountApiUsable();
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height, borderRadius: radius, overflow: 'hidden', border: `1px solid ${accent}44`, boxShadow: `0 4px 24px rgba(0,0,0,0.4)` }}>
@@ -1931,7 +1942,7 @@
         </div>
         {noKey && (
           <div style={{ background: 'rgba(245,158,11,0.15)', borderBottom: '1px solid rgba(245,158,11,0.3)', padding: '8px 16px', fontSize: 12, color: 'var(--warning)', textAlign: 'center' }}>
-            {agent.apiConfig.provider === 'ollama' ? 'Add Ollama Server IP in Configuration to test live' : 'Add an API key in Configuration to test live'}
+            {accountApi().provider === 'ollama' ? 'Add the Ollama server in Settings to test live' : 'Add an API key in Settings to test live'}
           </div>
         )}
         {/* Messages */}
@@ -2098,7 +2109,7 @@
   /* ─────────────────── TOOL CALLING ENGINE ─────────────────── */
   // onToolCall(name, inputs) — called before executing, so the UI can show a bubble
   async function callWithTools(agent, history, onToolCall, activeSkillId = null) {
-    const { apiKey, provider, model } = agent.apiConfig;
+    const { apiKey, provider, model } = accountApi();
 
     // RAG retrieval — inject relevant knowledge into system prompt
     let ragChunks = [];
@@ -2286,7 +2297,7 @@
       throw new Error('Too many tool call rounds (max 10)');
 
     } else if (provider === 'ollama') {
-      const ollamaHost = (agent.apiConfig.ollamaHost || 'http://localhost:11434').replace(/\/$/, '');
+      const ollamaHost = (accountApi().ollamaHost || 'http://localhost:11434').replace(/\/$/, '');
       let msgs = [{ role: 'system', content: systemPrompt }, ...dlpMessages(history, dlp)];
 
       for (let round = 0; round < 10; round++) {
@@ -3117,147 +3128,6 @@
     );
   }
 
-  function generateIframeHtml(agent, { title, accent, radius, widgetHeight, placeholder }) {
-    const systemPrompt = buildSystemPrompt(agent);
-    const apiKey = (agent.apiConfig && agent.apiConfig.apiKey) || '';
-    const provider = (agent.apiConfig && agent.apiConfig.provider) || 'claude';
-    const model = (agent.apiConfig && agent.apiConfig.model) || 'claude-sonnet-4-5';
-    const ollamaHost = (agent.apiConfig && agent.apiConfig.ollamaHost) || 'http://localhost:11434';
-    const titleStr = title || agent.name || 'Agent';
-    const placeholderStr = placeholder || 'Type a message…';
-    const avatarStr = agent.avatar || '🤖';
-    const openingStr = agent.openingMessage || 'Hello!';
-
-    // Use JSON.stringify for all user-controlled strings to avoid escaping issues
-    const jsSystem = JSON.stringify(systemPrompt);
-    const jsApiKey = JSON.stringify(apiKey);
-    const jsProvider = JSON.stringify(provider);
-    const jsModel = JSON.stringify(model);
-    const jsOllamaHost = JSON.stringify(ollamaHost.replace(/\/$/, ''));
-    const jsOpening = JSON.stringify(openingStr);
-
-    // HTML-escape helper for attribute/text values
-    function he(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-
-    return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{background:#0f1117;color:#f0f0f5;font-family:'Segoe UI',Arial,sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden}
-#header{background:${accent};padding:12px 16px;display:flex;align-items:center;gap:10px}
-#header .av{font-size:22px}
-#header .nm{font-weight:700;color:#fff;font-size:15px}
-#messages{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:10px}
-#messages::-webkit-scrollbar{width:4px}
-#messages::-webkit-scrollbar-thumb{background:#2a2d3e;border-radius:2px}
-.bubble-wrap{display:flex;flex-direction:column}
-.bubble-wrap.user{align-items:flex-end}
-.bubble-wrap.agent,.bubble-wrap.error{align-items:flex-start}
-.bubble{max-width:80%;padding:10px 14px;font-size:14px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
-.bubble.user{background:${accent};color:#fff;border-radius:18px 18px 4px 18px}
-.bubble.agent{background:#1e2130;color:#f0f0f5;border-radius:18px 18px 18px 4px}
-.bubble.error{background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#ef4444;border-radius:18px 18px 18px 4px}
-.meta{font-size:11px;color:#5c6380;padding:2px 4px}
-.meta.err{color:#ef4444}
-.typing{display:flex;gap:5px;padding:12px 16px;background:#1e2130;border-radius:18px 18px 18px 4px;width:fit-content}
-.dot{width:8px;height:8px;background:#9ca3af;border-radius:50%;animation:pd 1.2s infinite ease-in-out}
-.dot:nth-child(2){animation-delay:.15s}.dot:nth-child(3){animation-delay:.3s}
-@keyframes pd{0%,80%,100%{opacity:.3;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
-#inputbar{padding:10px 12px;background:#1e2130;border-top:1px solid #2a2d3e;display:flex;gap:8px}
-textarea{flex:1;background:#252837;color:#f0f0f5;border:1px solid #2a2d3e;border-radius:12px;padding:8px 12px;font-family:inherit;font-size:13px;outline:none;resize:none}
-textarea:focus{border-color:${accent}}
-button{background:${accent};color:#fff;border:none;padding:0 14px;border-radius:12px;font-size:18px;cursor:pointer;font-weight:700}
-button:disabled{opacity:.4;cursor:not-allowed}
-</style>
-</head>
-<body>
-<div id="header"><span class="av">${he(avatarStr)}</span><span class="nm">${he(titleStr)}</span></div>
-<div id="messages"></div>
-<div id="inputbar">
-  <textarea id="inp" placeholder="${he(placeholderStr)}" rows="1" onkeydown="if(event.key==='Enter'&amp;&amp;!event.shiftKey){event.preventDefault();sendMsg()}"></textarea>
-  <button onclick="sendMsg()">&#x27A4;</button>
-</div>
-<script>
-var SYSTEM=${jsSystem};
-var API_KEY=${jsApiKey};
-var PROVIDER=${jsProvider};
-var MODEL=${jsModel};
-var OLLAMA_HOST=${jsOllamaHost};
-var history=[];
-var pending=false;
-function isHeb(t){return /^[\\u0590-\\u05FF]/.test((t||'').trim())}
-function fmt(d){return new Date(d).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false})}
-var msgs=document.getElementById('messages');
-function addMsg(role,content,ts,dt){
-  var wrap=document.createElement('div');
-  wrap.className='bubble-wrap '+role;
-  var b=document.createElement('div');
-  b.className='bubble '+role;
-  b.textContent=content;
-  b.dir=isHeb(content)?'rtl':'ltr';
-  wrap.appendChild(b);
-  if(role==='agent'||role==='error'){
-    var m=document.createElement('div');
-    m.className='meta'+(role==='error'?' err':'');
-    m.textContent=role==='error'?('⚠ Failed after '+dt+'   •   🕐 '+fmt(ts)):(dt?('⏱ '+dt+'   •   🕐 '+fmt(ts)):('🕐 '+fmt(ts)));
-    wrap.appendChild(m);
-  }
-  msgs.appendChild(wrap);
-  msgs.scrollTop=msgs.scrollHeight;
-}
-function showTyping(){
-  var d=document.createElement('div');d.id='typing';d.className='typing';
-  d.innerHTML='<div class="dot"></div><div class="dot"></div><div class="dot"></div>';
-  msgs.appendChild(d);msgs.scrollTop=msgs.scrollHeight;
-}
-function hideTyping(){var d=document.getElementById('typing');if(d)d.remove()}
-addMsg('agent',${jsOpening},new Date());
-async function sendMsg(){
-  var inp=document.getElementById('inp');
-  var text=inp.value.trim();
-  if(!text||pending)return;
-  inp.value='';inp.style.height='auto';
-  history.push({role:'user',content:text});
-  addMsg('user',text);
-  pending=true;
-  var t0=performance.now();
-  showTyping();
-  try{
-    var body,url,hdrs;
-    if(PROVIDER==='claude'){
-      url='https://api.anthropic.com/v1/messages';
-      hdrs={'Content-Type':'application/json','x-api-key':API_KEY,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'};
-      body=JSON.stringify({model:MODEL,max_tokens:1024,system:SYSTEM,messages:history});
-    }else if(PROVIDER==='ollama'){
-      url=OLLAMA_HOST+'/v1/chat/completions';
-      hdrs={'Content-Type':'application/json'};
-      body=JSON.stringify({model:MODEL,messages:[{role:'system',content:SYSTEM},...history]});
-    }else{
-      url='https://api.openai.com/v1/chat/completions';
-      hdrs={'Content-Type':'application/json','Authorization':'Bearer '+API_KEY};
-      body=JSON.stringify({model:MODEL,messages:[{role:'system',content:SYSTEM},...history]});
-    }
-    var r=await fetch(url,{method:'POST',headers:hdrs,body:body});
-    var data=await r.json();
-    if(!r.ok)throw new Error(data.error?.message||JSON.stringify(data));
-    var content=PROVIDER==='claude'?data.content[0].text:data.choices[0].message.content;
-    var dt=((performance.now()-t0)/1000).toFixed(2)+'s';
-    history.push({role:'assistant',content:content});
-    hideTyping();addMsg('agent',content,new Date(),dt);
-  }catch(e){
-    var dt=((performance.now()-t0)/1000).toFixed(2)+'s';
-    hideTyping();addMsg('error',e.message,new Date(),dt);
-    history.pop();
-  }
-  pending=false;
-}
-<\/script>
-</body>
-</html>`;
-  }
 
   /* ─────────────────── CHAT TEST DRAWER ─────────────────── */
   function ChatTestDrawer({ agent, onClose, initialSessionId }) {
@@ -3388,7 +3258,7 @@ async function sendMsg(){
       }
     }
 
-    const hasKey = agent.apiConfig.provider === 'ollama' ? !!agent.apiConfig.ollamaHost : !!agent.apiConfig.apiKey;
+    const hasKey = accountApiUsable();
 
     return (
       <>
@@ -3403,7 +3273,7 @@ async function sendMsg(){
               <div style={{ fontWeight: 700, fontSize: 15 }}>{agent.name}</div>
               <div style={{ fontSize: 12, color: hasKey ? 'var(--success)' : 'var(--danger)', display: 'flex', alignItems: 'center', gap: 4 }}>
                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: hasKey ? 'var(--success)' : 'var(--danger)', display: 'inline-block' }} />
-                {hasKey ? (agent.apiConfig.provider === 'ollama' ? `🦙 ${agent.apiConfig.ollamaHost}` : 'Connected') : (agent.apiConfig.provider === 'ollama' ? 'No Ollama host set' : 'No API key')}
+                {hasKey ? (accountApi().provider === 'ollama' ? `🦙 ${accountApi().ollamaHost}` : accountApi().model) : (accountApi().provider === 'ollama' ? 'No Ollama host set' : 'No API key in Settings')}
               </div>
             </div>
             <IconBtn onClick={() => setShowHistory(h => !h)} title="Chat history" style={{ background: showHistory ? 'var(--bg-hover)' : undefined }}>🕐</IconBtn>
@@ -3727,7 +3597,8 @@ async function sendMsg(){
       { id: 'config',       label: 'Configuration' },
       { id: 'skills',       label: 'Skills' },
       { id: 'tools',        label: 'Tools' },
-      { id: 'assistant',    label: '✨ האסיסטנט' },
+      { id: 'platform',     label: '✨ אסיסטנט המערכת' },
+      { id: 'assistant',    label: '✨ אסיסטנט הבנייה' },
       { id: 'knowledge',    label: 'Knowledge (RAG)' },
       { id: 'test',         label: 'בדיקת הסוכן' },
       { id: 'widget',       label: 'הטמעה באתר' },
@@ -3843,15 +3714,15 @@ async function sendMsg(){
           <P>הפרומפט הסופי שהמודל מקבל מורכב מהפרומפט הזה, ואחריו הידע הרלוונטי שנשלף לשיחה, ואחריו כל הסקילים תחת כותרת <Code>## Skill: שם</Code>.</P>
           <Tip>ציין במפורש שפה, טון, מה מותר ומה אסור, ומה לעשות כשאין תשובה. פרומפט מפורט מצמצם המצאות.</Tip>
 
-          <H3>API Configuration</H3>
-          <P>שלושה ספקים:</P>
+          <H3>מודל ומפתח API — ברמת החשבון</H3>
+          <P>המפתח, הספק והמודל מוגדרים <strong>פעם אחת במסך Settings</strong> ומשמשים את כל הסוכנים, כל הערוצים והאסיסטנטים. אין הגדרה נפרדת לכל סוכן.</P>
           <UL>
             <li><strong>Claude</strong> — <Code>claude-opus-4-5</Code>, <Code>claude-sonnet-4-5</Code>, <Code>claude-haiku-4-5</Code>. דורש מפתח Anthropic.</li>
             <li><strong>OpenAI</strong> — <Code>gpt-4o</Code>, <Code>gpt-4o-mini</Code>, <Code>gpt-4-turbo</Code>, <Code>gpt-3.5-turbo</Code>. דורש מפתח OpenAI.</li>
             <li><strong>Ollama</strong> — מודל מקומי. במקום מפתח מזינים כתובת שרת, והקריאות עוברות דרך פרוקסי בשרת.</li>
           </UL>
-          <P>המפתח נשמר על הסוכן ומשמש את כל הערוצים שלו — צ'אט בדיקה, ווידג'ט, WhatsApp והאסיסטנט של הבנייה.</P>
-          <Warn>בלי מפתח (או בלי כתובת Ollama) הסוכן לא יענה בשום ערוץ, והאסיסטנט יהיה חסום עם הודעה מתאימה.</Warn>
+          <P>באותו מסך בוחרים גם את <strong>שפת האסיסטנט</strong> — עברית או אנגלית.</P>
+          <Warn>בלי מפתח (או בלי כתובת Ollama) אף סוכן לא יענה בשום ערוץ, והאסיסטנטים חסומים. ההערה בפינה הימנית העליונה מציגה את המצב בכל מסך.</Warn>
 
           <H3>DLP — מניעת דליפת מידע</H3>
           <P>שני מסננים אופציונליים: <strong>מספרי כרטיס אשראי</strong> (16 ספרות עם או בלי מפרידים) ו-<strong>תעודת זהות</strong> (9 ספרות). כשהם דולקים:</P>
@@ -3942,10 +3813,39 @@ def run(**kwargs):
         </div>
       ),
 
+      /* ─────────────── PLATFORM ASSISTANT ─────────────── */
+      platform: (
+        <div dir="rtl">
+          <H2>✨ אסיסטנט המערכת</H2>
+          <P>לשונית <strong>Assistant</strong> בסייד-בר. זה לא סוכן שאתה בונה אלא אסיסטנט שמתפעל את המערכת בשבילך — הוא מבצע פעולות, לא רק מסביר איפה ללחוץ.</P>
+
+          <H3>מה הוא עושה</H3>
+          <UL>
+            <li>בונה סוכן חדש מאפס — פרומפט, סקילים, כלי Python והודעת פתיחה, בפעולה אחת</li>
+            <li>משנה סוכן קיים — משפר פרומפט, מוסיף או מתקן סקיל, כותב כלי</li>
+            <li>מריץ כלי שכתב כדי לבדוק שהוא עובד, ומתקן לפי השגיאה</li>
+            <li>מדליק <Code>send_email</Code>, מגדיר DLP, משנה שם ואווטאר</li>
+            <li>עונה על שאלות על הפלטפורמה — איך סקילים עוברים, מה חוזה ההרצה של כלי, איך מחברים WhatsApp</li>
+            <li>שולף מה קרה בשיחות לפי סוכן, ערוץ או מילת חיפוש</li>
+            <li>מוחק סוכן — עם שאלה בצ'אט ואישור בדפדפן לפני</li>
+          </UL>
+
+          <H3>מה הוא לא יכול</H3>
+          <P>לחבר Gmail, להעלות קבצים לבסיס הידע, ולהזין את מפתח ה-API. אלה פעולות שדורשות אותך בממשק, והוא יגיד לך בדיוק לאן ללכת.</P>
+
+          <H3>שפה</H3>
+          <P>ההודעה הפותחת שלו מפרטת את כל מה שהוא יודע לעשות, ואפשר לבחור בין <strong>אסיסטנט בעברית</strong> ל<strong>אסיסטנט באנגלית</strong> במסך Settings.</P>
+
+          <H3>שקיפות</H3>
+          <P>כל קריאה לכלי מוצגת בשיחה עם הפרמטרים והתוצאה, כך שרואים בדיוק מה הוא עשה. הוא רץ על המפתח והמודל של החשבון, ומודל חזק יותר נותן תוצאות טובות יותר במשימות מורכבות.</P>
+          <Tip>נסה: "בנה סוכן שירות לקוחות לחברת ביטוח, עם סקיל לפתיחת תביעה" או "תוסיף לסוכן weather כלי לתחזית חמישה ימים ותריץ אותו".</Tip>
+        </div>
+      ),
+
       /* ─────────────── ASSISTANT ─────────────── */
       assistant: (
         <div dir="rtl">
-          <H2>✨ האסיסטנט</H2>
+          <H2>✨ אסיסטנט הבנייה</H2>
           <P>גם ב-Tools וגם ב-Skills יש לשונית <strong>✨ Assistant</strong> בפאנל הצד, וכפתור <strong>✨ Ask AI</strong> ליד העורך שמקפיץ אליה. זה צ'אט שכותב בשבילך — והתוצאה נכתבת ישר לתוך העורך והשדות, לא כטקסט שצריך להעתיק.</P>
 
           <H3>איך זה עובד</H3>
@@ -4533,27 +4433,563 @@ npm run migrate            # הרצה בפועל`}</Block>
     );
   }
 
-  /* ─────────────────── API KEY REMINDER ─────────────────── */
-  function agentMissingKey(agent) {
-    const cfg = (agent && agent.apiConfig) || {};
-    return cfg.provider === 'ollama' ? !cfg.ollamaHost : !cfg.apiKey;
+  /* ─────────────────── PLATFORM ASSISTANT ─────────────────── */
+
+  // A tool-calling loop over the account's provider for assistants that are not
+  // tied to one agent. `execute` receives (name, input) and returns a string.
+  async function callWithToolDefs({ system, history, tools, execute, maxRounds = 8, maxTokens = 4096 }) {
+    const { apiKey, provider, model } = accountApi();
+
+    if (provider === 'claude') {
+      let msgs = [...history];
+      for (let round = 0; round < maxRounds; round++) {
+        const r = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+          },
+          body: JSON.stringify({
+            model, max_tokens: maxTokens, system, messages: msgs,
+            tools: tools.map(t => ({ name: t.name, description: t.description, input_schema: t.input_schema })),
+          }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
+
+        if (d.stop_reason !== 'tool_use') {
+          return d.content.filter(c => c.type === 'text').map(c => c.text).join('\n').trim();
+        }
+        const uses = d.content.filter(c => c.type === 'tool_use');
+        const results = [];
+        for (const u of uses) {
+          results.push({ type: 'tool_result', tool_use_id: u.id, content: await execute(u.name, u.input || {}) });
+        }
+        msgs = [...msgs, { role: 'assistant', content: d.content }, { role: 'user', content: results }];
+      }
+      throw new Error('יותר מדי סבבי כלים — נסה לפרק את הבקשה');
+    }
+
+    // OpenAI and Ollama share the chat-completions shape.
+    const fnTools = tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema } }));
+    let msgs = [{ role: 'system', content: system }, ...history];
+    for (let round = 0; round < maxRounds; round++) {
+      const body = { model, messages: msgs, tools: fnTools };
+      const r = provider === 'ollama'
+        ? await fetch('/api/ollama-proxy', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ host: (accountApi().ollamaHost || '').replace(/\/$/, ''), path: '/v1/chat/completions', body }),
+          })
+        : await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+            body: JSON.stringify(body),
+          });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
+
+      const choice = d.choices[0];
+      if (choice.finish_reason !== 'tool_calls') return choice.message.content || '';
+
+      const toolMsgs = [];
+      for (const tc of choice.message.tool_calls || []) {
+        let inputs = {};
+        try { inputs = JSON.parse(tc.function.arguments || '{}'); } catch (_) { /* keep {} */ }
+        toolMsgs.push({ role: 'tool', tool_call_id: tc.id, content: await execute(tc.function.name, inputs) });
+      }
+      msgs = [...msgs, choice.message, ...toolMsgs];
+    }
+    throw new Error('יותר מדי סבבי כלים — נסה לפרק את הבקשה');
   }
 
-  // Pinned top-right of the content area, in both languages: an agent without
-  // a key answers nothing, and that is not obvious until you test it.
-  function ApiKeyNote({ agents }) {
-    const missing = (agents || []).filter(agentMissingKey).length;
+  const STR = (desc) => ({ type: 'string', description: desc });
+
+  const PLATFORM_TOOLS = [
+    {
+      name: 'list_agents',
+      description: "Lists the account's agents with their id, name, description, and how many skills, tools and knowledge documents each has. Call this first when the user names an agent.",
+      input_schema: { type: 'object', properties: {}, required: [] },
+    },
+    {
+      name: 'get_agent',
+      description: 'Returns one agent in full: prompt, opening message, skills, tools (with their code), DLP, crawl URLs and channel state. Always call this before changing an existing agent.',
+      input_schema: { type: 'object', properties: { agent_id: STR('The agent id from list_agents') }, required: ['agent_id'] },
+    },
+    {
+      name: 'create_agent',
+      description: 'Creates a new agent. You may pass its skills and tools in the same call to build a complete agent at once.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          name: STR('Short display name'),
+          avatar: STR('A single emoji'),
+          base_prompt: STR("The agent's system prompt. Use ## sections."),
+          opening_message: STR('The first line the agent says'),
+          skills: {
+            type: 'array',
+            description: 'Optional skills',
+            items: { type: 'object', properties: { name: STR('Skill name'), description: STR('When the agent should switch to it'), prompt: STR('The skill prompt, in English') }, required: ['name', 'description', 'prompt'] },
+          },
+          tools: {
+            type: 'array',
+            description: 'Optional Python tools',
+            items: {
+              type: 'object',
+              properties: {
+                name: STR('snake_case name'), description: STR('When to call it'),
+                code: STR('Python defining run(**kwargs)'), packages: STR('pip packages, comma separated'),
+                parameters: { type: 'array', items: { type: 'object', properties: { name: STR('param name'), type: STR('string | number | integer | boolean'), description: STR('what it is') }, required: ['name'] } },
+              },
+              required: ['name', 'description', 'code'],
+            },
+          },
+        },
+        required: ['name', 'base_prompt'],
+      },
+    },
+    {
+      name: 'update_agent',
+      description: 'Changes an existing agent. Only the fields you pass are touched. skills and tools replace the whole array, so call get_agent first and send the full list back with your edit applied.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          agent_id: STR('The agent id'),
+          name: STR('New name'),
+          avatar: STR('A single emoji'),
+          base_prompt: STR('Replacement system prompt'),
+          opening_message: STR('Replacement opening line'),
+          email_enabled: { type: 'boolean', description: 'Enable the built-in send_email tool' },
+          dlp_credit_card: { type: 'boolean', description: 'Mask credit card numbers' },
+          dlp_israeli_id: { type: 'boolean', description: 'Mask Israeli ID numbers' },
+          skills: { type: 'array', description: 'The complete skills list', items: { type: 'object', properties: { name: STR('name'), description: STR('when to switch'), prompt: STR('prompt in English') }, required: ['name'] } },
+          tools: {
+            type: 'array', description: 'The complete tools list',
+            items: {
+              type: 'object',
+              properties: {
+                name: STR('snake_case name'), description: STR('when to call it'), code: STR('Python defining run(**kwargs)'), packages: STR('pip packages'),
+                parameters: { type: 'array', items: { type: 'object', properties: { name: STR('param name'), type: STR('string | number | integer | boolean'), description: STR('what it is') }, required: ['name'] } },
+              },
+              required: ['name'],
+            },
+          },
+        },
+        required: ['agent_id'],
+      },
+    },
+    {
+      name: 'delete_agent',
+      description: 'Deletes an agent and everything it owns. The user is asked to confirm in the browser, and the call fails if they decline. Ask in chat before calling this.',
+      input_schema: { type: 'object', properties: { agent_id: STR('The agent id') }, required: ['agent_id'] },
+    },
+    {
+      name: 'run_tool',
+      description: "Runs one of an agent's Python tools with the inputs you give and returns its output, so you can check a tool you wrote actually works.",
+      input_schema: {
+        type: 'object',
+        properties: {
+          agent_id: STR('The agent id'),
+          tool_name: STR('The tool to run'),
+          inputs: { type: 'object', description: 'Values for the declared parameters', properties: {} },
+        },
+        required: ['agent_id', 'tool_name'],
+      },
+    },
+    {
+      name: 'list_interactions',
+      description: 'Recent conversations with the account\'s agents: agent, channel, when, duration, message count and the first user message. Use it to answer questions about usage.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          agent_id: STR('Only this agent'),
+          search: STR('Only conversations containing this text'),
+          limit: { type: 'integer', description: 'How many (default 10, max 50)' },
+        },
+        required: [],
+      },
+    },
+  ];
+
+  const PLATFORM_REFERENCE = [
+    'The platform (8Legs.ai) — what you are operating:',
+    '- An AGENT has: a name and avatar, an opening message, a base prompt, skills, Python tools, a knowledge base, and channels.',
+    '- The API key, provider and model are ACCOUNT-WIDE, set once in Settings. They are not per agent, so never ask the user for a key per agent.',
+    '- A SKILL is a focused mode with its own prompt. The agent reads a skill\'s description to decide when to switch to it, by calling an internal switch_skill tool with skill_name. In prompt text the convention is #SkillName. Skill prompts are written in English.',
+    '- A TOOL is Python that must define `def run(**kwargs)`. Declared parameters arrive in kwargs; secrets come from os.environ; only the standard library plus the packages listed on the tool are available; there is no persistent disk; outbound HTTPS works; return a string, and return a readable error string instead of raising. Reference a tool from a prompt as @tool_name.',
+    '- Parameter types are string, number, integer or boolean.',
+    '- send_email is a built-in tool, switched on per agent, that sends from a Gmail account connected on that agent (Tools tab). You cannot connect Gmail for the user — say where to do it.',
+    '- KNOWLEDGE is documents (pasted, PDF/DOCX upload, or crawled sites) retrieved by full-text search into the prompt. You cannot upload files for the user.',
+    '- CHANNELS: the in-app test chat, an embeddable website widget (Export tab), and WhatsApp via Meta Cloud API (Whatsapp tab, needs a phone number id, access token, app secret and verify token from Meta). A WhatsApp number belongs to one agent only.',
+    '- DLP can mask credit-card and Israeli-ID numbers before they reach the model and before history is stored.',
+    '- INTERACTIONS lists every conversation across channels, filterable and searchable.',
+    '- Everything the user edits is saved automatically; there is no save button.',
+  ].join('\n');
+
+  function buildPlatformAssistantPrompt(agents, language) {
+    const inventory = (agents || []).length
+      ? (agents || []).map(a => `- ${a.name} (id ${a.id}) — ${(a.skills || []).length} skills, ${(a.tools || []).length} tools`).join('\n')
+      : '(the account has no agents yet)';
+    const cfg = accountApi();
+
+    return [
+      'You are the assistant built into the 8Legs.ai builder. You operate the platform on the user\'s behalf: you answer questions about it, and you create and change their agents through the tools you have.',
+      '',
+      PLATFORM_REFERENCE,
+      '',
+      'How to work:',
+      '- Do the work with your tools rather than describing what the user should click. Only explain where to click for the things you cannot do: connecting Gmail, uploading files, WhatsApp credentials, and the account API key.',
+      '- Before changing an existing agent, call get_agent. When you send skills or tools you are replacing the whole list, so include the ones you are keeping.',
+      '- Write tool code that satisfies the runtime contract, and declare exactly the parameters the code reads. Offer to run_tool it afterwards.',
+      '- Skill prompts are written in English even when you are talking in Hebrew.',
+      '- Never delete anything without asking in chat first.',
+      '- When you have changed something, say in one line what changed and where to see it.',
+      '- If a tool call fails, explain what failed and what you need in order to retry — do not silently give up.',
+      '',
+      language === 'en'
+        ? 'Reply in English, briefly and concretely, with no preamble.'
+        : 'ענה בעברית, בקצרה ולעניין, בלי הקדמות. מונחי הממשק (Tools, Skills, Settings, Interactions) נשארים באנגלית.',
+      '',
+      `The account runs on ${cfg.provider} · ${cfg.model}.`,
+      'Its agents right now:',
+      inventory,
+    ].join('\n');
+  }
+
+  const PLATFORM_OPENING = {
+    he: [
+      'שלום! אני האסיסטנט של המערכת — אני יכול לתפעל אותה בשבילך, לא רק להסביר.',
+      '',
+      '**מה אני יכול לעשות**',
+      '· לבנות סוכן חדש מאפס — פרומפט, סקילים, כלי Python, הודעת פתיחה',
+      '· לשנות סוכן קיים — לשפר פרומפט, להוסיף או לתקן סקיל, לכתוב כלי ולהריץ אותו כדי לבדוק',
+      '· להדליק send_email, להגדיר מיסוך DLP, לשנות שם ואווטאר',
+      '· לענות על שאלות על הפלטפורמה — איך סקילים עובדים, מה החוזה של כלי, איך מחברים WhatsApp',
+      '· להראות מה קרה בשיחות — לפי סוכן, ערוץ או מילת חיפוש',
+      '· למחוק סוכן (אשאל אותך לפני)',
+      '',
+      '**מה אני לא יכול**: לחבר Gmail, להעלות קבצים לבסיס הידע, ולהזין את מפתח ה-API — אלה דברים שצריך לעשות בממשק, ואגיד לך בדיוק איפה.',
+      '',
+      'אפשר להתחיל עם משהו כמו: "בנה לי סוכן שירות לקוחות לחברת ביטוח" או "תוסיף לסוכן weather כלי שמביא תחזית לחמישה ימים".',
+    ].join('\n'),
+    en: [
+      "Hi! I'm the platform assistant — I can operate the system for you, not just explain it.",
+      '',
+      '**What I can do**',
+      '· Build a new agent from scratch — prompt, skills, Python tools, opening message',
+      '· Change an existing agent — improve a prompt, add or fix a skill, write a tool and run it to check',
+      '· Turn on send_email, set up DLP masking, change the name and avatar',
+      '· Answer questions about the platform — how skills switch, the tool runtime contract, connecting WhatsApp',
+      '· Show what happened in conversations — by agent, channel or keyword',
+      '· Delete an agent (I will ask first)',
+      '',
+      "**What I can't**: connect Gmail, upload knowledge files, or enter the API key — those are done in the UI, and I'll tell you exactly where.",
+      '',
+      'Try something like: "build me a customer support agent for an insurance company" or "add a tool to the weather agent that fetches a five-day forecast".',
+    ].join('\n'),
+  };
+
+  function PlatformAssistantView({ agents, onAgentsChanged, language }) {
+    const [messages, setMessages] = useState([]);   // { id, role: user|assistant|tool|error, … }
+    const [input, setInput] = useState('');
+    const [pending, setPending] = useState(false);
+    const listRef = useRef(null);
+    const agentsRef = useRef(agents);
+    useEffect(() => { agentsRef.current = agents; }, [agents]);
+
+    useEffect(() => {
+      if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
+    }, [messages, pending]);
+
+    const noKey = !accountApiUsable();
+
+    function findAgent(id) {
+      return (agentsRef.current || []).find(a => a.id === id) || null;
+    }
+
+    function toolShape(tool) {
+      return {
+        id: uid(),
+        name: tool.name || 'new_tool',
+        description: tool.description || '',
+        parameters: (tool.parameters || []).filter(p => p && p.name).map(p => ({
+          name: p.name,
+          type: PARAM_TYPES.includes((p.type || '').toLowerCase()) ? p.type.toLowerCase() : 'string',
+          description: p.description || '',
+        })),
+        packages: tool.packages || '',
+        envVars: [],
+        code: tool.code || DEFAULT_TOOL_CODE,
+      };
+    }
+
+    function skillShape(skill) {
+      return { id: uid(), name: skill.name || 'New Skill', description: skill.description || '', prompt: skill.prompt || '' };
+    }
+
+    async function execute(name, input) {
+      const step = { id: uid(), role: 'tool', name, input };
+      setMessages(m => [...m, step]);
+      const done = (result) => {
+        setMessages(m => m.map(x => x.id === step.id ? { ...x, result } : x));
+        return result;
+      };
+
+      try {
+        if (name === 'list_agents') {
+          const list = (agentsRef.current || []).map(a => ({
+            id: a.id, name: a.name, opening_message: a.openingMessage,
+            skills: (a.skills || []).map(s => s.name),
+            tools: (a.tools || []).map(t => t.name),
+            email_enabled: !!a.emailEnabled,
+            whatsapp_enabled: !!(a.whatsapp && a.whatsapp.enabled),
+          }));
+          return done(JSON.stringify(list, null, 1));
+        }
+
+        if (name === 'get_agent') {
+          const agent = findAgent(input.agent_id);
+          if (!agent) return done(`No agent with id ${input.agent_id}. Call list_agents.`);
+          return done(JSON.stringify(stripUiFields(agent), null, 1));
+        }
+
+        if (name === 'create_agent') {
+          const created = makeAgent({
+            name: input.name || 'New Agent',
+            avatar: input.avatar || '🤖',
+            basePrompt: input.base_prompt || '',
+            openingMessage: input.opening_message || 'Hello! How can I help you today?',
+            skills: (input.skills || []).map(skillShape),
+            tools: (input.tools || []).map(toolShape),
+          });
+          await apiCreate(created);
+          await onAgentsChanged();
+          return done(`Created agent "${created.name}" with id ${created.id}.`);
+        }
+
+        if (name === 'update_agent') {
+          const agent = findAgent(input.agent_id);
+          if (!agent) return done(`No agent with id ${input.agent_id}. Call list_agents.`);
+          const updated = { ...stripUiFields(agent) };
+          if (input.name !== undefined) updated.name = input.name;
+          if (input.avatar !== undefined) updated.avatar = input.avatar;
+          if (input.base_prompt !== undefined) updated.basePrompt = input.base_prompt;
+          if (input.opening_message !== undefined) updated.openingMessage = input.opening_message;
+          if (input.email_enabled !== undefined) updated.emailEnabled = !!input.email_enabled;
+          if (input.dlp_credit_card !== undefined || input.dlp_israeli_id !== undefined) {
+            updated.dlp = {
+              ...(agent.dlp || {}),
+              ...(input.dlp_credit_card !== undefined ? { creditCard: !!input.dlp_credit_card } : {}),
+              ...(input.dlp_israeli_id !== undefined ? { israeliId: !!input.dlp_israeli_id } : {}),
+            };
+          }
+          if (input.skills !== undefined) {
+            updated.skills = (input.skills || []).map(s => {
+              const existing = (agent.skills || []).find(x => x.name === s.name);
+              return { ...skillShape(s), id: existing ? existing.id : uid(), ...(existing ? { prompt: s.prompt !== undefined ? s.prompt : existing.prompt, description: s.description !== undefined ? s.description : existing.description } : {}) };
+            });
+          }
+          if (input.tools !== undefined) {
+            updated.tools = (input.tools || []).map(t => {
+              const existing = (agent.tools || []).find(x => x.name === t.name);
+              const shaped = toolShape(t);
+              return existing
+                ? { ...existing, ...shaped, id: existing.id, envVars: existing.envVars || [], code: t.code !== undefined ? t.code : existing.code }
+                : shaped;
+            });
+          }
+          await apiUpdate(updated);
+          await onAgentsChanged();
+          const touched = Object.keys(input).filter(k => k !== 'agent_id');
+          return done(`Updated "${updated.name}" (${touched.join(', ') || 'nothing'}).`);
+        }
+
+        if (name === 'delete_agent') {
+          const agent = findAgent(input.agent_id);
+          if (!agent) return done(`No agent with id ${input.agent_id}.`);
+          const ok = window.confirm(`למחוק את הסוכן "${agent.name}" וכל מה ששייך לו?\n\nDelete the agent "${agent.name}" and everything it owns?`);
+          if (!ok) return done('The user declined the deletion. Nothing was deleted.');
+          await apiDelete(agent.id);
+          await onAgentsChanged();
+          return done(`Deleted "${agent.name}".`);
+        }
+
+        if (name === 'run_tool') {
+          const agent = findAgent(input.agent_id);
+          if (!agent) return done(`No agent with id ${input.agent_id}.`);
+          const tool = (agent.tools || []).find(t => t.name === input.tool_name);
+          if (!tool) return done(`Agent "${agent.name}" has no tool named ${input.tool_name}.`);
+          const resp = await fetch('/api/run-tool', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              code: tool.code || '',
+              inputs: input.inputs || {},
+              packages: (tool.packages || '').split(',').map(x => x.trim()).filter(Boolean),
+              env_vars: Object.fromEntries((tool.envVars || []).filter(e => e.key).map(e => [e.key, e.value])),
+            }),
+          });
+          const data = await resp.json();
+          return done(data.error ? `Error: ${data.error}` : `Output: ${data.result}`);
+        }
+
+        if (name === 'list_interactions') {
+          const data = await apiListInteractions({
+            agentId: input.agent_id || '',
+            q: input.search || '',
+            limit: Math.min(Math.max(parseInt(input.limit, 10) || 10, 1), 50),
+          });
+          const rows = (data.sessions || []).map(s => ({
+            agent: s.agent_name, channel: s.source,
+            started: s.started_at, duration_seconds: s.duration_seconds,
+            messages: s.message_count,
+            first_user_message: ((s.messages || []).find(m => m.role === 'user') || {}).content || '',
+          }));
+          return done(JSON.stringify({ total: data.total, showing: rows.length, conversations: rows }, null, 1));
+        }
+
+        return done(`Unknown tool: ${name}`);
+      } catch (err) {
+        return done(`Error: ${err.message}`);
+      }
+    }
+
+    async function send(text) {
+      const question = (text || '').trim();
+      if (!question || pending || noKey) return;
+      setInput('');
+      const history = [
+        ...messages.filter(m => m.role === 'user' || m.role === 'assistant').map(m => ({ role: m.role, content: m.content })),
+        { role: 'user', content: question },
+      ];
+      setMessages(m => [...m, { id: uid(), role: 'user', content: question }]);
+      setPending(true);
+      try {
+        const reply = await callWithToolDefs({
+          system: buildPlatformAssistantPrompt(agentsRef.current, language),
+          history,
+          tools: PLATFORM_TOOLS,
+          execute,
+        });
+        setMessages(m => [...m, { id: uid(), role: 'assistant', content: reply || '—' }]);
+      } catch (err) {
+        setMessages(m => [...m, { id: uid(), role: 'error', content: err.message }]);
+      } finally {
+        setPending(false);
+      }
+    }
+
+    const opening = PLATFORM_OPENING[language === 'en' ? 'en' : 'he'];
+    const dir = language === 'en' ? 'ltr' : 'rtl';
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 560, maxWidth: 900 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexShrink: 0 }}>
+          <div style={{ width: 38, height: 38, borderRadius: 11, background: 'var(--primary-dim)', border: '1px solid rgba(239,159,39,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 19 }}>✨</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 800, fontSize: 22, letterSpacing: '-0.02em' }}>Assistant</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+              {language === 'en' ? 'Operates the platform for you' : 'מתפעל את המערכת בשבילך'} · {accountApi().model || 'no model'}
+            </div>
+          </div>
+          {messages.length > 0 && (
+            <button onClick={() => setMessages([])}
+              style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 'var(--r-md)', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-2)' }}>
+              {language === 'en' ? 'New chat' : 'שיחה חדשה'}
+            </button>
+          )}
+        </div>
+
+        {noKey && (
+          <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 'var(--r-md)', padding: '10px 14px', fontSize: 13, color: 'var(--warning)', marginBottom: 12 }}>
+            {language === 'en'
+              ? 'Set an API key in Settings to use the assistant.'
+              : 'כדי להשתמש באסיסטנט צריך להגדיר מפתח API במסך Settings.'}
+          </div>
+        )}
+
+        <div ref={listRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12, padding: '4px 2px' }}>
+          <div dir={dir} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '14px 16px', fontSize: 13, lineHeight: 1.75, whiteSpace: 'pre-wrap', color: 'var(--text-2)' }}>
+            {opening}
+          </div>
+
+          {messages.map(msg => {
+            if (msg.role === 'user') {
+              return (
+                <div key={msg.id} dir="auto" style={{ alignSelf: 'flex-end', maxWidth: '85%', background: 'var(--primary)', color: '#0a0a0a', padding: '9px 13px', borderRadius: '16px 16px 4px 16px', fontSize: 13.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {msg.content}
+                </div>
+              );
+            }
+            if (msg.role === 'tool') {
+              const args = Object.entries(msg.input || {})
+                .map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : String(v)}`)
+                .join(', ');
+              return (
+                <div key={msg.id} dir="ltr" style={{ alignSelf: 'stretch', background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px', fontSize: 11.5, fontFamily: "'JetBrains Mono','Fira Code',monospace", color: 'var(--text-muted)' }}>
+                  <div style={{ color: 'var(--teal)' }}>🔧 {msg.name}({args.length > 160 ? args.slice(0, 160) + '…' : args})</div>
+                  {msg.result !== undefined && (
+                    <div style={{ marginTop: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 160, overflowY: 'auto' }}>
+                      {msg.result.length > 1200 ? msg.result.slice(0, 1200) + '…' : msg.result}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+            if (msg.role === 'error') {
+              return (
+                <div key={msg.id} style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--danger)', padding: '9px 13px', borderRadius: 'var(--r-md)', fontSize: 12.5, wordBreak: 'break-word' }}>
+                  {msg.content}
+                </div>
+              );
+            }
+            return (
+              <div key={msg.id} dir="auto" style={{ alignSelf: 'stretch', background: 'var(--bg-card)', border: '1px solid var(--border)', padding: '11px 14px', borderRadius: '16px 16px 16px 4px', fontSize: 13.5, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                {msg.content}
+              </div>
+            );
+          })}
+
+          {pending && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{language === 'en' ? 'Working…' : 'עובד…'}</div>}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, marginTop: 12, flexShrink: 0 }}>
+          <textarea
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input); } }}
+            dir="auto"
+            rows={2}
+            disabled={pending || noKey}
+            placeholder={language === 'en' ? 'Ask for anything — build an agent, change one, or ask how something works…' : 'בקש כל דבר — לבנות סוכן, לשנות סוכן, או לשאול איך משהו עובד…'}
+            style={{ flex: 1, resize: 'none', fontSize: 13.5, padding: '10px 14px', borderRadius: 'var(--r-md)' }}
+          />
+          <button onClick={() => send(input)} disabled={pending || noKey || !input.trim()}
+            style={{ background: 'var(--primary)', color: '#0a0a0a', padding: '0 18px', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 17, opacity: pending || noKey || !input.trim() ? 0.5 : 1 }}>➤</button>
+        </div>
+      </div>
+    );
+  }
+
+  /* ─────────────────── API KEY REMINDER ─────────────────── */
+  // Pinned top-right of the content area, in both languages. One key serves the
+  // whole account, and nothing answers until it is set.
+  function ApiKeyNote() {
+    const cfg = accountApi();
+    const missing = !accountApiUsable(cfg);
+    const isOllama = cfg.provider === 'ollama';
     const headline = {
-      he: missing === 0 ? 'זכרו להגדיר API Key'
-        : missing === 1 ? 'סוכן אחד ללא API Key'
-        : `${missing} סוכנים ללא API Key`,
-      en: missing === 0 ? 'Remember to set an API Key'
-        : missing === 1 ? '1 agent has no API Key'
-        : `${missing} agents have no API Key`,
+      he: missing ? (isOllama ? 'לא הוגדר שרת Ollama' : 'לא הוגדר API Key') : `מוגדר: ${cfg.provider} · ${cfg.model}`,
+      en: missing ? (isOllama ? 'No Ollama server set' : 'No API Key set') : `Using ${cfg.provider} · ${cfg.model}`,
     };
     const body = {
-      he: 'כל סוכן צריך מפתח משלו בלשונית Configuration כדי לעבוד. אפשר להשתמש באותו מפתח לכל הסוכנים.',
-      en: 'Every agent needs its own key in Configuration to work. The same key can be used for all agents.',
+      he: missing
+        ? 'הגדירו מפתח אחד במסך Settings — הוא משמש את כל הסוכנים, כל הערוצים והאסיסטנט. עד אז שום דבר לא יענה.'
+        : 'המפתח מוגדר פעם אחת במסך Settings ומשמש את כל הסוכנים, כל הערוצים והאסיסטנט.',
+      en: missing
+        ? 'Set one key in Settings — it drives every agent, every channel and the assistant. Nothing answers until you do.'
+        : 'The key is set once in Settings and drives every agent, every channel and the assistant.',
     };
     const strongStyle = { color: missing ? 'var(--warning)' : 'var(--text)' };
 
@@ -4584,6 +5020,7 @@ npm run migrate            # הרצה בפועל`}</Block>
   function Sidebar({ activeNav, onNav, user, onLogout }) {
     const items = [
       { id: 'home', label: 'Home', icon: Icons.home },
+      { id: 'assistant', label: 'Assistant', icon: Icons.sparkle },
       { id: 'interactions', label: 'Interactions', icon: Icons.interactions },
       { id: 'docs', label: 'Documentation', icon: Icons.docs },
       { id: 'settings', label: 'Settings', icon: Icons.settings },
@@ -5286,8 +5723,46 @@ npm run migrate            # הרצה בפועל`}</Block>
 
   /* ─────────────────── APP ─────────────────── */
   /* ─────────────────── SETTINGS PANEL ─────────────────── */
-  function SettingsPanel({ theme, onToggleTheme, user, onLogout }) {
+  function SettingsPanel({ theme, onToggleTheme, user, onLogout, settings, onSaveSettings }) {
     const isLight = theme === 'light';
+    const [draft, setDraft] = useState(() => settings || accountApi());
+    const [showKey, setShowKey] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
+    const [error, setError] = useState(null);
+
+    // Adopt the settings once they arrive, unless the user is already editing.
+    const dirty = JSON.stringify(draft) !== JSON.stringify(settings || {});
+    useEffect(() => { if (settings && !dirty) setDraft(settings); }, [settings]);
+
+    function set(key, value) {
+      setSaved(false);
+      setDraft(d => {
+        const next = { ...d, [key]: value };
+        // Switching provider without switching model would pair a Claude key
+        // with a GPT model, so move the model to that provider's default.
+        if (key === 'provider' && !(MODELS_BY_PROVIDER[value] || []).includes(next.model)) {
+          next.model = DEFAULT_MODEL[value];
+        }
+        return next;
+      });
+    }
+
+    async function save() {
+      setSaving(true);
+      setError(null);
+      try {
+        await onSaveSettings(draft);
+        setSaved(true);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setSaving(false);
+      }
+    }
+
+    const models = MODELS_BY_PROVIDER[draft.provider] || CLAUDE_MODELS;
+    const usable = accountApiUsable(draft);
     const sectionStyle = {
       background: 'var(--bg-card)', borderRadius: 'var(--r-lg)',
       border: '1px solid var(--border)', overflow: 'hidden',
@@ -5350,6 +5825,77 @@ npm run migrate            # הרצה בפועל`}</Block>
           </div>
         </div>
 
+        {/* One key for the whole account */}
+        <div style={sectionStyle}>
+          <div style={sectionHeader}>AI · Model &amp; API key</div>
+          <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+              המפתח הזה משמש את כל הסוכנים בחשבון, את כל הערוצים ואת האסיסטנט. אין צורך להגדיר מפתח לכל סוכן בנפרד.
+            </div>
+
+            <div>
+              <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 6, display: 'block' }}>Provider</label>
+              <div style={{ display: 'inline-flex', background: 'var(--bg-input)', borderRadius: 'var(--r-xl)', padding: 3, gap: 2 }}>
+                {['claude', 'openai', 'ollama'].map(p => (
+                  <button key={p} onClick={() => set('provider', p)}
+                    style={{ padding: '6px 18px', borderRadius: 'var(--r-xl)', fontWeight: 600, fontSize: 13, background: draft.provider === p ? 'var(--primary)' : 'transparent', color: draft.provider === p ? '#0a0a0a' : 'var(--text-2)' }}>
+                    {p === 'claude' ? '🟣 Claude' : p === 'ollama' ? '🦙 Ollama' : '🟢 OpenAI'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {draft.provider === 'ollama' ? (
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Ollama Server</label>
+                <input type="text" value={draft.ollamaHost || ''} onChange={e => set('ollamaHost', e.target.value)} placeholder="http://192.168.1.100:11434" />
+              </div>
+            ) : (
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>API Key</label>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input type={showKey ? 'text' : 'password'} value={draft.apiKey || ''} onChange={e => set('apiKey', e.target.value)} placeholder="sk-..." style={{ flex: 1 }} />
+                  <button onClick={() => setShowKey(v => !v)} title={showKey ? 'Hide' : 'Show'}
+                    style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', fontSize: 16 }}>
+                    {showKey ? '🙈' : '👁'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Model</label>
+              <select value={draft.model || ''} onChange={e => set('model', e.target.value)} style={{ borderRadius: 'var(--r-md)' }}>
+                {models.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 6, display: 'block' }}>שפת האסיסטנט · Assistant language</label>
+              <div style={{ display: 'inline-flex', background: 'var(--bg-input)', borderRadius: 'var(--r-xl)', padding: 3, gap: 2 }}>
+                {[{ id: 'he', label: '🇮🇱 עברית' }, { id: 'en', label: '🇬🇧 English' }].map(o => (
+                  <button key={o.id} onClick={() => set('assistantLanguage', o.id)}
+                    style={{ padding: '6px 18px', borderRadius: 'var(--r-xl)', fontWeight: 600, fontSize: 13, background: draft.assistantLanguage === o.id ? 'var(--teal)' : 'transparent', color: draft.assistantLanguage === o.id ? '#04211e' : 'var(--text-2)' }}>
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <button onClick={save} disabled={saving || !dirty}
+                style={{ background: dirty ? 'var(--primary)' : 'var(--bg-hover)', color: dirty ? '#0a0a0a' : 'var(--text-muted)', padding: '8px 18px', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 13 }}>
+                {saving ? 'שומר…' : 'שמור'}
+              </button>
+              {saved && !dirty && <span style={{ fontSize: 12, color: 'var(--success)' }}>✓ נשמר</span>}
+              {error && <span style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</span>}
+              {!usable && <span style={{ fontSize: 12, color: 'var(--warning)' }}>
+                {draft.provider === 'ollama' ? 'בלי כתובת שרת שום סוכן לא יענה' : 'בלי מפתח שום סוכן לא יענה'}
+              </span>}
+            </div>
+          </div>
+        </div>
+
         <div style={sectionStyle}>
           <div style={sectionHeader}>Account</div>
           <div style={rowStyle}>
@@ -5395,6 +5941,22 @@ npm run migrate            # הרצה בפועל`}</Block>
     const [adminSelectedUser, setAdminSelectedUser] = useState(null);
 
     const [editorTab, setEditorTab] = useState(null);
+    const [settings, setSettings] = useState(null);
+
+    // One account-wide API config, mirrored into the module so every model call
+    // site can read it without threading props through the whole tree.
+    useEffect(() => {
+      apiGetSettings()
+        .then(s => { setAccountApi(s); setSettings(s); })
+        .catch(() => setSettings(accountApi()));
+    }, []);
+
+    async function handleSaveSettings(patch) {
+      const saved = await apiSaveSettings(patch);
+      setAccountApi(saved);
+      setSettings(saved);
+      return saved;
+    }
 
     // Load agents on mount
     useEffect(() => {
@@ -5486,7 +6048,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     function handleNav(id) {
       setNav(id);
       if (id === 'home') { dispatch({ type: 'SET_VIEW', view: 'list' }); setAdminSelectedUser(null); }
-      if (id === 'interactions') setAdminSelectedUser(null);
+      if (id === 'interactions' || id === 'assistant') setAdminSelectedUser(null);
       if (id === 'admin') setAdminSelectedUser(null);
     }
 
@@ -5496,8 +6058,14 @@ npm run migrate            # הרצה בפועל`}</Block>
         <Sidebar activeNav={nav} onNav={handleNav} user={user} onLogout={onLogout} />
         <div style={{ flex: 1, overflowY: 'auto', padding: '32px 36px 80px', background: 'var(--bg-app)', position: 'relative' }}>
           <BgLogo size={560} wrapStyle={{ bottom: '-80px', right: '-80px' }} />
-          <ApiKeyNote agents={state.agents} />
-          {nav === 'interactions' ? (
+          <ApiKeyNote />
+          {nav === 'assistant' ? (
+            <PlatformAssistantView
+              agents={state.agents}
+              language={(settings || accountApi()).assistantLanguage || 'he'}
+              onAgentsChanged={() => apiList().then(list => dispatch({ type: 'HYDRATE', agents: list })).catch(() => {})}
+            />
+          ) : nav === 'interactions' ? (
             <InteractionsView
               agents={state.agents}
               user={user}
@@ -5519,7 +6087,14 @@ npm run migrate            # הרצה בפועל`}</Block>
               />
             )
           ) : nav === 'settings' ? (
-            <SettingsPanel theme={theme} onToggleTheme={onToggleTheme} user={user} onLogout={onLogout} />
+            <SettingsPanel
+              theme={theme}
+              onToggleTheme={onToggleTheme}
+              user={user}
+              onLogout={onLogout}
+              settings={settings}
+              onSaveSettings={handleSaveSettings}
+            />
           ) : state.view === 'editor' && editingAgent ? (
             <AgentEditor
               agent={editingAgent}

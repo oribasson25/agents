@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { sql } from '../_db.js';
 import { runAgentTurn, dlpMessages } from '../_agentRunner.js';
+import { resolveAgentApiConfig } from '../_settings.js';
 
 const GRAPH = 'https://graph.facebook.com/v20.0';
 
@@ -93,7 +94,7 @@ async function handleInbound(req, res) {
 
   for (const group of groups) {
     const candidates = await sql`
-      select id, data from agents
+      select id, data, user_id from agents
       where data->'whatsapp'->>'phoneNumberId' = ${group.phoneNumberId}
         and data->'whatsapp'->>'enabled' = 'true'
       order by updated_at desc
@@ -118,9 +119,12 @@ async function handleInbound(req, res) {
     }
     verifiedAny = true;
 
+    // The key, provider and model come from the owner's account settings.
+    const agent = { ...owner.data, apiConfig: await resolveAgentApiConfig(owner) };
+
     for (const msg of group.messages) {
       try {
-        await handleMessage(owner.id, owner.data, owner.data.whatsapp || {}, msg, baseUrl);
+        await handleMessage(owner.id, agent, agent.whatsapp || {}, msg, baseUrl);
       } catch (err) {
         console.error(`[whatsapp webhook] agentId=${owner.id} handleMessage error:`, err.message);
       }

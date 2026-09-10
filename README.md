@@ -11,7 +11,7 @@ maintaining the deployment.
 - **Frontend** — one file, `agentforge.html`: React 18 + Babel + Monaco loaded from CDNs
 - **Backend** — Vercel Serverless Functions under `api/` (Node) plus two Python functions
 - **Database** — Neon Postgres; an agent is a single JSONB row in `agents`
-- **Models** — Claude (Anthropic), OpenAI, or a self-hosted Ollama, chosen per agent
+- **Models** — Claude (Anthropic), OpenAI, or a self-hosted Ollama, chosen once per account
 - **Tools** — user Python executed in `api/run_tool.py`, with `pip install` on demand
 - **Crawler** — Playwright + Chromium (`api/scrape_browser.js`), renders JS before extracting
 
@@ -24,6 +24,7 @@ api/
   _auth.js                 JWT sign/verify, checkAuth, checkAdmin
   _db.js                   Neon client
   _gmail.js                per-agent Gmail: token refresh, send
+  _settings.js             the account's provider/key/model, and resolving it
   _whatsappClaim.js        a phone number belongs to one agent
   agents.js, agents/[id]/  CRUD, documents, RAG retrieval, crawl
   admin/                   users, chat history, per-user agents
@@ -62,6 +63,20 @@ npm install
 | `APP_URL` | no | base URL for the OAuth redirect; derived from the request when unset |
 
 Leaving `JWT_SECRET` unset falls back to a hard-coded development value — set it.
+
+## Account API settings
+
+The provider, API key and model are account-wide, held in `user_settings` and edited in the
+Settings screen — not per agent. Everything the account owns runs on them: every agent, the
+widget, WhatsApp, the builder assistants and the platform assistant.
+
+The browser reads the key from `GET /api/settings` because model calls are made client-side in
+the test chat and the assistants, the same trust model the per-agent key had. The public
+channels resolve it server-side from the agent's owner (`resolveAgentApiConfig`), falling back
+to an agent's own stored `apiConfig` only while the account's settings are still empty —
+migration `010` backfills them from each user's most recently updated agent that had a key.
+
+`user_settings.assistant_language` (`he` or `en`) selects the platform assistant's language.
 
 ## The starter agent
 
@@ -117,7 +132,10 @@ worth transforming the `text/babel` script once before deploying if you changed 
 
 - An agent belongs to a user; every endpoint verifies ownership before reading or writing.
   Admins can act on any agent.
-- API keys, WhatsApp tokens and tool secrets live in the agent's JSONB row in plaintext.
+- The account API key lives in `user_settings.api_key`, and WhatsApp tokens and tool secrets in
+  the agent's JSONB row — all in plaintext, and all readable by the account's owner.
+- The platform assistant acts as the signed-in user through the same authenticated endpoints,
+  so it cannot reach another account's data. It asks for confirmation before deleting an agent.
 - Tool code runs server-side with the environment variables that tool declares. Anyone who can
   edit a tool can read its secrets and run arbitrary Python in the function.
 - `/api/run-tool`, `/api/scrape`, `/api/scrape-browser` and `/api/ollama-proxy` are reachable
