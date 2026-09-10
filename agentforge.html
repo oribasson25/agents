@@ -1275,8 +1275,17 @@
       '- Whenever you create or change the code, output the COMPLETE new file inside ONE ```python block.',
       '  Never a diff, never a fragment, never two blocks — that block is written straight into the',
       '  user\'s editor and replaces what is there.',
-      '- If the code needs pip packages, add a final line exactly like: PACKAGES: requests, beautifulsoup4',
-      '- If the user only asks a question, answer it without a code block.',
+      '- Outside the block, report the tool\'s metadata as plain lines. Write these in English, and',
+      '  include a line only when you are setting or changing that field:',
+      '    NAME: snake_case_tool_name',
+      '    DESCRIPTION: one sentence the agent reads to decide when to call this tool',
+      '    PARAM: city | string | The city to look up',
+      '    PACKAGES: requests, beautifulsoup4',
+      '- One PARAM line per parameter, in call order. The type must be string, number, integer or',
+      '  boolean. PARAM lines replace the whole parameter list, so repeat every parameter you keep.',
+      '- The declared parameters are exactly the keys that arrive in kwargs, so the PARAM lines and',
+      '  the code must agree. Name the tool if it has no name yet.',
+      '- If the user only asks a question, answer it without a code block or metadata lines.',
       '',
       'The tool being edited right now:',
       `- Name: ${tool.name || '(unnamed)'}`,
@@ -1323,16 +1332,33 @@
       "You write and revise ONE skill's prompt — the instructions the agent follows while that skill is active.",
       '',
       'How skills work here:',
-      "- The agent reads the skill's short description to decide when to switch to it. The prompt is what it follows once the skill is active, appended to the agent's base prompt.",
-      '- Inside the prompt, `@tool_name` refers to one of the agent\'s tools and `#SkillName` switches to another skill. Only reference ones that exist.',
+      "- Every skill's prompt is part of the agent's system prompt, under a `## Skill: <name>` heading with its description above it. Keep this prompt self-contained and about this skill only.",
+      "- The agent reads the skill's short description to decide when to switch to it, so the description must say when the skill applies, not what it does internally.",
       '- Markdown `## Section` headings structure the prompt and the builder can collapse them, so prefer short named sections and numbered steps over long paragraphs.',
-      '- Write the user-facing wording in the language the skill should speak.',
+      '- While a skill is active, knowledge retrieval is scoped to that skill\'s own documents.',
+      '',
+      'How to reference tools and other skills from inside the prompt:',
+      '- The tools listed below are real functions the agent can call. To tell it to use one, write the',
+      '  tool\'s exact name with an @ prefix — `@fetch_weather` — and say which parameters to pass.',
+      '  The parameter names are the ones declared on that tool.',
+      '- To hand the conversation to another skill, instruct the agent to call the `switch_skill` tool',
+      '  with `skill_name` set to that skill\'s exact name. In prompt text the convention is `#SkillName`',
+      '  with no spaces.',
+      '- Reference only tools and skills that appear in the lists below. Never invent one, and never',
+      '  reference this skill itself as a switch target.',
       '',
       'How to answer:',
       '- Answer in the language the user writes in, briefly, with no preamble.',
+      '- The prompt you write must ALWAYS be in English, whatever language the user writes to you in.',
+      '  The one exception: a sentence the agent has to say to the user verbatim in another language',
+      '  stays in that language, quoted — and the prompt should state which language to reply in.',
       '- Whenever you write or change the prompt, output the COMPLETE new prompt inside ONE ```markdown block.',
       "  Never a diff, never a fragment — that block replaces what is in the user's editor.",
-      '- If the user only asks a question, answer it without a block.',
+      '- Outside the block, report the skill\'s metadata as plain lines, in English, and include a line',
+      '  only when you are setting or changing that field:',
+      '    NAME: Weather Lookup',
+      '    DESCRIPTION: one sentence saying when the agent should switch to this skill',
+      '- If the user only asks a question, answer it without a block or metadata lines.',
       '',
       `The agent: ${agent.name || '(unnamed)'}`,
       base ? `Its base prompt:\n${base.length > 1500 ? base.slice(0, 1500) + '\n…(truncated)' : base}` : 'Its base prompt is empty.',
@@ -1350,11 +1376,51 @@
     ].join('\n');
   }
 
-  function extractPackagesLine(text) {
-    const m = /^[ \t>*-]*PACKAGES:[ \t]*(.+)$/im.exec(text || '');
+  // Metadata is reported as plain `KEY: value` lines outside the fenced block.
+  // Strip the block first, so a line inside generated code or prompt text is
+  // never mistaken for an instruction to the builder.
+  function withoutFencedBlocks(text) {
+    return (text || '').replace(/```[\s\S]*?```/g, '');
+  }
+
+  function extractMetaLine(text, key) {
+    const m = new RegExp(`^[ \\t>*-]*${key}:[ \\t]*(.+)$`, 'im').exec(text || '');
     if (!m) return null;
-    const list = m[1].split(',').map(x => x.trim().replace(/[`'"]/g, '')).filter(Boolean);
+    const value = m[1].trim().replace(/^[`'"*]+|[`'"*]+$/g, '').trim();
+    return value || null;
+  }
+
+  function extractPackagesLine(text) {
+    const raw = extractMetaLine(text, 'PACKAGES');
+    if (!raw) return null;
+    const list = raw.split(',').map(x => x.trim().replace(/[`'"]/g, '')).filter(Boolean);
     return list.length ? list.join(', ') : null;
+  }
+
+  const PARAM_TYPES = ['string', 'number', 'integer', 'boolean'];
+
+  // PARAM: city | string | The city to look up
+  function extractParamLines(text) {
+    const out = [];
+    const re = /^[ \t>*-]*PARAM:[ \t]*(.+)$/gim;
+    let m;
+    while ((m = re.exec(text || '')) !== null) {
+      const parts = m[1].split('|').map(x => x.trim().replace(/[`'"]/g, ''));
+      const name = (parts[0] || '').replace(/[^a-zA-Z0-9_]/g, '_');
+      if (!name) continue;
+      const type = (parts[1] || '').toLowerCase();
+      out.push({
+        name,
+        type: PARAM_TYPES.includes(type) ? type : 'string',
+        description: parts.slice(2).join(' | ').trim(),
+      });
+    }
+    return out.length ? out : null;
+  }
+
+  // Providers only accept identifier-shaped tool names.
+  function normalizeToolName(name) {
+    return (name || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
   }
 
   // Splits a reply into prose and fenced code, for rendering.
@@ -1380,14 +1446,21 @@
       buildPrompt: (agent, tool) => buildToolAssistantPrompt(tool),
       parse: (reply, tool) => {
         const fields = {};
+        const meta = withoutFencedBlocks(reply);
         const code = extractPythonBlock(reply);
-        const packages = extractPackagesLine(reply);
+        const name = normalizeToolName(extractMetaLine(meta, 'NAME'));
+        const description = extractMetaLine(meta, 'DESCRIPTION');
+        const packages = extractPackagesLine(meta);
+        const params = extractParamLines(meta);
         if (code && code !== tool.code) fields.code = code;
+        if (name && name !== tool.name) fields.name = name;
+        if (description && description !== tool.description) fields.description = description;
         if (packages && packages !== tool.packages) fields.packages = packages;
+        if (params && JSON.stringify(params) !== JSON.stringify(tool.parameters || [])) fields.parameters = params;
         return fields;
       },
       quickPrompts: [
-        { label: 'Write it for me', prompt: 'Write the full code for this tool based on its name, description and parameters.' },
+        { label: 'Write it for me', prompt: 'Write the full code for this tool, and set its name, description and parameters.' },
         { label: 'Explain the code', prompt: 'Explain what the current code does, step by step, and point out anything risky.' },
         { label: 'Add error handling', prompt: 'Harden the current code: validate the inputs, handle network and parsing failures, and return clear error strings.' },
         { label: 'Review it', prompt: 'Review the current code against the runtime contract and fix anything that would break at runtime.' },
@@ -1398,11 +1471,18 @@
       placeholder: 'Describe what this skill should do…',
       buildPrompt: (agent, skill) => buildSkillAssistantPrompt(agent, skill),
       parse: (reply, skill) => {
+        const fields = {};
+        const meta = withoutFencedBlocks(reply);
         const prompt = extractPromptBlock(reply);
-        return prompt && prompt !== skill.prompt ? { prompt } : {};
+        const name = extractMetaLine(meta, 'NAME');
+        const description = extractMetaLine(meta, 'DESCRIPTION');
+        if (prompt && prompt !== skill.prompt) fields.prompt = prompt;
+        if (name && name !== skill.name) fields.name = name;
+        if (description && description !== skill.description) fields.description = description;
+        return fields;
       },
       quickPrompts: [
-        { label: 'Write it for me', prompt: 'Write the full prompt for this skill based on its name and description.' },
+        { label: 'Write it for me', prompt: 'Write the full prompt for this skill, and set its name and description.' },
         { label: 'Add steps', prompt: 'Restructure the current prompt into clear ## sections with numbered steps.' },
         { label: 'Tighten it', prompt: 'Tighten the current prompt: cut repetition and ambiguity, keep every instruction that matters.' },
         { label: 'Review it', prompt: 'Review the current prompt: what would the agent get wrong, and what is missing? Then fix it.' },
