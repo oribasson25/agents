@@ -274,12 +274,22 @@
     const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, ...(opts.headers || {}) };
     return fetch(path, { ...opts, headers });
   }
-  async function apiList() { return apiFetch('/api/agents').then(r => r.json()); }
+  // Keys prefixed with "_" are UI-only state (_isNew drives the one-off
+  // highlight on a freshly duplicated card). They must never be persisted:
+  // a stored _isNew makes the card glow again on every single load.
+  function stripUiFields(agent) {
+    return Object.fromEntries(Object.entries(agent || {}).filter(([k]) => !k.startsWith('_')));
+  }
+
+  async function apiList() {
+    const agents = await apiFetch('/api/agents').then(r => r.json());
+    return Array.isArray(agents) ? agents.map(stripUiFields) : agents;
+  }
   async function apiCreate(agent) {
-    return apiFetch('/api/agents', { method: 'POST', body: JSON.stringify(agent) }).then(r => r.json());
+    return apiFetch('/api/agents', { method: 'POST', body: JSON.stringify(stripUiFields(agent)) }).then(r => r.json());
   }
   async function apiUpdate(agent) {
-    const r = await apiFetch(`/api/agents/${agent.id}`, { method: 'PUT', body: JSON.stringify(agent) });
+    const r = await apiFetch(`/api/agents/${agent.id}`, { method: 'PUT', body: JSON.stringify(stripUiFields(agent)) });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) {
       const err = new Error(data.error || `Save failed (${r.status})`);
@@ -390,6 +400,9 @@
         agents.splice(idx + 1, 0, copy);
         return { ...state, agents };
       }
+      // Drops _isNew once the highlight has played, so leaving the page and
+      // coming back doesn't replay it.
+      case 'CLEAR_NEW': return { ...state, agents: state.agents.map(a => a._isNew ? stripUiFields(a) : a) };
       case 'SET_VIEW': return { ...state, view: action.view, editingId: action.editingId || state.editingId };
       case 'OPEN_CHAT': return { ...state, chatAgentId: action.id, chatInitialSessionId: action.sessionId || null };
       case 'CLOSE_CHAT': return { ...state, chatAgentId: null, chatInitialSessionId: null };
@@ -4390,21 +4403,6 @@ def run(**kwargs):
         </div>
 
         <div style={sectionStyle}>
-          <div style={sectionHeader}>Integrations</div>
-          <div style={rowStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ ...iconBox, color: 'var(--text-2)' }}>{Icons.email}</div>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 600 }}>Gmail</div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                  Connected per agent — open an agent and use the Tools tab
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div style={sectionStyle}>
           <div style={sectionHeader}>Account</div>
           <div style={rowStyle}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -4523,6 +4521,7 @@ def run(**kwargs):
       const copy = { ...JSON.parse(JSON.stringify(src)), id: uid(), name: src.name + ' (Copy)', _isNew: true, createdAt: new Date().toISOString() };
       dispatch({ type: 'UPDATE_AGENT', agent: copy });
       dispatch({ type: 'HYDRATE', agents: [copy, ...state.agents] });
+      setTimeout(() => dispatch({ type: 'CLEAR_NEW' }), 1400);   // highlight runs for 1.2s
       await apiCreate(copy).catch(() => {});
     }
 
