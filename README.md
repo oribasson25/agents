@@ -99,15 +99,19 @@ The browser keeps its own session log for test runs and provider errors. Togethe
 the tool assistant, the skill assistant and the platform assistant receive, so "fix it" works
 without pasting a traceback.
 
-## The starter agent
+## Starter agents
 
-Every new account is seeded with a copy of the agent named `weather` owned by an admin
-(`api/_defaultAgent.js`). The copy is live — editing that agent changes what the next sign-up
-receives — and carries the prompt, skills, tools and knowledge documents, but none of the
-owner's credentials: no LLM API key, no WhatsApp number or tokens, no Gmail connection, and
-tool secret values blanked while their names are kept as a hint. Seeding never throws, so a
-missing or renamed template leaves the new account empty rather than failing the sign-up. To
-change which agent is the template, rename it or edit `TEMPLATE_AGENT_NAME`.
+Every new account is seeded with a copy of each admin-owned agent named in
+`TEMPLATE_AGENT_NAMES` (`api/_defaultAgent.js`) — currently `weather` and `bobi`. The copies
+are live: editing one of those agents changes what the next sign-up receives. Each carries the
+prompt, skills, tools and knowledge documents, but none of the owner's credentials — no LLM API
+key, no WhatsApp number or tokens, no Gmail connection, and tool secret values blanked while
+their names are kept as a hint.
+
+Seeding never fails a sign-up: a missing, renamed or unreadable template is logged and skipped,
+and one template failing does not stop the others. `GET /api/admin/starter-agent` reports each
+template's state and, when one is missing, why — no agent by that name, an ownerless one, one
+owned by a non-admin, or a near-miss name — which the Admin tab shows at the top.
 
 ## Migrations
 

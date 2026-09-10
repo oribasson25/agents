@@ -1,11 +1,11 @@
 import { sql } from '../_db.js';
 import { checkAdmin } from '../_auth.js';
-import { TEMPLATE_AGENT_NAME, findTemplateAgent } from '../_defaultAgent.js';
+import { TEMPLATE_AGENT_NAMES, findTemplateAgents } from '../_defaultAgent.js';
 
 /**
- * Reports whether new sign-ups will actually receive a starter agent, and when
- * they won't, why — the template is found by name, so it can silently stop
- * matching after a rename or an ownership change.
+ * Reports, per starter agent, whether new sign-ups will actually receive it —
+ * and when they won't, why. The templates are found by name, so one can
+ * silently stop matching after a rename or an ownership change.
  */
 export default async function handler(req, res) {
   const admin = checkAdmin(req, res);
@@ -13,9 +13,9 @@ export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).end();
 
   try {
-    const template = await findTemplateAgent();
+    const found = await findTemplateAgents();
 
-    // Everything named like the template, so a miss explains itself.
+    // Everything named like a template, so a miss explains itself.
     const candidates = await sql`
       select a.id,
              a.data->>'name'  as name,
@@ -24,38 +24,60 @@ export default async function handler(req, res) {
              coalesce(u.is_admin, false) as owner_is_admin
       from agents a
       left join users u on u.id = a.user_id
-      where lower(trim(coalesce(a.data->>'name', ''))) like ${'%' + TEMPLATE_AGENT_NAME + '%'}
+      where lower(trim(coalesce(a.data->>'name', ''))) = any(${TEMPLATE_AGENT_NAMES})
+         or exists (
+           select 1 from unnest(${TEMPLATE_AGENT_NAMES}::text[]) n
+           where lower(trim(coalesce(a.data->>'name', ''))) like '%' || n || '%'
+         )
       order by a.updated_at desc
-      limit 10
+      limit 20
     `;
 
-    if (!template) {
-      const reason = candidates.length === 0
-        ? `No agent whose name contains "${TEMPLATE_AGENT_NAME}" exists.`
-        : candidates.some(c => !c.user_id)
-          ? 'A matching agent exists but has no owner, so it cannot be used as the template.'
-          : candidates.some(c => !c.owner_is_admin)
-            ? 'A matching agent exists but its owner is not an admin. Only an admin-owned agent can be the template.'
-            : `A matching agent exists but its name is not exactly "${TEMPLATE_AGENT_NAME}".`;
-      return res.json({ found: false, templateName: TEMPLATE_AGENT_NAME, reason, candidates });
-    }
+    const counts = found.length
+      ? await sql`
+          select agent_id, count(*)::int as documents
+          from documents
+          where agent_id = any(${found.map(f => f.id)})
+          group by agent_id
+        `
+      : [];
 
-    const [{ count }] = await sql`
-      select count(*)::int as count from documents where agent_id = ${template.id}
-    `;
+    const templates = TEMPLATE_AGENT_NAMES.map(name => {
+      const hit = found.find(f => f.template_name === name);
+      if (hit) {
+        return {
+          name,
+          found: true,
+          agentId: hit.id,
+          owner: hit.username,
+          skills: (hit.data?.skills || []).length,
+          tools: (hit.data?.tools || []).length,
+          documents: (counts.find(c => c.agent_id === hit.id) || {}).documents || 0,
+        };
+      }
+      const near = candidates.filter(c => (c.name || '').toLowerCase().includes(name));
+      const reason = near.length === 0
+        ? `אין סוכן בשם "${name}".`
+        : near.some(c => !c.user_id)
+          ? `יש סוכן בשם "${name}" אבל בלי בעלים.`
+          : near.some(c => !c.owner_is_admin)
+            ? `יש סוכן בשם "${name}" אבל הבעלים שלו לא אדמין.`
+            : `יש סוכן דומה אבל השם שלו לא בדיוק "${name}".`;
+      return { name, found: false, reason, near };
+    });
 
     return res.json({
-      found: true,
-      templateName: TEMPLATE_AGENT_NAME,
-      agentId: template.id,
-      name: template.data?.name || '',
-      owner: template.username,
-      documents: count,
-      skills: (template.data?.skills || []).length,
-      tools: (template.data?.tools || []).length,
+      templateNames: TEMPLATE_AGENT_NAMES,
+      templates,
+      allFound: templates.every(t => t.found),
       candidates,
     });
   } catch (err) {
-    return res.status(500).json({ found: false, templateName: TEMPLATE_AGENT_NAME, reason: err.message });
+    return res.status(500).json({
+      templateNames: TEMPLATE_AGENT_NAMES,
+      templates: [],
+      allFound: false,
+      error: err.message,
+    });
   }
 }

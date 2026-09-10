@@ -3795,9 +3795,10 @@
           <H3>חשבון והתחברות</H3>
           <P>ההרשמה דורשת שם משתמש, סיסמה וטלפון. כל סוכן שייך למשתמש שיצר אותו, ומשתמש רגיל רואה רק את הסוכנים שלו. ההתחברות מחזיקה טוקן ב-<Code>sessionStorage</Code>, כך שסגירת הדפדפן מנתקת.</P>
 
-          <H3>סוכן הפתיחה</H3>
-          <P>חשבון חדש מתחיל עם עותק של סוכן הדוגמה <Code>weather</Code> — כולל הפרומפט, הסקילים, הכלים ובסיס הידע שלו — כדי שיהיה ממה להתחיל. מה שלא מועתק: מפתח ה-API, הגדרות ה-WhatsApp, חיבור ה-Gmail והערכים של ה-Secrets. שמות ה-Secrets נשארים כרמז למה שצריך למלא.</P>
-          <Warn>הסוכן הזה לא יענה עד שתזין מפתח API משלך ב-Configuration.</Warn>
+          <H3>סוכני הפתיחה</H3>
+          <P>חשבון חדש מתחיל עם עותק של סוכני הדוגמה <Code>weather</Code> ו-<Code>bobi</Code> — כולל הפרומפט, הסקילים, הכלים ובסיס הידע של כל אחד — כדי שיהיה ממה להתחיל. מה שלא מועתק: מפתח ה-API, הגדרות ה-WhatsApp, חיבור ה-Gmail והערכים של ה-Secrets. שמות ה-Secrets נשארים כרמז למה שצריך למלא.</P>
+          <P>ההעתקה חיה: שינוי באחד מהסוכנים האלה משפיע על ההרשמות הבאות. בטאב Admin יש שורת מצב שמראה לכל תבנית אם היא נמצאת ומה היא נושאת.</P>
+          <Warn>הסוכנים האלה לא יענו עד שיוגדר מפתח API לחשבון במסך Settings.</Warn>
 
           <H3>כרטיס סוכן</H3>
           <P>כל סוכן בעמוד הבית מוצג בכרטיס עם האווטאר, השם, תאריך היצירה ומספר הסקילים והכלים. בתחתית הכרטיס חמש פעולות:</P>
@@ -5847,10 +5848,12 @@ npm run migrate            # הרצה בפועל`}</Block>
     const [confirmText, setConfirmText] = useState('');
     const [deleteBusy, setDeleteBusy] = useState(false);
     const [deleteError, setDeleteError] = useState({});
-    const [starter, setStarter] = useState(null);   // { found, reason, … }
+    const [starter, setStarter] = useState(null);   // { templates: [{ name, found, … }], allFound }
 
     useEffect(() => {
-      adminStarterAgent().then(setStarter).catch(() => setStarter({ found: false, reason: 'Could not check.' }));
+      adminStarterAgent()
+        .then(setStarter)
+        .catch(() => setStarter({ templates: [], allFound: false, error: 'Could not check.' }));
     }, []);
 
     useEffect(() => {
@@ -5910,32 +5913,31 @@ npm run migrate            # הרצה בפועל`}</Block>
           </div>
           <div style={{ color: 'var(--text-2)', fontSize: 14 }}>{users.length} registered user{users.length !== 1 ? 's' : ''}</div>
 
-          {/* The starter agent is matched by name, so a rename can silently
-              stop new sign-ups from getting one. Say so out loud. */}
+          {/* The starter agents are matched by name, so a rename can silently
+              stop new sign-ups from getting one. Say so out loud, per agent. */}
           {starter && (
             <div style={{
-              marginTop: 12, padding: '10px 14px', borderRadius: 'var(--r-md)', fontSize: 13, lineHeight: 1.6,
-              background: starter.found ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.10)',
-              border: `1px solid ${starter.found ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.35)'}`,
+              marginTop: 12, padding: '10px 14px', borderRadius: 'var(--r-md)', fontSize: 13, lineHeight: 1.7,
+              background: starter.allFound ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.10)',
+              border: `1px solid ${starter.allFound ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.35)'}`,
               color: 'var(--text-2)',
             }}>
-              {starter.found ? (
-                <>
-                  <span style={{ color: 'var(--success)', fontWeight: 700 }}>✓ Starter agent: </span>
-                  every new account gets a copy of <strong>{starter.name}</strong> (owner {starter.owner})
-                  {` — ${starter.skills} skills, ${starter.tools} tools, ${starter.documents} documents`}
-                </>
-              ) : (
-                <>
-                  <span style={{ color: 'var(--warning)', fontWeight: 700 }}>⚠ No starter agent: </span>
-                  {starter.reason} New accounts start empty. Name an agent you own <strong>{starter.templateName}</strong> to fix it.
-                  {(starter.candidates || []).length > 0 && (
-                    <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-muted)' }}>
-                      נמצאו: {starter.candidates.map(c => `"${c.name}" (${c.username || 'ללא בעלים'}${c.owner_is_admin ? ', admin' : ''})`).join(' · ')}
-                    </div>
-                  )}
-                </>
-              )}
+              <div style={{ fontWeight: 700, marginBottom: 4, color: starter.allFound ? 'var(--success)' : 'var(--warning)' }}>
+                {starter.allFound ? '✓ סוכני הפתיחה' : '⚠ סוכני הפתיחה'}
+                <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}> — מה שכל חשבון חדש מקבל</span>
+              </div>
+              {(starter.templates || []).map(t => (
+                <div key={t.name} dir="rtl" style={{ display: 'flex', gap: 7, alignItems: 'baseline' }}>
+                  <span style={{ color: t.found ? 'var(--success)' : 'var(--warning)' }}>{t.found ? '✓' : '⚠'}</span>
+                  <span style={{ fontFamily: "'JetBrains Mono','Fira Code',monospace", fontSize: 12.5 }}>{t.name}</span>
+                  <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                    {t.found
+                      ? `${t.owner} · ${t.skills} סקילים · ${t.tools} כלים · ${t.documents} מסמכים`
+                      : `${t.reason} כדי לתקן — קרא לסוכן שבבעלותך בשם הזה בדיוק.`}
+                  </span>
+                </div>
+              ))}
+              {starter.error && <div style={{ color: 'var(--danger)', fontSize: 12, marginTop: 4 }}>{starter.error}</div>}
             </div>
           )}
         </div>

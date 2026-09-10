@@ -1,6 +1,6 @@
 import { sql } from '../_db.js';
 import { signJWT, hashPassword } from '../_auth.js';
-import { seedDefaultAgent } from '../_defaultAgent.js';
+import { seedDefaultAgents } from '../_defaultAgent.js';
 import crypto from 'crypto';
 
 export default async function handler(req, res) {
@@ -23,9 +23,9 @@ export default async function handler(req, res) {
     values (${id}, ${username}, ${hashPassword(password)}, ${phone}, false)
   `;
 
-  // A new account starts with a copy of the starter agent. This never throws,
+  // A new account starts with a copy of each starter agent. This never throws,
   // so a missing or broken template cannot fail the sign-up.
-  await seedDefaultAgent(id);
+  await seedDefaultAgents(id);
 
   const token = signJWT({
     userId: id,
