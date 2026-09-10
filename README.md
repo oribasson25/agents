@@ -78,6 +78,15 @@ migration `010` backfills them from each user's most recently updated agent that
 
 `user_settings.assistant_language` (`he` or `en`) selects the platform assistant's language.
 
+## Assistant conversations
+
+The platform assistant is a floating chat, reachable from every screen by the ✨ button in the
+corner. Every turn of every assistant — platform, tool and skill — is saved to
+`assistant_sessions` (migration `012`) through `PUT /api/assistant-sessions`, and the
+**Assistant chats** tab lists them with filters per kind, a keyword search over the
+transcripts, and each conversation's tool calls with their arguments and results. Saving is
+fire-and-forget: a failure there must never interrupt the conversation.
+
 ## Error log
 
 Failures are recorded in `error_log` (migration `011`) so the assistants can read them back:

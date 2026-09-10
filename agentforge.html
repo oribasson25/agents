@@ -381,6 +381,20 @@
     return d;
   }
 
+  async function apiListAssistantSessions(params = {}) {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null));
+    const r = await apiFetch(`/api/assistant-sessions?${qs}`);
+    if (!r.ok) throw new Error(`Could not load assistant history (${r.status})`);
+    return r.json();
+  }
+  // Saved once per turn; a failure here must never interrupt the conversation.
+  function saveAssistantSession(session) {
+    return apiFetch('/api/assistant-sessions', { method: 'PUT', body: JSON.stringify(session) }).catch(() => {});
+  }
+  async function deleteAssistantSession(id) {
+    return apiFetch(`/api/assistant-sessions?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
   async function apiListInteractions(params = {}) {
     const qs = new URLSearchParams(
       Object.entries(params).filter(([, v]) => v !== '' && v !== null && v !== undefined)
@@ -1575,6 +1589,7 @@
 
   function AssistantPanel({ agent, kind, subject, targetKey, onApply, lastRun }) {
     const profile = ASSISTANT_PROFILES[kind];
+    const sessionIdRef = useRef(uid());
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [pending, setPending] = useState(false);
@@ -1585,7 +1600,20 @@
     useEffect(() => { lastRunRef.current = lastRun; }, [lastRun]);
 
     // Switching to a different tool or skill starts a fresh conversation.
-    useEffect(() => { setMessages([]); setInput(''); }, [targetKey]);
+    useEffect(() => { setMessages([]); setInput(''); sessionIdRef.current = uid(); }, [targetKey]);
+
+    function persist(all) {
+      const real = all.filter(m => m.role === 'user' || m.role === 'assistant');
+      if (real.length === 0) return;
+      saveAssistantSession({
+        id: sessionIdRef.current,
+        kind,
+        agentId: agent.id,
+        subject: subjectRef.current?.name || '',
+        title: (real.find(m => m.role === 'user') || {}).content || '',
+        messages: real.map(m => ({ role: m.role, content: m.content, applied: m.applied ? m.applied.fields : undefined })),
+      });
+    }
 
     useEffect(() => {
       if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
@@ -1627,8 +1655,13 @@
           onApply(fields);
           applied = { fields: Object.keys(fields), before };
         }
-        setMessages(m => [...m, { id: uid(), role: 'assistant', content: reply, applied }]);
+        setMessages(m => {
+          const next = [...m, { id: uid(), role: 'assistant', content: reply, applied }];
+          persist(next);
+          return next;
+        });
       } catch (err) {
+        recordError('assistant', err.message, { agentId: agent.id, kind, subject: subjectRef.current?.name });
         setMessages(m => [...m, { id: uid(), role: 'error', content: err.message }]);
       } finally {
         setPending(false);
@@ -3682,6 +3715,7 @@
       { id: 'skills',       label: 'Skills' },
       { id: 'tools',        label: 'Tools' },
       { id: 'platform',     label: '✨ אסיסטנט המערכת' },
+      { id: 'history',      label: 'היסטוריית אסיסטנטים' },
       { id: 'assistant',    label: '✨ אסיסטנט הבנייה' },
       { id: 'knowledge',    label: 'Knowledge (RAG)' },
       { id: 'test',         label: 'בדיקת הסוכן' },
@@ -3749,7 +3783,7 @@
           </UL>
 
           <H3>איפה כל דבר יושב</H3>
-          <P>בסייד-בר: <strong>Home</strong> (הסוכנים שלך), <strong>Interactions</strong> (כל השיחות), <strong>Documentation</strong> (הדף הזה), <strong>Settings</strong>, ו-<strong>Admin</strong> למשתמשי אדמין בלבד.</P>
+          <P>בסייד-בר: <strong>Home</strong> (הסוכנים שלך), <strong>Assistant chats</strong> (היסטוריית השיחות עם האסיסטנטים), <strong>Interactions</strong> (שיחות של משתמשי קצה), <strong>Documentation</strong> (הדף הזה), <strong>Settings</strong>, ו-<strong>Admin</strong> למשתמשי אדמין בלבד. הכפתור <strong>✨</strong> בפינה הימנית התחתונה פותח את אסיסטנט המערכת מכל מסך.</P>
         </div>
       ),
 
@@ -3901,7 +3935,7 @@ def run(**kwargs):
       platform: (
         <div dir="rtl">
           <H2>✨ אסיסטנט המערכת</H2>
-          <P>לשונית <strong>Assistant</strong> בסייד-בר. זה לא סוכן שאתה בונה אלא אסיסטנט שמתפעל את המערכת בשבילך — הוא מבצע פעולות, לא רק מסביר איפה ללחוץ.</P>
+          <P>הכפתור <strong>✨</strong> בפינה הימנית התחתונה, בכל מסך. לחיצה פותחת צ'אט צף ולחיצה נוספת מקפלת אותו — כך שאפשר לבקש שינוי בזמן שרואים את מה שרוצים לשנות. זה לא סוכן שאתה בונה אלא אסיסטנט שמתפעל את המערכת בשבילך — הוא מבצע פעולות, לא רק מסביר איפה ללחוץ.</P>
 
           <H3>מה הוא עושה</H3>
           <UL>
@@ -3964,6 +3998,25 @@ def run(**kwargs):
             <li><strong>Review it</strong> — ביקורת ותיקון</li>
           </UL>
           <Tip>תאר את המשימה בשפה חופשית ("כלי שמביא מזג אוויר לפי עיר") ותן לו למלא שם, תיאור, פרמטרים וקוד בבת אחת. מודל חזק יותר בהגדרות הסוכן נותן קוד טוב יותר.</Tip>
+        </div>
+      ),
+
+      /* ─────────────── ASSISTANT HISTORY ─────────────── */
+      history: (
+        <div dir="rtl">
+          <H2>היסטוריית אסיסטנטים</H2>
+          <P>לשונית <strong>Assistant chats</strong> בסייד-בר שומרת כל שיחה עם כל אחד משלושת האסיסטנטים — של המערכת, של הכלים ושל הסקילים.</P>
+
+          <H3>מה יש בה</H3>
+          <UL>
+            <li>סינון לפי סוג האסיסטנט: מערכת, כלים, סקילים או הכל</li>
+            <li>חיפוש בתוך כל תוכן השיחות</li>
+            <li>לכל שיחה: על איזה סוכן ואיזה כלי או סקיל היא הייתה, מספר הודעות ומתי</li>
+            <li>פתיחת שיחה מציגה את התמלול המלא — כולל <strong>כל קריאה לכלי</strong> עם הפרמטרים והתוצאה, וסימון על מה שנכתב לעורך</li>
+            <li>קפיצה לסוכן שהשיחה עסקה בו, ומחיקת שיחה מההיסטוריה</li>
+          </UL>
+          <P>השיחה נשמרת אוטומטית אחרי כל תור. שיחה חדשה מתחילה כשלוחצים "שיחה חדשה" בצ'אט הצף, או כשעוברים לכלי או לסקיל אחר.</P>
+          <Tip>ההיסטוריה שימושית במיוחד כדי לחזור לקוד או לפרומפט שאסיסטנט כתב לך לפני שבוע, ולראות מה בדיוק הוא שינה ולמה.</Tip>
         </div>
       ),
 
@@ -4794,11 +4847,12 @@ npm run migrate            # הרצה בפועל`}</Block>
     ].join('\n'),
   };
 
-  function PlatformAssistantView({ agents, onAgentsChanged, language }) {
+  function PlatformAssistantView({ agents, onAgentsChanged, language, compact }) {
     const [messages, setMessages] = useState([]);   // { id, role: user|assistant|tool|error, … }
     const [input, setInput] = useState('');
     const [pending, setPending] = useState(false);
     const listRef = useRef(null);
+    const sessionIdRef = useRef(uid());
     const agentsRef = useRef(agents);
     useEffect(() => { agentsRef.current = agents; }, [agents]);
 
@@ -4807,6 +4861,26 @@ npm run migrate            # הרצה בפועל`}</Block>
     }, [messages, pending]);
 
     const noKey = !accountApiUsable();
+
+    function persist(all) {
+      const real = all.filter(m => m.role === 'user' || m.role === 'assistant' || m.role === 'tool');
+      if (!real.some(m => m.role === 'user')) return;
+      saveAssistantSession({
+        id: sessionIdRef.current,
+        kind: 'platform',
+        subject: '',
+        title: (real.find(m => m.role === 'user') || {}).content || '',
+        messages: real.map(m => m.role === 'tool'
+          ? { role: 'tool', name: m.name, input: m.input, result: m.result }
+          : { role: m.role, content: m.content }),
+      });
+    }
+
+    function startNewChat() {
+      setMessages([]);
+      setInput('');
+      sessionIdRef.current = uid();
+    }
 
     function findAgent(id) {
       return (agentsRef.current || []).find(a => a.id === id) || null;
@@ -4992,8 +5066,13 @@ npm run migrate            # הרצה בפועל`}</Block>
           tools: PLATFORM_TOOLS,
           execute,
         });
-        setMessages(m => [...m, { id: uid(), role: 'assistant', content: reply || '—' }]);
+        setMessages(m => {
+          const next = [...m, { id: uid(), role: 'assistant', content: reply || '—' }];
+          persist(next);
+          return next;
+        });
       } catch (err) {
+        recordError('assistant', err.message, { kind: 'platform' });
         setMessages(m => [...m, { id: uid(), role: 'error', content: err.message }]);
       } finally {
         setPending(false);
@@ -5004,18 +5083,18 @@ npm run migrate            # הרצה בפועל`}</Block>
     const dir = language === 'en' ? 'ltr' : 'rtl';
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 560, maxWidth: 900 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexShrink: 0 }}>
-          <div style={{ width: 38, height: 38, borderRadius: 11, background: 'var(--primary-dim)', border: '1px solid rgba(239,159,39,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 19 }}>✨</div>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: compact ? 0 : 560, maxWidth: compact ? 'none' : 900 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: compact ? 10 : 16, flexShrink: 0 }}>
+          {!compact && <div style={{ width: 38, height: 38, borderRadius: 11, background: 'var(--primary-dim)', border: '1px solid rgba(239,159,39,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 19 }}>✨</div>}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 800, fontSize: 22, letterSpacing: '-0.02em' }}>Assistant</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+            {!compact && <div style={{ fontWeight: 800, fontSize: 22, letterSpacing: '-0.02em' }}>Assistant</div>}
+            <div style={{ fontSize: compact ? 11 : 12, color: 'var(--text-muted)', marginTop: compact ? 0 : 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {language === 'en' ? 'Operates the platform for you' : 'מתפעל את המערכת בשבילך'} · {accountApi().model || 'no model'}
             </div>
           </div>
           {messages.length > 0 && (
-            <button onClick={() => setMessages([])}
-              style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 'var(--r-md)', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-2)' }}>
+            <button onClick={startNewChat}
+              style={{ fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 'var(--r-md)', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-2)', flexShrink: 0 }}>
               {language === 'en' ? 'New chat' : 'שיחה חדשה'}
             </button>
           )}
@@ -5092,6 +5171,230 @@ npm run migrate            # הרצה בפועל`}</Block>
     );
   }
 
+  /* ─────────────────── FLOATING ASSISTANT ─────────────────── */
+  // The platform assistant follows you across every screen: a bubble that
+  // expands into a chat and collapses back, so you can ask it to change
+  // something while looking at the thing you want changed.
+  function FloatingAssistant({ agents, onAgentsChanged, language }) {
+    const [open, setOpen] = useState(false);
+
+    return (
+      <React.Fragment>
+        {open && (
+          <div className="slide-in-right" style={{
+            position: 'fixed', bottom: 92, right: 24, zIndex: 200,
+            width: 'min(430px, calc(100vw - 32px))', height: 'min(640px, calc(100vh - 140px))',
+            background: 'var(--bg-sidebar)', border: '1px solid var(--border)',
+            borderRadius: 'var(--r-lg)', boxShadow: '0 12px 40px rgba(0,0,0,0.45)',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 14px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)', flexShrink: 0 }}>
+              <span style={{ fontSize: 16 }}>✨</span>
+              <div style={{ flex: 1, fontWeight: 700, fontSize: 14 }}>Assistant</div>
+              <IconBtn onClick={() => setOpen(false)} title={language === 'en' ? 'Collapse' : 'לקפל'}>▾</IconBtn>
+            </div>
+            <div style={{ flex: 1, minHeight: 0, padding: '12px 14px 14px', display: 'flex', flexDirection: 'column' }}>
+              <PlatformAssistantView
+                compact
+                agents={agents}
+                language={language}
+                onAgentsChanged={onAgentsChanged}
+              />
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={() => setOpen(v => !v)}
+          title={open ? (language === 'en' ? 'Collapse the assistant' : 'לקפל את האסיסטנט') : (language === 'en' ? 'Open the assistant' : 'לפתוח את האסיסטנט')}
+          style={{
+            position: 'fixed', bottom: 24, right: 24, zIndex: 200,
+            width: 56, height: 56, borderRadius: '50%',
+            background: 'var(--primary)', color: '#0a0a0a',
+            border: 'none', fontSize: 24, fontWeight: 700,
+            boxShadow: '0 6px 22px var(--primary-glow)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'transform 0.15s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.06)'; }}
+          onMouseLeave={e => { e.currentTarget.style.transform = 'none'; }}
+        >
+          {open ? '▾' : '✨'}
+        </button>
+      </React.Fragment>
+    );
+  }
+
+  /* ─────────────────── ASSISTANT HISTORY ─────────────────── */
+  const ASSISTANT_KINDS = {
+    platform: { label: 'מערכת · Platform', color: 'var(--primary)' },
+    tool:     { label: 'כלי · Tool',        color: 'var(--teal)' },
+    skill:    { label: 'סקיל · Skill',      color: '#a78bfa' },
+  };
+
+  function AssistantHistoryView({ onOpenAgent }) {
+    const [kind, setKind] = useState('');
+    const [query, setQuery] = useState('');
+    const [data, setData] = useState(null);
+    const [error, setError] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [open, setOpen] = useState(null);
+    const [tick, setTick] = useState(0);
+
+    useEffect(() => {
+      let live = true;
+      setLoading(true);
+      const t = setTimeout(() => {
+        apiListAssistantSessions({ kind, q: query, limit: 60 })
+          .then(d => { if (live) { setData(d); setError(null); setLoading(false); } })
+          .catch(err => { if (live) { setError(err.message); setLoading(false); } });
+      }, 250);
+      return () => { live = false; clearTimeout(t); };
+    }, [kind, query, tick]);
+
+    async function remove(session) {
+      if (!window.confirm(`למחוק את השיחה הזאת מההיסטוריה?\n\nDelete this conversation from the history?`)) return;
+      await deleteAssistantSession(session.id).catch(() => {});
+      if (open && open.id === session.id) setOpen(null);
+      setTick(t => t + 1);
+    }
+
+    /* ---- one conversation ---- */
+    if (open) {
+      const meta = ASSISTANT_KINDS[open.kind] || { label: open.kind, color: 'var(--text-2)' };
+      const msgs = open.messages || [];
+      return (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22, flexWrap: 'wrap' }}>
+            <button onClick={() => setOpen(null)} style={{ background: 'var(--bg-hover)', color: 'var(--text-2)', padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 13, border: '1px solid var(--border)' }}>← Back</button>
+            <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 800, fontSize: 18, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 620 }}>
+                {open.title || '(ללא כותרת)'}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>
+                <span style={{ color: meta.color, fontWeight: 700 }}>{meta.label}</span>
+                {open.agent_name ? ` · ${open.agent_name}` : ''}
+                {open.subject ? ` · ${open.subject}` : ''}
+                {` · ${new Date(open.updated_at).toLocaleString()} · ${msgs.length} הודעות`}
+              </div>
+            </div>
+            {open.agent_id && onOpenAgent && (
+              <button onClick={() => onOpenAgent(open.agent_id)}
+                style={{ marginLeft: 'auto', background: 'var(--bg-hover)', color: 'var(--text-2)', padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 13, border: '1px solid var(--border)' }}>
+                Open agent
+              </button>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 780 }}>
+            {msgs.map((m, i) => {
+              if (m.role === 'tool') {
+                const args = Object.entries(m.input || {}).map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : String(v)}`).join(', ');
+                return (
+                  <div key={i} dir="ltr" style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px', fontSize: 11.5, fontFamily: "'JetBrains Mono','Fira Code',monospace", color: 'var(--text-muted)' }}>
+                    <div style={{ color: 'var(--teal)' }}>🔧 {m.name}({args.length > 200 ? args.slice(0, 200) + '…' : args})</div>
+                    {m.result && <div style={{ marginTop: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 200, overflowY: 'auto' }}>{m.result}</div>}
+                  </div>
+                );
+              }
+              const isUser = m.role === 'user';
+              return (
+                <div key={i} dir="auto" style={{
+                  alignSelf: isUser ? 'flex-end' : 'stretch', maxWidth: isUser ? '85%' : '100%',
+                  background: isUser ? 'var(--primary)' : 'var(--bg-card)',
+                  color: isUser ? '#0a0a0a' : 'var(--text)',
+                  border: isUser ? 'none' : '1px solid var(--border)',
+                  padding: '10px 13px', borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                  fontSize: 13.5, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                }}>
+                  {m.content}
+                  {m.applied && m.applied.length > 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--success)', marginTop: 6 }}>✓ נכתב לעורך ({m.applied.join(' + ')})</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    /* ---- the list ---- */
+    const sessions = data?.sessions || [];
+    const filters = [
+      { id: '', label: 'הכל' },
+      { id: 'platform', label: 'מערכת' },
+      { id: 'tool', label: 'כלים' },
+      { id: 'skill', label: 'סקילים' },
+    ];
+
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 20, gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 26, letterSpacing: '-0.02em' }}>Assistant history</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4, fontWeight: 500 }}>
+              {loading && !data ? 'טוען…' : `${sessions.length} שיחות עם האסיסטנטים · הצ'אט עצמו נמצא בכפתור ✨ בפינה`}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ display: 'inline-flex', background: 'var(--bg-panel)', borderRadius: 'var(--r-xl)', padding: 3, gap: 2, border: '1px solid var(--border)' }}>
+            {filters.map(f => (
+              <button key={f.id} onClick={() => setKind(f.id)}
+                style={{ padding: '5px 14px', borderRadius: 'var(--r-xl)', fontSize: 12, fontWeight: 600, background: kind === f.id ? 'var(--primary)' : 'transparent', color: kind === f.id ? '#0a0a0a' : 'var(--text-2)' }}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="חיפוש בכל השיחות…"
+            style={{ maxWidth: 280, fontSize: 12.5, padding: '7px 11px' }} />
+        </div>
+
+        {error ? (
+          <div style={{ padding: 20, borderRadius: 'var(--r-lg)', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: 'var(--danger)', fontSize: 13 }}>{error}</div>
+        ) : loading ? (
+          <div style={{ color: 'var(--text-2)', padding: 30 }}>טוען…</div>
+        ) : sessions.length === 0 ? (
+          <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '60px 20px', fontSize: 14, background: 'var(--bg-card)', border: '1px dashed var(--border)', borderRadius: 'var(--r-lg)' }}>
+            <div style={{ fontSize: 34, marginBottom: 12 }}>✨</div>
+            {query || kind ? 'אין שיחות שתואמות את הסינון.' : 'עוד לא דיברת עם האסיסטנטים. הכפתור ✨ בפינה למטה פותח את הצ\'אט.'}
+          </div>
+        ) : (
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', overflow: 'hidden' }}>
+            {sessions.map((sx, i) => {
+              const meta = ASSISTANT_KINDS[sx.kind] || { label: sx.kind, color: 'var(--text-2)' };
+              return (
+                <div key={sx.id}
+                  onClick={() => setOpen(sx)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '13px 16px', cursor: 'pointer', borderBottom: i < sessions.length - 1 ? '1px solid var(--border)' : 'none' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 'var(--r-sm)', border: `1px solid ${meta.color}`, color: meta.color, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    {meta.label}
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div dir="auto" style={{ fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sx.title || '(ללא כותרת)'}</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>
+                      {sx.agent_name ? `${sx.agent_name}` : 'ללא סוכן'}
+                      {sx.subject ? ` · ${sx.subject}` : ''}
+                      {` · ${sx.message_count} הודעות · ${new Date(sx.updated_at).toLocaleString()}`}
+                    </div>
+                  </div>
+                  <IconBtn onClick={e => { e.stopPropagation(); remove(sx); }} danger title="מחיקה">{Icons.trash}</IconBtn>
+                  <span style={{ color: 'var(--text-muted)', fontSize: 15, flexShrink: 0 }}>›</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   /* ─────────────────── API KEY REMINDER ─────────────────── */
   // Pinned top-right of the content area, in both languages. One key serves the
   // whole account, and nothing answers until it is set.
@@ -5140,7 +5443,7 @@ npm run migrate            # הרצה בפועל`}</Block>
   function Sidebar({ activeNav, onNav, user, onLogout }) {
     const items = [
       { id: 'home', label: 'Home', icon: Icons.home },
-      { id: 'assistant', label: 'Assistant', icon: Icons.sparkle },
+      { id: 'assistant', label: 'Assistant chats', icon: Icons.sparkle },
       { id: 'interactions', label: 'Interactions', icon: Icons.interactions },
       { id: 'docs', label: 'Documentation', icon: Icons.docs },
       { id: 'settings', label: 'Settings', icon: Icons.settings },
@@ -6180,10 +6483,8 @@ npm run migrate            # הרצה בפועל`}</Block>
           <BgLogo size={560} wrapStyle={{ bottom: '-80px', right: '-80px' }} />
           <ApiKeyNote />
           {nav === 'assistant' ? (
-            <PlatformAssistantView
-              agents={state.agents}
-              language={(settings || accountApi()).assistantLanguage || 'he'}
-              onAgentsChanged={() => apiList().then(list => dispatch({ type: 'HYDRATE', agents: list })).catch(() => {})}
+            <AssistantHistoryView
+              onOpenAgent={id => { setNav('home'); setEditorTab(null); dispatch({ type: 'SET_VIEW', view: 'editor', editingId: id }); }}
             />
           ) : nav === 'interactions' ? (
             <InteractionsView
@@ -6236,6 +6537,11 @@ npm run migrate            # הרצה בפועל`}</Block>
         </div>
 
         {chatAgent && <ChatTestDrawer agent={chatAgent} initialSessionId={state.chatInitialSessionId} onClose={() => dispatch({ type: 'CLOSE_CHAT' })} />}
+        <FloatingAssistant
+          agents={state.agents}
+          language={(settings || accountApi()).assistantLanguage || 'he'}
+          onAgentsChanged={() => apiList().then(list => dispatch({ type: 'HYDRATE', agents: list })).catch(() => {})}
+        />
       </div>
       <div style={{ position: 'fixed', bottom: 10, left: '50%', transform: 'translateX(-50%)', fontSize: 11, color: '#2a2a2a', letterSpacing: '2px', fontWeight: 500, pointerEvents: 'none', userSelect: 'none', zIndex: 1 }}>
         YOUR AGENTS. YOUR RULES.
