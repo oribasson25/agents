@@ -63,6 +63,16 @@ npm install
 
 Leaving `JWT_SECRET` unset falls back to a hard-coded development value — set it.
 
+## The starter agent
+
+Every new account is seeded with a copy of the agent named `weather` owned by an admin
+(`api/_defaultAgent.js`). The copy is live — editing that agent changes what the next sign-up
+receives — and carries the prompt, skills, tools and knowledge documents, but none of the
+owner's credentials: no LLM API key, no WhatsApp number or tokens, no Gmail connection, and
+tool secret values blanked while their names are kept as a hint. Seeding never throws, so a
+missing or renamed template leaves the new account empty rather than failing the sign-up. To
+change which agent is the template, rename it or edit `TEMPLATE_AGENT_NAME`.
+
 ## Migrations
 
 `schema.sql` is the starting point; everything after it lives in `migrations/` and is applied
