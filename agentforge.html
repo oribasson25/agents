@@ -4539,27 +4539,41 @@ npm run migrate            # הרצה בפועל`}</Block>
     return cfg.provider === 'ollama' ? !cfg.ollamaHost : !cfg.apiKey;
   }
 
-  // Pinned top-right of the content area: an agent without a key answers
-  // nothing, and that is not obvious until you test it.
+  // Pinned top-right of the content area, in both languages: an agent without
+  // a key answers nothing, and that is not obvious until you test it.
   function ApiKeyNote({ agents }) {
     const missing = (agents || []).filter(agentMissingKey).length;
+    const headline = {
+      he: missing === 0 ? 'זכרו להגדיר API Key'
+        : missing === 1 ? 'סוכן אחד ללא API Key'
+        : `${missing} סוכנים ללא API Key`,
+      en: missing === 0 ? 'Remember to set an API Key'
+        : missing === 1 ? '1 agent has no API Key'
+        : `${missing} agents have no API Key`,
+    };
+    const body = {
+      he: 'כל סוכן צריך מפתח משלו בלשונית Configuration כדי לעבוד. אפשר להשתמש באותו מפתח לכל הסוכנים.',
+      en: 'Every agent needs its own key in Configuration to work. The same key can be used for all agents.',
+    };
+    const strongStyle = { color: missing ? 'var(--warning)' : 'var(--text)' };
+
     return (
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-        <div dir="rtl" style={{
-          maxWidth: 430, display: 'flex', gap: 9, alignItems: 'flex-start',
-          padding: '9px 13px', borderRadius: 'var(--r-md)', fontSize: 12, lineHeight: 1.6,
+        <div style={{
+          maxWidth: 470, display: 'flex', gap: 9, alignItems: 'flex-start',
+          padding: '10px 13px', borderRadius: 'var(--r-md)', fontSize: 12, lineHeight: 1.6,
           background: missing ? 'rgba(245,158,11,0.10)' : 'var(--bg-card)',
           border: `1px solid ${missing ? 'rgba(245,158,11,0.35)' : 'var(--border)'}`,
           color: 'var(--text-2)',
         }}>
           <span style={{ flexShrink: 0 }}>🔑</span>
-          <div>
-            <strong style={{ color: missing ? 'var(--warning)' : 'var(--text)' }}>
-              {missing === 0 ? 'זכרו להגדיר API Key'
-                : missing === 1 ? 'סוכן אחד ללא API Key'
-                : `${missing} סוכנים ללא API Key`}
-            </strong>
-            {' — '}כל סוכן צריך מפתח משלו בלשונית Configuration כדי לעבוד. אפשר להשתמש באותו מפתח לכל הסוכנים.
+          <div style={{ minWidth: 0 }}>
+            <div dir="rtl" style={{ textAlign: 'right' }}>
+              <strong style={strongStyle}>{headline.he}</strong>{' — '}{body.he}
+            </div>
+            <div dir="ltr" style={{ textAlign: 'left', marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
+              <strong style={strongStyle}>{headline.en}</strong>{' — '}{body.en}
+            </div>
           </div>
         </div>
       </div>
