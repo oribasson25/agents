@@ -1,4 +1,5 @@
 import { sql } from './_db.js';
+import { sendGmail } from './_gmail.js';
 
 function applyDlp(text, dlp) {
   if (!dlp || typeof text !== 'string') return text;
@@ -63,9 +64,18 @@ async function retrieveRagChunks(agentId, query) {
   }
 }
 
+const EMAIL_TOOL = {
+  description: 'Send an email via the connected Gmail account. Use when explicitly instructed to send an email.',
+  parameters: {
+    to:      'Recipient email address',
+    subject: 'Email subject line',
+    body:    'Email body text',
+  },
+};
+
 function buildClaudeTools(agent) {
   const toolDefs = (agent.tools || []).filter(t => t.name !== 'switch_skill');
-  return toolDefs.map(t => {
+  const tools = toolDefs.map(t => {
     const predefinedUrls = (agent.scrapeUrls || (agent.scrapeUrl ? [agent.scrapeUrl] : [])).map(u => u.trim()).filter(Boolean);
     const hasPredefinedUrl = t.name === 'scrape_website' && predefinedUrls.length > 0;
     const params = hasPredefinedUrl ? (t.parameters || []).filter(p => p.name !== 'url') : (t.parameters || []);
@@ -79,11 +89,26 @@ function buildClaudeTools(agent) {
       },
     };
   });
+
+  if (agent.emailEnabled) {
+    tools.push({
+      name: 'send_email',
+      description: EMAIL_TOOL.description,
+      input_schema: {
+        type: 'object',
+        properties: Object.fromEntries(
+          Object.entries(EMAIL_TOOL.parameters).map(([name, description]) => [name, { type: 'string', description }])
+        ),
+        required: Object.keys(EMAIL_TOOL.parameters),
+      },
+    });
+  }
+  return tools;
 }
 
 function buildOpenAITools(agent) {
   const toolDefs = (agent.tools || []).filter(t => t.name !== 'switch_skill');
-  return toolDefs.map(t => {
+  const tools = toolDefs.map(t => {
     const predefinedUrls = (agent.scrapeUrls || (agent.scrapeUrl ? [agent.scrapeUrl] : [])).map(u => u.trim()).filter(Boolean);
     const hasPredefinedUrl = t.name === 'scrape_website' && predefinedUrls.length > 0;
     const params = hasPredefinedUrl ? (t.parameters || []).filter(p => p.name !== 'url') : (t.parameters || []);
@@ -100,10 +125,44 @@ function buildOpenAITools(agent) {
       },
     };
   });
+
+  if (agent.emailEnabled) {
+    tools.push({
+      type: 'function',
+      function: {
+        name: 'send_email',
+        description: EMAIL_TOOL.description,
+        parameters: {
+          type: 'object',
+          properties: Object.fromEntries(
+            Object.entries(EMAIL_TOOL.parameters).map(([name, description]) => [name, { type: 'string', description }])
+          ),
+          required: Object.keys(EMAIL_TOOL.parameters),
+        },
+      },
+    });
+  }
+  return tools;
 }
 
-async function executeTool(toolName, inputs, agent, baseUrl) {
+async function executeTool(toolName, inputs, agent, baseUrl, agentId) {
   if (toolName === 'switch_skill') return 'OK';
+
+  if (toolName === 'send_email') {
+    if (!agent.emailEnabled) return 'The send_email tool is disabled for this agent.';
+    try {
+      const { message } = await sendGmail({
+        agentId,
+        to: inputs.to,
+        subject: inputs.subject,
+        body: inputs.body,
+      });
+      return message;
+    } catch (err) {
+      console.error(`[send_email] agentId=${agentId} ${err.code || 'ERROR'}:`, err.message);
+      return `Error: ${err.message}`;
+    }
+  }
 
   const predefinedUrls = (agent.scrapeUrls || (agent.scrapeUrl ? [agent.scrapeUrl] : [])).map(u => u.trim()).filter(Boolean);
 
@@ -162,7 +221,6 @@ export async function runAgentTurn({ agent, agentId, messages, baseUrl }) {
   const model      = (agent.apiConfig && agent.apiConfig.model)      || 'claude-sonnet-4-5';
   const ollamaHost = ((agent.apiConfig && agent.apiConfig.ollamaHost) || 'http://localhost:11434').replace(/\/$/, '');
   const dlp        = agent.dlp || {};
-  const toolDefs   = agent.tools || [];
   const safeMessages = dlpMessages(messages, dlp);
 
   if (!apiKey && provider !== 'ollama') {
@@ -176,7 +234,8 @@ export async function runAgentTurn({ agent, agentId, messages, baseUrl }) {
 
     for (let round = 0; round < 10; round++) {
       const body = { model, max_tokens: 1024, system: systemPrompt, messages: msgs };
-      if (toolDefs.length > 0) body.tools = buildClaudeTools(agent);
+      const claudeTools = buildClaudeTools(agent);
+      if (claudeTools.length > 0) body.tools = claudeTools;
 
       const llmRes = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -192,7 +251,7 @@ export async function runAgentTurn({ agent, agentId, messages, baseUrl }) {
 
       const toolUses = d.content.filter(c => c.type === 'tool_use');
       const toolResults = await Promise.all(toolUses.map(async tu => {
-        const result = await executeTool(tu.name, tu.input, agent, baseUrl);
+        const result = await executeTool(tu.name, tu.input, agent, baseUrl, agentId);
         return { type: 'tool_result', tool_use_id: tu.id, content: result };
       }));
 
@@ -205,7 +264,8 @@ export async function runAgentTurn({ agent, agentId, messages, baseUrl }) {
 
     for (let round = 0; round < 10; round++) {
       const body = { model, messages: msgs };
-      if (toolDefs.length > 0) body.tools = buildOpenAITools(agent);
+      const openAITools = buildOpenAITools(agent);
+      if (openAITools.length > 0) body.tools = openAITools;
 
       const llmRes = await fetch(`${ollamaHost}/v1/chat/completions`, {
         method: 'POST',
@@ -222,7 +282,7 @@ export async function runAgentTurn({ agent, agentId, messages, baseUrl }) {
 
       const toolResultMsgs = await Promise.all((choice.message.tool_calls || []).map(async tc => {
         const inputs = JSON.parse(tc.function.arguments);
-        const result = await executeTool(tc.function.name, inputs, agent, baseUrl);
+        const result = await executeTool(tc.function.name, inputs, agent, baseUrl, agentId);
         return { role: 'tool', tool_call_id: tc.id, content: result };
       }));
 
@@ -235,7 +295,8 @@ export async function runAgentTurn({ agent, agentId, messages, baseUrl }) {
 
     for (let round = 0; round < 10; round++) {
       const body = { model, messages: msgs };
-      if (toolDefs.length > 0) body.tools = buildOpenAITools(agent);
+      const openAITools = buildOpenAITools(agent);
+      if (openAITools.length > 0) body.tools = openAITools;
 
       const llmRes = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -252,7 +313,7 @@ export async function runAgentTurn({ agent, agentId, messages, baseUrl }) {
 
       const toolResultMsgs = await Promise.all((choice.message.tool_calls || []).map(async tc => {
         const inputs = JSON.parse(tc.function.arguments);
-        const result = await executeTool(tc.function.name, inputs, agent, baseUrl);
+        const result = await executeTool(tc.function.name, inputs, agent, baseUrl, agentId);
         return { role: 'tool', tool_call_id: tc.id, content: result };
       }));
 

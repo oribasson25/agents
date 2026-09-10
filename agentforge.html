@@ -231,6 +231,7 @@
     docs: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>,
     settings: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
     admin: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
+    interactions: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"/></svg>,
     edit: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
     chat: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>,
     copy: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>,
@@ -291,10 +292,38 @@
     return apiFetch(`/api/agents/${id}`, { method: 'DELETE' });
   }
 
+  async function apiListInteractions(params = {}) {
+    const qs = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== '' && v !== null && v !== undefined)
+    );
+    const r = await apiFetch(`/api/chat-sessions?${qs}`);
+    if (!r.ok) throw new Error(`Failed to load interactions (${r.status})`);
+    return r.json();
+  }
+
+  /* ─────────────────── GMAIL (PER AGENT) ─────────────────── */
+  async function gmailStatus(agentId) {
+    const r = await apiFetch(`/api/gmail/status?agentId=${encodeURIComponent(agentId)}`);
+    if (!r.ok) throw new Error('status failed');
+    return r.json();
+  }
+  function gmailConnectUrl(agentId) {
+    return `/api/gmail/auth?token=${encodeURIComponent(getToken())}&agentId=${encodeURIComponent(agentId)}`;
+  }
+  async function gmailDisconnect(agentId) {
+    return apiFetch(`/api/gmail/disconnect?agentId=${encodeURIComponent(agentId)}`, { method: 'DELETE' });
+  }
+
   /* ─────────────────── ADMIN API ─────────────────── */
   async function adminListUsers() { return apiFetch('/api/admin/users').then(r => r.json()); }
   async function adminListUserAgents(userId) { return apiFetch(`/api/admin/users/${userId}/agents`).then(r => r.json()); }
   async function adminResetPassword(userId) { return apiFetch(`/api/admin/users/${userId}/reset-password`, { method: 'POST' }).then(r => r.json()); }
+  async function adminDeleteUser(userId, confirmUsername) {
+    const r = await apiFetch(`/api/admin/users/${userId}?confirm=${encodeURIComponent(confirmUsername)}`, { method: 'DELETE' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `Delete failed (${r.status})`);
+    return d;
+  }
   async function adminDeleteAgent(agentId) { return apiFetch(`/api/admin/agents/${agentId}`, { method: 'DELETE' }); }
   async function adminUpdateAgent(agent) { return apiFetch(`/api/admin/agents/${agent.id}`, { method: 'PUT', body: JSON.stringify(agent) }).then(r => r.json()); }
   async function adminDuplicateTo(agentId, targetUserId) { return apiFetch(`/api/admin/agents/${agentId}/duplicate-to/${targetUserId}`, { method: 'POST' }).then(r => r.json()); }
@@ -1034,7 +1063,7 @@
               <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--bg-panel)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--teal)' }}>{Icons.email}</div>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>send_email</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Send emails via Gmail — connect in Settings → Integrations</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Send emails from this agent's own Gmail account</div>
               </div>
             </div>
             <button
@@ -1053,6 +1082,7 @@
               }} />
             </button>
           </div>
+          <GmailAgentConnection agent={agent} />
         </div>
 
         {/* Preset tools */}
@@ -1518,7 +1548,7 @@
     async function executeTool(toolName, inputs) {
       if (toolName === 'switch_skill') return 'OK';
       if (toolName === 'send_email') {
-        const r = await apiFetch('/api/gmail/send', { method: 'POST', body: JSON.stringify(inputs) });
+        const r = await apiFetch('/api/gmail/send', { method: 'POST', body: JSON.stringify({ ...inputs, agentId: agent.id }) });
         const d = await r.json();
         return r.ok ? `Email sent to ${inputs.to}` : `Error: ${d.error}`;
       }
@@ -2832,9 +2862,62 @@ async function sendMsg(){
     );
   }
 
+  /* ─────────────────── GMAIL CONNECTION (PER AGENT) ─────────────────── */
+  function GmailAgentConnection({ agent }) {
+    const [state, setState] = useState({ loaded: false, connected: false, email: null });
+    const [busy, setBusy]   = useState(false);
+
+    useEffect(() => {
+      let live = true;
+      gmailStatus(agent.id)
+        .then(d => { if (live) setState({ loaded: true, connected: !!d.connected, email: d.email }); })
+        .catch(() => { if (live) setState({ loaded: true, connected: false, email: null }); });
+      return () => { live = false; };
+    }, [agent.id]);
+
+    async function disconnect() {
+      setBusy(true);
+      try {
+        await gmailDisconnect(agent.id);
+        setState({ loaded: true, connected: false, email: null });
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    const dotColor = !state.loaded ? 'var(--text-muted)' : state.connected ? 'var(--success)' : 'var(--text-muted)';
+
+    return (
+      <div style={{ borderTop: '1px solid var(--border)', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 600 }}>Gmail account</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {!state.loaded ? 'Checking…' : state.connected ? `Connected as ${state.email}` : 'Not connected — this agent cannot send email yet'}
+            </div>
+          </div>
+        </div>
+        {state.loaded && (
+          state.connected ? (
+            <button onClick={disconnect} disabled={busy}
+              style={{ padding: '6px 12px', borderRadius: 'var(--r-sm)', background: 'var(--bg-hover)', border: '1px solid var(--border)', color: 'var(--text-2)', fontSize: 12, fontWeight: 600, opacity: busy ? 0.6 : 1 }}>
+              {busy ? '…' : 'Disconnect'}
+            </button>
+          ) : (
+            <button onClick={() => { window.location.href = gmailConnectUrl(agent.id); }}
+              style={{ padding: '6px 12px', borderRadius: 'var(--r-sm)', background: 'var(--primary)', border: 'none', color: '#0a0a0a', fontSize: 12, fontWeight: 700 }}>
+              Connect Gmail
+            </button>
+          )
+        )}
+      </div>
+    );
+  }
+
   /* ─────────────────── AGENT EDITOR ─────────────────── */
-  function AgentEditor({ agent, onUpdate, onBack }) {
-    const [tab, setTab] = useState('configuration');
+  function AgentEditor({ agent, onUpdate, onBack, initialTab }) {
+    const [tab, setTab] = useState(initialTab || 'configuration');
     const TABS = ['configuration','skills','tools','knowledge','export','whatsapp'];
 
     return (
@@ -2886,9 +2969,9 @@ async function sendMsg(){
     const [hovered, setHovered] = useState(false);
 
     const actions = [
-      { icon: Icons.edit, label: 'Edit', fn: onEdit },
-      { icon: Icons.chat, label: 'Test', fn: onTest },
-      { icon: Icons.copy, label: 'Copy', fn: onDuplicate },
+      { icon: Icons.edit, label: 'Edit', fn: onEdit, labelled: true },
+      { icon: Icons.chat, label: 'Test', fn: onTest, labelled: true },
+      { icon: Icons.copy, label: 'Duplicate', fn: onDuplicate },
       { icon: Icons.export, label: 'Export', fn: onExport },
       { icon: Icons.trash, label: 'Delete', fn: onDelete, danger: true },
     ];
@@ -2931,25 +3014,25 @@ async function sendMsg(){
             {Icons.tool} {agent.tools.length} tools
           </span>
         </div>
-        {/* Actions */}
-        <div style={{ display: 'flex', gap: 4, borderTop: '1px solid var(--border)', paddingTop: 12, overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
-          {actions.map(({ icon, label, fn, danger }) => (
-            <button key={label} onClick={fn} title={label}
+        {/* Actions — only the two primary ones carry a label; the rest are
+            icon-only so nothing gets clipped at narrow card widths. */}
+        <div style={{ display: 'flex', gap: 4, borderTop: '1px solid var(--border)', paddingTop: 12 }} onClick={e => e.stopPropagation()}>
+          {actions.map(({ icon, label, fn, danger, labelled }) => (
+            <button key={label} onClick={fn} title={label} aria-label={label}
               style={{
-                flex: label === 'Delete' ? '0 0 32px' : 1,
+                flex: labelled ? '1 1 0' : '0 0 34px',
                 minWidth: 0,
                 padding: '7px 4px', borderRadius: 'var(--r-sm)',
                 fontSize: 11, fontWeight: 600, background: 'var(--bg-hover)',
                 color: danger ? 'var(--danger)' : 'var(--text-2)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
                 transition: 'background 0.15s, color 0.15s',
-                overflow: 'hidden',
               }}
               onMouseEnter={e => { e.currentTarget.style.background = danger ? 'rgba(239,68,68,0.12)' : 'var(--bg-input)'; if (!danger) e.currentTarget.style.color = 'var(--text)'; }}
               onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = danger ? 'var(--danger)' : 'var(--text-2)'; }}
             >
               {icon}
-              {label !== 'Delete' && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>}
+              {labelled && <span style={{ whiteSpace: 'nowrap' }}>{label}</span>}
             </button>
           ))}
         </div>
@@ -3301,10 +3384,280 @@ def run(**kwargs):
     );
   }
 
+  /* ─────────────────── INTERACTIONS ─────────────────── */
+  function fmtSessionDuration(seconds) {
+    const sec = Math.max(0, Math.round(seconds || 0));
+    if (sec < 60) return `${sec}s`;
+    const m = Math.floor(sec / 60), rest = sec % 60;
+    if (m < 60) return rest ? `${m}m ${rest}s` : `${m}m`;
+    const h = Math.floor(m / 60);
+    return `${h}h ${m % 60}m`;
+  }
+
+  const SOURCE_LABELS = { widget: 'Widget', whatsapp: 'WhatsApp', test: 'Test chat' };
+
+  const EMPTY_FILTERS = {
+    q: '', agentId: '', source: '', from: '', to: '',
+    minSeconds: '', maxSeconds: '', minMessages: '',
+  };
+
+  function InteractionsView({ agents, user, onOpenAgent }) {
+    const PAGE_SIZE = 25;
+    const [filters, setFilters] = useState(EMPTY_FILTERS);
+    const [sort, setSort]       = useState({ sort: 'started', dir: 'desc' });
+    const [offset, setOffset]   = useState(0);
+    const [scopeAll, setScopeAll] = useState(false);
+    const [data, setData]      = useState(null);
+    const [error, setError]    = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [openSession, setOpenSession] = useState(null);
+
+    const set = (key, val) => { setFilters(f => ({ ...f, [key]: val })); setOffset(0); };
+    const activeFilters = Object.keys(EMPTY_FILTERS).filter(k => filters[k] !== '').length;
+
+    // Filters are typed into, so debounce before hitting the API.
+    useEffect(() => {
+      let live = true;
+      setLoading(true);
+      const t = setTimeout(() => {
+        apiListInteractions({
+          ...filters,
+          sort: sort.sort, dir: sort.dir,
+          limit: PAGE_SIZE, offset,
+          scope: scopeAll ? 'all' : '',
+        })
+          .then(d => { if (live) { setData(d); setError(null); setLoading(false); } })
+          .catch(err => { if (live) { setError(err.message); setLoading(false); } });
+      }, 300);
+      return () => { live = false; clearTimeout(t); };
+    }, [filters, sort, offset, scopeAll]);
+
+    /* ---- one conversation ---- */
+    if (openSession) {
+      const msgs = (openSession.messages || []).filter(m => m.role === 'user' || m.role === 'assistant');
+      return (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
+            <button onClick={() => setOpenSession(null)} style={{ background: 'var(--bg-hover)', color: 'var(--text-2)', padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 13, border: '1px solid var(--border)' }}>← Back</button>
+            <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
+            <AvatarDisplay value={openSession.agent_avatar || '🤖'} size={28} />
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 18 }}>{openSession.agent_name}</div>
+              <div style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 2 }}>
+                {SOURCE_LABELS[openSession.source] || openSession.source}
+                &nbsp;·&nbsp;{new Date(openSession.started_at).toLocaleString()}
+                &nbsp;·&nbsp;{fmtSessionDuration(openSession.duration_seconds)}
+                &nbsp;·&nbsp;{msgs.length} messages
+              </div>
+            </div>
+            {onOpenAgent && (
+              <button onClick={() => onOpenAgent(openSession.agent_id)}
+                style={{ marginLeft: 'auto', background: 'var(--bg-hover)', color: 'var(--text-2)', padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 13, border: '1px solid var(--border)' }}>
+                Open agent
+              </button>
+            )}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 760 }}>
+            {msgs.map((m, i) => (
+              <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                <div style={{
+                  maxWidth: '80%', padding: '10px 14px', fontSize: 14, lineHeight: 1.5,
+                  whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                  borderRadius: m.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+                  background: m.role === 'user' ? 'var(--primary)' : 'var(--bg-card)',
+                  color: m.role === 'user' ? '#0a0a0a' : 'var(--text)',
+                  border: m.role === 'assistant' ? '1px solid var(--border)' : 'none',
+                }}>{typeof m.content === 'string' ? m.content : JSON.stringify(m.content)}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, padding: '0 4px' }}>
+                  {m.role === 'user' ? 'User' : openSession.agent_name}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    /* ---- list ---- */
+    const sessions = data?.sessions || [];
+    const total = data?.total || 0;
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    const currentPage = Math.floor(offset / PAGE_SIZE);
+
+    // Agent options: the user's own agents, plus any agent seen in the current
+    // page (an admin looking at every user's conversations).
+    const agentOptions = [...(agents || []).map(a => ({ id: a.id, name: a.name }))];
+    sessions.forEach(sx => {
+      if (!agentOptions.some(o => o.id === sx.agent_id)) agentOptions.push({ id: sx.agent_id, name: sx.agent_name || sx.agent_id });
+    });
+
+    const sourceOptions = (data?.sources || []).map(sx => sx.source);
+
+    const inputStyle = {
+      width: '100%', fontSize: 12, padding: '5px 7px', borderRadius: 'var(--r-sm)',
+      background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text)',
+    };
+    const thStyle = { padding: '10px 14px', textAlign: 'left', fontSize: 12, color: 'var(--text-2)', fontWeight: 700, whiteSpace: 'nowrap' };
+    const tdStyle = { padding: '11px 14px', fontSize: 13, verticalAlign: 'middle' };
+
+    function sortable(key, label) {
+      const active = sort.sort === key;
+      return (
+        <button
+          onClick={() => setSort(sx => ({ sort: key, dir: sx.sort === key && sx.dir === 'desc' ? 'asc' : 'desc' }))}
+          title={`Sort by ${label.toLowerCase()}`}
+          style={{ background: 'transparent', padding: 0, color: active ? 'var(--primary)' : 'var(--text-2)', fontSize: 12, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+        >
+          {label}<span style={{ opacity: active ? 1 : 0.25 }}>{active && sort.dir === 'asc' ? '↑' : '↓'}</span>
+        </button>
+      );
+    }
+
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 22, gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 26, letterSpacing: '-0.02em' }}>Interactions</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4, fontWeight: 500 }}>
+              {loading && !data ? 'Loading…'
+                : `${total} conversation${total !== 1 ? 's' : ''}${activeFilters ? ` matching ${activeFilters} filter${activeFilters !== 1 ? 's' : ''}` : ''}`}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {user?.isAdmin && (
+              <button onClick={() => { setScopeAll(v => !v); setOffset(0); }}
+                title="Admins can list conversations across every user"
+                style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 'var(--r-md)', border: `1px solid ${scopeAll ? 'var(--primary)' : 'var(--border)'}`, background: scopeAll ? 'var(--primary-dim)' : 'var(--bg-card)', color: scopeAll ? 'var(--primary)' : 'var(--text-2)' }}>
+                {scopeAll ? 'All users' : 'My agents'}
+              </button>
+            )}
+            {activeFilters > 0 && (
+              <button onClick={() => { setFilters(EMPTY_FILTERS); setOffset(0); }}
+                style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-2)' }}>
+                Clear filters
+              </button>
+            )}
+          </div>
+        </div>
+
+        {error ? (
+          <div style={{ padding: 20, borderRadius: 'var(--r-lg)', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: 'var(--danger)', fontSize: 13 }}>{error}</div>
+        ) : (
+          <>
+            <div style={{ background: 'var(--bg-card)', borderRadius: 'var(--r-lg)', border: '1px solid var(--border)', overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+                    <th style={thStyle}>Agent</th>
+                    {scopeAll && <th style={thStyle}>Owner</th>}
+                    <th style={thStyle}>Channel</th>
+                    <th style={thStyle}>{sortable('started', 'Started')}</th>
+                    <th style={thStyle}>{sortable('duration', 'Duration')}</th>
+                    <th style={thStyle}>{sortable('messages', 'Messages')}</th>
+                    <th style={thStyle}>Conversation</th>
+                  </tr>
+                  {/* per-column filters */}
+                  <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+                    <th style={{ padding: '0 14px 10px' }}>
+                      <select value={filters.agentId} onChange={e => set('agentId', e.target.value)} style={inputStyle}>
+                        <option value="">All agents</option>
+                        {agentOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                      </select>
+                    </th>
+                    {scopeAll && <th style={{ padding: '0 14px 10px' }} />}
+                    <th style={{ padding: '0 14px 10px' }}>
+                      <select value={filters.source} onChange={e => set('source', e.target.value)} style={inputStyle}>
+                        <option value="">All</option>
+                        {sourceOptions.map(sx => <option key={sx} value={sx}>{SOURCE_LABELS[sx] || sx}</option>)}
+                      </select>
+                    </th>
+                    <th style={{ padding: '0 14px 10px' }}>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <input type="date" value={filters.from} onChange={e => set('from', e.target.value)} title="From" style={inputStyle} />
+                        <input type="date" value={filters.to} onChange={e => set('to', e.target.value)} title="To" style={inputStyle} />
+                      </div>
+                    </th>
+                    <th style={{ padding: '0 14px 10px' }}>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <input type="number" min="0" placeholder="min s" value={filters.minSeconds} onChange={e => set('minSeconds', e.target.value)} style={inputStyle} />
+                        <input type="number" min="0" placeholder="max s" value={filters.maxSeconds} onChange={e => set('maxSeconds', e.target.value)} style={inputStyle} />
+                      </div>
+                    </th>
+                    <th style={{ padding: '0 14px 10px' }}>
+                      <input type="number" min="0" placeholder="min" value={filters.minMessages} onChange={e => set('minMessages', e.target.value)} style={inputStyle} />
+                    </th>
+                    <th style={{ padding: '0 14px 10px' }}>
+                      <input type="search" placeholder="Search every message…" value={filters.q} onChange={e => set('q', e.target.value)} style={inputStyle} />
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading && (
+                    <tr><td colSpan={scopeAll ? 7 : 6} style={{ ...tdStyle, color: 'var(--text-muted)', padding: 28, textAlign: 'center' }}>Loading…</td></tr>
+                  )}
+                  {!loading && sessions.length === 0 && (
+                    <tr><td colSpan={scopeAll ? 7 : 6} style={{ ...tdStyle, color: 'var(--text-muted)', padding: 40, textAlign: 'center' }}>
+                      {activeFilters ? 'No conversations match these filters.' : 'No conversations yet.'}
+                    </td></tr>
+                  )}
+                  {!loading && sessions.map((sx, i) => {
+                    const msgs = sx.messages || [];
+                    const firstUser = msgs.find(m => m.role === 'user');
+                    const preview = typeof firstUser?.content === 'string' ? firstUser.content : '—';
+                    return (
+                      <tr key={sx.id}
+                        onClick={() => setOpenSession(sx)}
+                        style={{ borderBottom: i < sessions.length - 1 ? '1px solid var(--border)' : 'none', cursor: 'pointer' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <td style={tdStyle}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                            <AvatarDisplay value={sx.agent_avatar || '🤖'} size={26} />
+                            <span style={{ fontWeight: 600 }}>{sx.agent_name || '—'}</span>
+                          </div>
+                        </td>
+                        {scopeAll && <td style={{ ...tdStyle, color: 'var(--text-2)' }}>{sx.owner_username || '—'}</td>}
+                        <td style={tdStyle}>
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 'var(--r-sm)', background: 'var(--bg-hover)', color: 'var(--text-2)', border: '1px solid var(--border)', whiteSpace: 'nowrap' }}>
+                            {SOURCE_LABELS[sx.source] || sx.source}
+                          </span>
+                        </td>
+                        <td style={{ ...tdStyle, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
+                          {new Date(sx.started_at).toLocaleDateString()} {new Date(sx.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </td>
+                        <td style={{ ...tdStyle, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>{fmtSessionDuration(sx.duration_seconds)}</td>
+                        <td style={{ ...tdStyle, color: 'var(--text-2)' }}>{sx.message_count}</td>
+                        <td style={{ ...tdStyle, maxWidth: 340 }}>
+                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-2)' }}>{preview}</div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 20 }}>
+                <button onClick={() => setOffset(Math.max(0, (currentPage - 1) * PAGE_SIZE))} disabled={currentPage === 0}
+                  style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', background: 'var(--bg-card)', border: '1px solid var(--border)', color: currentPage === 0 ? 'var(--text-muted)' : 'var(--text)', fontSize: 13 }}>← Prev</button>
+                <span style={{ fontSize: 13, color: 'var(--text-2)' }}>{currentPage + 1} / {totalPages}</span>
+                <button onClick={() => setOffset((currentPage + 1) * PAGE_SIZE)} disabled={currentPage >= totalPages - 1}
+                  style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', background: 'var(--bg-card)', border: '1px solid var(--border)', color: currentPage >= totalPages - 1 ? 'var(--text-muted)' : 'var(--text)', fontSize: 13 }}>Next →</button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
+
   /* ─────────────────── SIDEBAR ─────────────────── */
   function Sidebar({ activeNav, onNav, user, onLogout }) {
     const items = [
       { id: 'home', label: 'Home', icon: Icons.home },
+      { id: 'interactions', label: 'Interactions', icon: Icons.interactions },
       { id: 'docs', label: 'Documentation', icon: Icons.docs },
       { id: 'settings', label: 'Settings', icon: Icons.settings },
       ...(user && user.isAdmin ? [{ id: 'admin', label: 'Admin', icon: Icons.admin }] : []),
@@ -3703,10 +4056,29 @@ def run(**kwargs):
     const [users, setUsers]         = useState(null);
     const [resetting, setResetting] = useState(null);
     const [resetResult, setResetResult] = useState({});
+    const [deleting, setDeleting]   = useState(null);   // userId awaiting confirmation
+    const [confirmText, setConfirmText] = useState('');
+    const [deleteBusy, setDeleteBusy] = useState(false);
+    const [deleteError, setDeleteError] = useState({});
 
     useEffect(() => {
       adminListUsers().then(setUsers).catch(() => setUsers([]));
     }, []);
+
+    async function handleDelete(u) {
+      setDeleteBusy(true);
+      setDeleteError(e => ({ ...e, [u.id]: null }));
+      try {
+        await adminDeleteUser(u.id, confirmText);
+        setUsers(list => list.filter(x => x.id !== u.id));
+        setDeleting(null);
+        setConfirmText('');
+      } catch (err) {
+        setDeleteError(e => ({ ...e, [u.id]: err.message }));
+      } finally {
+        setDeleteBusy(false);
+      }
+    }
 
     async function handleReset(userId) {
       setResetting(userId);
@@ -3789,7 +4161,40 @@ def run(**kwargs):
                           New: {resetResult[u.id]}
                         </span>
                       )}
+                      {deleting === u.id ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <input
+                            autoFocus
+                            value={confirmText}
+                            onChange={e => setConfirmText(e.target.value)}
+                            placeholder={`type "${u.username}"`}
+                            style={{ fontSize: 12, padding: '4px 8px', borderRadius: 'var(--r-sm)', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text)', width: 150 }}
+                          />
+                          <button onClick={() => handleDelete(u)} disabled={deleteBusy || confirmText !== u.username}
+                            style={{ fontSize: 12, padding: '4px 10px', borderRadius: 'var(--r-sm)', background: confirmText === u.username ? 'var(--danger)' : 'var(--bg-hover)', color: confirmText === u.username ? '#fff' : 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                            {deleteBusy ? '…' : 'Delete forever'}
+                          </button>
+                          <button onClick={() => { setDeleting(null); setConfirmText(''); }}
+                            style={{ fontSize: 12, padding: '4px 10px', borderRadius: 'var(--r-sm)', background: 'var(--bg-hover)', color: 'var(--text-2)', border: '1px solid var(--border)' }}>
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button onClick={() => { setDeleting(u.id); setConfirmText(''); setDeleteError(e => ({ ...e, [u.id]: null })); }}
+                          title={`Delete ${u.username} with all their agents and conversations`}
+                          style={{ fontSize: 12, padding: '4px 10px', borderRadius: 'var(--r-sm)', background: 'transparent', color: 'var(--danger)', border: '1px solid rgba(239,68,68,0.35)' }}>
+                          Delete User
+                        </button>
+                      )}
+                      {deleteError[u.id] && (
+                        <span style={{ fontSize: 12, color: 'var(--danger)' }}>{deleteError[u.id]}</span>
+                      )}
                     </div>
+                    {deleting === u.id && (
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6, maxWidth: 340, lineHeight: 1.5 }}>
+                        Deletes the user, their {u.agent_count} agent{u.agent_count !== 1 ? 's' : ''}, and every conversation, document and channel those agents own. This cannot be undone.
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -3922,22 +4327,6 @@ def run(**kwargs):
   /* ─────────────────── SETTINGS PANEL ─────────────────── */
   function SettingsPanel({ theme, onToggleTheme, user, onLogout }) {
     const isLight = theme === 'light';
-    const [gmail, setGmail] = useState({ loaded: false, connected: false, email: null });
-
-    useEffect(() => {
-      apiFetch('/api/gmail/status')
-        .then(r => r.json())
-        .then(d => setGmail({ loaded: true, connected: d.connected, email: d.email }))
-        .catch(() => setGmail({ loaded: true, connected: false, email: null }));
-    }, []);
-
-    function connectGmail() {
-      window.location.href = `/api/gmail/auth?token=${encodeURIComponent(getToken())}`;
-    }
-    async function disconnectGmail() {
-      await apiFetch('/api/gmail/disconnect', { method: 'DELETE' });
-      setGmail({ loaded: true, connected: false, email: null });
-    }
     const sectionStyle = {
       background: 'var(--bg-card)', borderRadius: 'var(--r-lg)',
       border: '1px solid var(--border)', overflow: 'hidden',
@@ -4004,21 +4393,14 @@ def run(**kwargs):
           <div style={sectionHeader}>Integrations</div>
           <div style={rowStyle}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ ...iconBox, color: gmail.connected ? '#22c55e' : 'var(--text-2)' }}>{Icons.email}</div>
+              <div style={{ ...iconBox, color: 'var(--text-2)' }}>{Icons.email}</div>
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600 }}>Gmail</div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                  {!gmail.loaded ? 'Checking…' : gmail.connected ? `Connected as ${gmail.email}` : 'Not connected'}
+                  Connected per agent — open an agent and use the Tools tab
                 </div>
               </div>
             </div>
-            {gmail.loaded && (
-              gmail.connected ? (
-                <button onClick={disconnectGmail} style={{ padding: '7px 14px', borderRadius: 'var(--r-sm)', cursor: 'pointer', background: 'var(--bg-hover)', border: '1px solid var(--border)', color: 'var(--text-2)', fontSize: 12, fontWeight: 600 }}>Disconnect</button>
-              ) : (
-                <button onClick={connectGmail} style={{ padding: '7px 14px', borderRadius: 'var(--r-sm)', cursor: 'pointer', background: 'var(--primary)', border: 'none', color: '#fff', fontSize: 12, fontWeight: 600 }}>Connect Gmail</button>
-              )
-            )}
           </div>
         </div>
 
@@ -4066,6 +4448,8 @@ def run(**kwargs):
     const [loading, setLoading] = useState(true);
     const [adminSelectedUser, setAdminSelectedUser] = useState(null);
 
+    const [editorTab, setEditorTab] = useState(null);
+
     // Load agents on mount
     useEffect(() => {
       apiList().then(agents => {
@@ -4074,6 +4458,24 @@ def run(**kwargs):
       }).catch(() => {
         setLoading(false);
       });
+    }, []);
+
+    // Returning from the Gmail OAuth flow: reopen the agent whose mailbox was
+    // just connected, on the tab the button lives on.
+    useEffect(() => {
+      const params = new URLSearchParams(window.location.search);
+      const connectedAgent = params.get('gmail_connected') ? params.get('agent') : null;
+      const gmailError = params.get('gmail_error');
+
+      if (connectedAgent) {
+        setNav('home');
+        setEditorTab('tools');
+        dispatch({ type: 'SET_VIEW', view: 'editor', editingId: connectedAgent });
+      }
+      if (gmailError) alert(`Gmail connection failed: ${gmailError}`);
+      if (connectedAgent || gmailError) {
+        window.history.replaceState({}, '', window.location.pathname);
+      }
     }, []);
 
     // Debounced save
@@ -4137,8 +4539,8 @@ def run(**kwargs):
     function handleNav(id) {
       setNav(id);
       if (id === 'home') { dispatch({ type: 'SET_VIEW', view: 'list' }); setAdminSelectedUser(null); }
+      if (id === 'interactions') setAdminSelectedUser(null);
       if (id === 'admin') setAdminSelectedUser(null);
-      if (id === 'conversations') dispatch({ type: 'SET_VIEW', view: 'list' });
     }
 
     return (
@@ -4147,7 +4549,13 @@ def run(**kwargs):
         <Sidebar activeNav={nav} onNav={handleNav} user={user} onLogout={onLogout} />
         <div style={{ flex: 1, overflowY: 'auto', padding: '32px 36px 80px', background: 'var(--bg-app)', position: 'relative' }}>
           <BgLogo size={560} wrapStyle={{ bottom: '-80px', right: '-80px' }} />
-          {nav === 'docs' ? (
+          {nav === 'interactions' ? (
+            <InteractionsView
+              agents={state.agents}
+              user={user}
+              onOpenAgent={id => { setNav('home'); setEditorTab(null); dispatch({ type: 'SET_VIEW', view: 'editor', editingId: id }); }}
+            />
+          ) : nav === 'docs' ? (
             <DocsView />
           ) : nav === 'admin' ? (
             adminSelectedUser ? (
@@ -4167,8 +4575,9 @@ def run(**kwargs):
           ) : state.view === 'editor' && editingAgent ? (
             <AgentEditor
               agent={editingAgent}
+              initialTab={editorTab}
               onUpdate={handleUpdate}
-              onBack={() => dispatch({ type: 'SET_VIEW', view: 'list' })}
+              onBack={() => { setEditorTab(null); dispatch({ type: 'SET_VIEW', view: 'list' }); }}
             />
           ) : (
             <AgentListView

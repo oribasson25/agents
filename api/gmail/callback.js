@@ -25,7 +25,10 @@ export default async function handler(req, res) {
     return res.redirect(302, `${appUrl}/?gmail_error=invalid_state`);
   }
 
-  const { userId } = stateData;
+  const { agentId } = stateData;
+  if (!agentId) {
+    return res.redirect(302, `${appUrl}/?gmail_error=missing_agent`);
+  }
   const redirectUri = `${appUrl}/api/gmail/callback`;
 
   // Exchange code for tokens
@@ -56,9 +59,9 @@ export default async function handler(req, res) {
   const expiry = Math.floor(Date.now() / 1000) + (tokens.expires_in || 3600);
 
   await sql`
-    insert into gmail_tokens (user_id, email, access_token, refresh_token, expiry)
-    values (${userId}, ${gmailEmail}, ${tokens.access_token}, ${tokens.refresh_token || ''}, ${expiry})
-    on conflict (user_id) do update set
+    insert into gmail_tokens (agent_id, email, access_token, refresh_token, expiry)
+    values (${agentId}, ${gmailEmail}, ${tokens.access_token}, ${tokens.refresh_token || ''}, ${expiry})
+    on conflict (agent_id) do update set
       email         = excluded.email,
       access_token  = excluded.access_token,
       refresh_token = case when excluded.refresh_token != '' then excluded.refresh_token
@@ -66,5 +69,6 @@ export default async function handler(req, res) {
       expiry        = excluded.expiry
   `;
 
-  res.redirect(302, `${appUrl}/?gmail_connected=1`);
+  // Send the user back to the agent whose mailbox they just connected.
+  res.redirect(302, `${appUrl}/?gmail_connected=1&agent=${encodeURIComponent(agentId)}`);
 }
