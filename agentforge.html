@@ -1030,11 +1030,313 @@
     return '📄';
   }
 
+  /* ─────────────────── TOOL CODE ASSISTANT ─────────────────── */
+
+  // One-shot chat completion against the agent's own provider/key/model — no
+  // agent tools, no RAG, no DLP. This is the builder talking to the model, not
+  // an end user talking to the agent.
+  async function callPlainLLM(agent, system, history, maxTokens = 4096) {
+    const { apiKey, provider, model } = agent.apiConfig || {};
+
+    if (provider === 'claude') {
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({ model, max_tokens: maxTokens, system, messages: history }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
+      return d.content.find(c => c.type === 'text')?.text || '';
+    }
+
+    if (provider === 'ollama') {
+      const host = (agent.apiConfig.ollamaHost || 'http://localhost:11434').replace(/\/$/, '');
+      const r = await fetch('/api/ollama-proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ host, path: '/v1/chat/completions', body: { model, messages: [{ role: 'system', content: system }, ...history] } }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
+      return d.choices?.[0]?.message?.content || '';
+    }
+
+    const r = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({ model, max_tokens: maxTokens, messages: [{ role: 'system', content: system }, ...history] }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
+    return d.choices?.[0]?.message?.content || '';
+  }
+
+  // The sandbox the generated code has to run in (api/run_tool.py).
+  const TOOL_RUNTIME_CONTRACT = [
+    'The code MUST define `def run(**kwargs):` — the platform calls that function and nothing else.',
+    "The tool's declared parameters arrive as keyword arguments inside kwargs. Read them defensively: kwargs.get('name').",
+    'Declared environment variables are readable with os.environ — never hardcode a secret or an API key.',
+    'Whatever run() returns is converted with str(), so return a string or something readable as one.',
+    'Only the Python standard library is available, plus pip packages listed in the tool\'s Packages field.',
+    'There is no persistent filesystem and no local network. Outbound HTTPS is allowed.',
+    'Raise nothing on the happy path: catch expected failures and return a short human-readable error string instead.',
+  ];
+
+  function buildToolAssistantPrompt(tool) {
+    const params = (tool.parameters || []).filter(p => p.name);
+    return [
+      'You are a Python tool-writing assistant built into the 8Legs.ai agent builder.',
+      'You write and revise the code of ONE tool, which an AI agent will call at runtime.',
+      '',
+      'Runtime contract — never break it:',
+      ...TOOL_RUNTIME_CONTRACT.map(line => `- ${line}`),
+      '',
+      'How to answer:',
+      '- Answer in the language the user writes in. Be brief: a couple of sentences, no preamble.',
+      '- Whenever you create or change the code, output the COMPLETE new file inside ONE ```python block.',
+      '  Never a diff, never a fragment, never two blocks — that block is written straight into the',
+      '  user\'s editor and replaces what is there.',
+      '- If the code needs pip packages, add a final line exactly like: PACKAGES: requests, beautifulsoup4',
+      '- If the user only asks a question, answer it without a code block.',
+      '',
+      'The tool being edited right now:',
+      `- Name: ${tool.name || '(unnamed)'}`,
+      `- Description: ${tool.description || '(none)'}`,
+      `- Parameters: ${params.length ? params.map(p => `${p.name} (${p.type || 'string'})${p.description ? ' — ' + p.description : ''}`).join('; ') : '(none declared)'}`,
+      `- Packages: ${tool.packages || '(none)'}`,
+      `- Env vars: ${(tool.envVars || []).filter(e => e.key).map(e => e.key).join(', ') || '(none)'}`,
+      '',
+      'Current code:',
+      '```python',
+      tool.code || '(empty)',
+      '```',
+    ].join('\n');
+  }
+
+  function extractPythonBlock(text) {
+    const m = /```(?:python|py)?[ \t]*\r?\n([\s\S]*?)```/i.exec(text || '');
+    if (!m) return null;
+    const code = m[1].replace(/\s+$/, '');
+    return code ? code + '\n' : null;
+  }
+
+  function extractPackagesLine(text) {
+    const m = /^[ \t>*-]*PACKAGES:[ \t]*(.+)$/im.exec(text || '');
+    if (!m) return null;
+    const list = m[1].split(',').map(x => x.trim().replace(/[`'"]/g, '')).filter(Boolean);
+    return list.length ? list.join(', ') : null;
+  }
+
+  // Splits a reply into prose and fenced code, for rendering.
+  function splitReply(text) {
+    const parts = [];
+    const re = /```[a-z]*[ \t]*\r?\n([\s\S]*?)```/gi;
+    let last = 0, m;
+    while ((m = re.exec(text || '')) !== null) {
+      if (m.index > last) parts.push({ type: 'text', content: text.slice(last, m.index) });
+      parts.push({ type: 'code', content: m[1] });
+      last = m.index + m[0].length;
+    }
+    if (last < (text || '').length) parts.push({ type: 'text', content: text.slice(last) });
+    return parts.filter(pt => pt.content.trim() !== '');
+  }
+
+  const ASSISTANT_QUICK_PROMPTS = [
+    { label: 'Write it for me', prompt: 'Write the full code for this tool based on its name, description and parameters.' },
+    { label: 'Explain the code', prompt: 'Explain what the current code does, step by step, and point out anything risky.' },
+    { label: 'Add error handling', prompt: 'Harden the current code: validate the inputs, handle network and parsing failures, and return clear error strings.' },
+    { label: 'Review it', prompt: 'Review the current code against the runtime contract and fix anything that would break at runtime.' },
+  ];
+
+  function ToolCodeAssistant({ agent, tool, targetKey, onApply, onClose }) {
+    const [messages, setMessages] = useState([]);
+    const [input, setInput] = useState('');
+    const [pending, setPending] = useState(false);
+    const listRef = useRef(null);
+    const toolRef = useRef(tool);
+    useEffect(() => { toolRef.current = tool; }, [tool]);
+
+    // Switching to a different tool starts a fresh conversation.
+    useEffect(() => { setMessages([]); setInput(''); }, [targetKey]);
+
+    useEffect(() => {
+      if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
+    }, [messages, pending]);
+
+    const noKey = (agent.apiConfig || {}).provider === 'ollama'
+      ? !agent.apiConfig.ollamaHost
+      : !(agent.apiConfig || {}).apiKey;
+
+    async function send(text) {
+      const question = (text || '').trim();
+      if (!question || pending || noKey) return;
+      setInput('');
+
+      const history = [...messages.filter(m => m.role === 'user' || m.role === 'assistant')
+        .map(m => ({ role: m.role, content: m.content })), { role: 'user', content: question }];
+
+      setMessages(m => [...m, { id: uid(), role: 'user', content: question }]);
+      setPending(true);
+      try {
+        const reply = await callPlainLLM(agent, buildToolAssistantPrompt(toolRef.current), history);
+        const code = extractPythonBlock(reply);
+        const packages = extractPackagesLine(reply);
+
+        // "Writes it straight into the interface": apply immediately, and keep
+        // what was there so a single click can put it back.
+        let applied = null;
+        if (code || packages) {
+          const before = {};
+          const fields = {};
+          if (code && code !== toolRef.current.code) { before.code = toolRef.current.code; fields.code = code; }
+          if (packages && packages !== toolRef.current.packages) { before.packages = toolRef.current.packages || ''; fields.packages = packages; }
+          if (Object.keys(fields).length > 0) {
+            onApply(fields);
+            applied = { fields: Object.keys(fields), before };
+          }
+        }
+        setMessages(m => [...m, { id: uid(), role: 'assistant', content: reply, applied }]);
+      } catch (err) {
+        setMessages(m => [...m, { id: uid(), role: 'error', content: err.message }]);
+      } finally {
+        setPending(false);
+      }
+    }
+
+    function undo(msgId, before) {
+      onApply(before);
+      setMessages(m => m.map(x => x.id === msgId ? { ...x, applied: null, undone: true } : x));
+    }
+
+    return (
+      <div className="slide-in-right" style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(520px, 96vw)', background: 'var(--bg-sidebar)', borderLeft: '1px solid var(--border)', zIndex: 201, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.5)' }}>
+        {/* Header */}
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--teal-dim)', border: '1px solid var(--teal)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--teal)', flexShrink: 0 }}>{Icons.tool}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>Tool Assistant</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {tool.name ? `Editing ${tool.name}` : 'New tool'} · {(agent.apiConfig || {}).model || 'no model'}
+            </div>
+          </div>
+          <IconBtn onClick={onClose} title="Close">✕</IconBtn>
+        </div>
+
+        {noKey && (
+          <div style={{ background: 'rgba(245,158,11,0.15)', borderBottom: '1px solid rgba(245,158,11,0.3)', padding: '8px 16px', fontSize: 12, color: 'var(--warning)', textAlign: 'center' }}>
+            {(agent.apiConfig || {}).provider === 'ollama'
+              ? 'Set the Ollama server in Configuration to use the assistant'
+              : 'Add an API key in Configuration to use the assistant'}
+          </div>
+        )}
+
+        {/* Conversation */}
+        <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12, background: 'var(--bg-app)' }}>
+          {messages.length === 0 && (
+            <div style={{ color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.6 }}>
+              Ask for the tool's code and it is written straight into the editor on the left.
+              You can also ask questions about the current code or request changes.
+            </div>
+          )}
+
+          {messages.map(msg => {
+            if (msg.role === 'user') {
+              return (
+                <div key={msg.id} style={{ alignSelf: 'flex-end', maxWidth: '88%', background: 'var(--primary)', color: '#0a0a0a', padding: '8px 12px', borderRadius: '14px 14px 4px 14px', fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }} dir="auto">
+                  {msg.content}
+                </div>
+              );
+            }
+            if (msg.role === 'error') {
+              return (
+                <div key={msg.id} style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--danger)', padding: '8px 12px', borderRadius: 'var(--r-md)', fontSize: 12, wordBreak: 'break-word' }}>
+                  {msg.content}
+                </div>
+              );
+            }
+            return (
+              <div key={msg.id} style={{ alignSelf: 'stretch', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {splitReply(msg.content).map((part, i) => part.type === 'text' ? (
+                  <div key={i} dir="auto" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', padding: '9px 12px', borderRadius: '14px 14px 14px 4px', fontSize: 13, lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                    {part.content.trim()}
+                  </div>
+                ) : (
+                  <pre key={i} style={{ margin: 0, background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 10, fontSize: 11.5, lineHeight: 1.5, overflowX: 'auto', fontFamily: "'JetBrains Mono','Fira Code',monospace", color: 'var(--text-2)', maxHeight: 260 }}>
+                    {part.content}
+                  </pre>
+                ))}
+                {msg.applied && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--success)' }}>
+                    <span>✓ written to the editor ({msg.applied.fields.join(' + ')})</span>
+                    <button onClick={() => undo(msg.id, msg.applied.before)}
+                      style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--r-sm)', background: 'var(--bg-hover)', border: '1px solid var(--border)', color: 'var(--text-2)' }}>
+                      Undo
+                    </button>
+                  </div>
+                )}
+                {msg.undone && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>↩ reverted</div>}
+              </div>
+            );
+          })}
+
+          {pending && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Thinking…</div>}
+        </div>
+
+        {/* Quick prompts */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '10px 12px 0', background: 'var(--bg-panel)', borderTop: '1px solid var(--border)' }}>
+          {ASSISTANT_QUICK_PROMPTS.map(qp => (
+            <button key={qp.label} onClick={() => send(qp.prompt)} disabled={pending || noKey}
+              style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 'var(--r-xl)', background: 'var(--bg-hover)', border: '1px solid var(--border)', color: 'var(--text-2)', opacity: pending || noKey ? 0.5 : 1 }}>
+              {qp.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Input */}
+        <div style={{ padding: '10px 12px', background: 'var(--bg-panel)' }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <textarea
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input); } }}
+              dir="auto"
+              rows={2}
+              disabled={pending || noKey}
+              placeholder="Describe what the tool should do…"
+              style={{ flex: 1, resize: 'none', fontSize: 13, padding: '8px 12px', borderRadius: 'var(--r-md)' }}
+            />
+            <button onClick={() => send(input)} disabled={pending || noKey || !input.trim()}
+              style={{ background: 'var(--teal)', color: '#04211e', padding: '0 14px', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 16, opacity: pending || noKey || !input.trim() ? 0.5 : 1 }}>➤</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function ToolsTab({ agent, onUpdate }) {
     const [expandedId, setExpandedId] = useState(null);
     const [addOpen, setAddOpen] = useState(false);
     const defaultCode = '# Parameters arrive as kwargs\n# Access env vars with os.environ["MY_KEY"]\nimport os\nimport urllib.request, json\n\ndef run(**kwargs):\n    # Example: call an external API\n    # url = os.environ.get("API_URL", "")\n    # with urllib.request.urlopen(url) as r:\n    #     data = json.loads(r.read())\n    # return str(data)\n    return "result"\n';
     const [newTool, setNewTool] = useState({ name: '', description: '', parameters: [], packages: '', envVars: [], code: defaultCode });
+    // { kind: 'tool', id } | { kind: 'new' } — which tool the assistant is on
+    const [assistantTarget, setAssistantTarget] = useState(null);
+
+    const assistantTool = !assistantTarget ? null
+      : assistantTarget.kind === 'new' ? newTool
+      : (agent.tools || []).find(t => t.id === assistantTarget.id) || null;
+
+    // The assistant hands back whole fields (code, packages) at once, so patch
+    // them in a single update — two updateTool calls would drop the first.
+    function applyFromAssistant(fields) {
+      if (!assistantTarget) return;
+      if (assistantTarget.kind === 'new') setNewTool(prev => ({ ...prev, ...fields }));
+      else patchTool(assistantTarget.id, fields);
+    }
 
     function addPreset(preset) {
       const already = agent.tools.some(t => t.name === preset.name);
@@ -1049,10 +1351,15 @@
       onUpdate({ ...agent, tools: [...agent.tools, tool] });
       setNewTool({ name: '', description: '', parameters: [], packages: '', envVars: [], code: defaultCode });
       setAddOpen(false);
+      setAssistantTarget(t => t && t.kind === 'new' ? null : t);
     }
 
     function updateTool(id, field, val) {
       onUpdate({ ...agent, tools: agent.tools.map(t => t.id === id ? { ...t, [field]: val } : t) });
+    }
+
+    function patchTool(id, fields) {
+      onUpdate({ ...agent, tools: agent.tools.map(t => t.id === id ? { ...t, ...fields } : t) });
     }
 
     function deleteTool(id) {
@@ -1060,7 +1367,9 @@
     }
 
     return (
-      <div style={{ maxWidth: 720, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      // While the assistant panel is open, keep the editor narrow enough that
+      // the fixed panel doesn't cover it on mid-size windows.
+      <div style={{ maxWidth: assistantTool ? 'min(720px, max(360px, calc(100vw - 860px)))' : 720, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
           <span style={{ fontSize: 12, color: 'var(--text-muted)', flex: 1 }}>
             ⚙️ Invoke tools in prompts using <span style={{ color: 'var(--primary)' }}>@toolName</span>
@@ -1162,7 +1471,14 @@
                   <input value={tool.packages || ''} onChange={e => updateTool(tool.id, 'packages', e.target.value)} placeholder="requests, httpx, beautifulsoup4" style={{ fontFamily: 'monospace', fontSize: 13 }} />
                 </div>
                 <div>
-                  <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 6, display: 'block' }}>Code (Python)</label>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, gap: 8 }}>
+                    <label style={{ fontSize: 12, color: 'var(--text-2)' }}>Code (Python)</label>
+                    <button onClick={() => setAssistantTarget({ kind: 'tool', id: tool.id })}
+                      title="Ask AI to write or change this tool's code"
+                      style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, padding: '4px 11px', borderRadius: 'var(--r-xl)', background: assistantTarget && assistantTarget.id === tool.id ? 'var(--teal)' : 'var(--teal-dim)', color: assistantTarget && assistantTarget.id === tool.id ? '#04211e' : 'var(--teal)', border: '1px solid var(--teal)' }}>
+                      ✨ Ask AI
+                    </button>
+                  </div>
                   <MonacoPython value={tool.code} onChange={v => updateTool(tool.id, 'code', v)} />
                 </div>
                 <ToolRunner tool={tool} />
@@ -1193,15 +1509,32 @@
               <input value={newTool.packages} onChange={e => setNewTool(v => ({ ...v, packages: e.target.value }))} placeholder="requests, httpx, beautifulsoup4" style={{ fontFamily: 'monospace', fontSize: 13 }} />
             </div>
             <div>
-              <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 6, display: 'block' }}>Code (Python)</label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, gap: 8 }}>
+                <label style={{ fontSize: 12, color: 'var(--text-2)' }}>Code (Python)</label>
+                <button onClick={() => setAssistantTarget({ kind: 'new' })}
+                  title="Ask AI to write this tool's code"
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, padding: '4px 11px', borderRadius: 'var(--r-xl)', background: assistantTarget && assistantTarget.kind === 'new' ? 'var(--teal)' : 'var(--teal-dim)', color: assistantTarget && assistantTarget.kind === 'new' ? '#04211e' : 'var(--teal)', border: '1px solid var(--teal)' }}>
+                  ✨ Ask AI
+                </button>
+              </div>
               <MonacoPython value={newTool.code} onChange={v => setNewTool(p => ({ ...p, code: v }))} />
             </div>
             <ToolRunner tool={newTool} />
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={() => setAddOpen(false)} style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '8px 16px', borderRadius: 'var(--r-md)' }}>Cancel</button>
+              <button onClick={() => { setAddOpen(false); setAssistantTarget(t => t && t.kind === 'new' ? null : t); }} style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '8px 16px', borderRadius: 'var(--r-md)' }}>Cancel</button>
               <button onClick={addTool} style={{ background: 'var(--primary)', color: '#fff', padding: '8px 16px', borderRadius: 'var(--r-md)', fontWeight: 600 }}>Add Tool</button>
             </div>
           </div>
+        )}
+
+        {assistantTool && (
+          <ToolCodeAssistant
+            agent={agent}
+            tool={assistantTool}
+            targetKey={assistantTarget.kind === 'new' ? 'new' : assistantTarget.id}
+            onApply={applyFromAssistant}
+            onClose={() => setAssistantTarget(null)}
+          />
         )}
       </div>
     );
