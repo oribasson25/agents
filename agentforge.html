@@ -459,17 +459,18 @@
   }
 
   /* ─────────────────── RICH PROMPT EDITOR ─────────────────── */
-  function RichPromptEditor({ value, onChange }) {
+  function RichPromptEditor({ value, onChange, fill }) {
     const [mode, setMode] = useState('edit');
     const [collapsed, setCollapsed] = useState(new Set());
     const textRef = useRef(null);
 
     useEffect(() => {
+      if (fill) return;   // the workspace sizes the editor with flex instead
       if (textRef.current) {
         textRef.current.style.height = 'auto';
         textRef.current.style.height = Math.max(320, textRef.current.scrollHeight) + 'px';
       }
-    }, [value, mode]);
+    }, [value, mode, fill]);
 
     function insertHeading() {
       const el = textRef.current;
@@ -523,7 +524,7 @@
     const sectionKeys = sections.filter(s => s.title).map(s => s.key);
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, ...(fill ? { height: '100%', minHeight: 0 } : {}) }}>
         {/* Toolbar */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', background: 'var(--bg-hover)', borderRadius: 'var(--r-sm)', flexWrap: 'wrap' }}>
           <button onClick={insertHeading} style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '4px 10px', borderRadius: 'var(--r-sm)', fontSize: 12, fontWeight: 600 }}>## Heading</button>
@@ -538,19 +539,19 @@
         </div>
 
         {mode === 'edit' ? (
-          <div style={{ position: 'relative' }}>
+          <div style={{ position: 'relative', ...(fill ? { flex: 1, minHeight: 0, display: 'flex' } : {}) }}>
             <textarea
               ref={textRef}
               value={value || ''}
               onChange={e => onChange(e.target.value)}
               dir="auto"
-              style={{ fontFamily: "'JetBrains Mono','Fira Code',monospace", fontSize: 13, minHeight: 320, resize: 'none', lineHeight: 1.6, borderRadius: 'var(--r-md)' }}
+              style={{ fontFamily: "'JetBrains Mono','Fira Code',monospace", fontSize: 13, resize: 'none', lineHeight: 1.6, borderRadius: 'var(--r-md)', ...(fill ? { flex: 1, height: '100%', minHeight: 0 } : { minHeight: 320 }) }}
               placeholder="Write your system prompt here…"
             />
             <span style={{ position: 'absolute', bottom: 10, right: 14, fontSize: 11, color: 'var(--text-muted)' }}>{(value || '').length}</span>
           </div>
         ) : (
-          <div style={{ background: 'var(--bg-input)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', minHeight: 320, padding: '12px 16px', overflowY: 'auto' }}>
+          <div style={{ background: 'var(--bg-input)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', padding: '12px 16px', overflowY: 'auto', ...(fill ? { flex: 1, minHeight: 0 } : { minHeight: 320 }) }}>
             {sections.length === 0 && <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>No content yet…</span>}
             {sections.map(section => (
               <div key={section.key} style={{ marginBottom: 8 }}>
@@ -653,15 +654,17 @@
           <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '6px 0' }}>No parameters — tool is called without structured inputs.</div>
         )}
         {parameters.map((p, i) => (
-          <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-            <input value={p.name} onChange={e => updateParam(i, 'name', e.target.value)} placeholder="param_name" style={{ width: 130, flexShrink: 0, fontSize: 12 }} />
-            <select value={p.type} onChange={e => updateParam(i, 'type', e.target.value)} style={{ width: 100, flexShrink: 0, fontSize: 12 }}>
+          // The description wraps onto its own line, so it stays readable in
+          // the workspace's narrow side panel.
+          <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <input value={p.name} onChange={e => updateParam(i, 'name', e.target.value)} placeholder="param_name" style={{ flex: '1 1 110px', minWidth: 90, fontSize: 12 }} />
+            <select value={p.type} onChange={e => updateParam(i, 'type', e.target.value)} style={{ flex: '0 0 96px', fontSize: 12 }}>
               <option value="string">string</option>
               <option value="number">number</option>
               <option value="integer">integer</option>
               <option value="boolean">boolean</option>
             </select>
-            <input value={p.description} onChange={e => updateParam(i, 'description', e.target.value)} placeholder="Description for the model…" style={{ flex: 1, fontSize: 12 }} />
+            <input value={p.description} onChange={e => updateParam(i, 'description', e.target.value)} placeholder="Description for the model…" style={{ flex: '1 1 100%', fontSize: 12 }} />
             <button onClick={() => removeParam(i)} style={{ background: 'transparent', color: 'var(--danger)', padding: '4px 6px', borderRadius: 'var(--r-sm)', fontSize: 14, flexShrink: 0 }}>✕</button>
           </div>
         ))}
@@ -832,89 +835,202 @@
   }
 
   /* ─────────────────── SKILLS TAB ─────────────────── */
+  /* ─────────────────── WORKSPACE CHROME (tools + skills) ─────────────────── */
+  const WORKSPACE_PANEL = {
+    background: 'var(--bg-card)', border: '1px solid var(--border)',
+    borderRadius: 'var(--r-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+  };
+
+  function WorkspaceHeader({ badge, name, subtitle, mono, actions }) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+        <div style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--bg-panel)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--teal)', flexShrink: 0, fontSize: 13, fontFamily: 'monospace' }}>{badge}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 800, fontSize: 17, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: mono ? "'JetBrains Mono','Fira Code',monospace" : undefined }}>{name}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtitle}</div>
+        </div>
+        {actions}
+      </div>
+    );
+  }
+
+  // sections: [{ label, items: [{ key, label, active, onClick, mono, note }] }]
+  function WorkspaceSidebar({ sections, footer }) {
+    return (
+      <div style={{ ...WORKSPACE_PANEL, width: 196, flexShrink: 0 }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 6 }}>
+          {sections.map(section => (
+            <div key={section.label} style={{ marginBottom: 8 }}>
+              <div style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{section.label}</div>
+              {section.items.length === 0 && (
+                <div style={{ padding: '4px 9px', fontSize: 11, color: 'var(--text-muted)' }}>—</div>
+              )}
+              {section.items.map(item => (
+                <button key={item.key} onClick={item.onClick} title={item.label}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, width: '100%',
+                    textAlign: 'left', padding: '7px 9px', borderRadius: 'var(--r-sm)', fontSize: 12,
+                    fontFamily: item.mono ? "'JetBrains Mono','Fira Code',monospace" : undefined,
+                    background: item.active ? 'var(--primary-dim)' : 'transparent',
+                    color: item.active ? 'var(--primary)' : 'var(--text-2)',
+                    fontWeight: item.active ? 700 : 500,
+                  }}>
+                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>
+                  {item.note && <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>{item.note}</span>}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+        {footer}
+      </div>
+    );
+  }
+
+  function WorkspacePanelTabs({ tabs, active, onChange }) {
+    return (
+      <div style={{ display: 'flex', gap: 2, padding: '0 6px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)', flexShrink: 0 }}>
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => onChange(t.id)}
+            style={{
+              background: 'transparent', padding: '10px 10px', fontSize: 12,
+              fontWeight: active === t.id ? 700 : 500,
+              color: active === t.id ? 'var(--text)' : 'var(--text-muted)',
+              borderBottom: `2px solid ${active === t.id ? 'var(--primary)' : 'transparent'}`,
+            }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  function WorkspaceNewButton({ label, onClick, disabled }) {
+    return (
+      <button onClick={onClick} disabled={disabled}
+        style={{ margin: 6, padding: '7px 9px', borderRadius: 'var(--r-sm)', fontSize: 12, fontWeight: 700, background: 'var(--bg-hover)', border: '1px solid var(--border)', color: disabled ? 'var(--text-muted)' : 'var(--primary)' }}>
+        {label}
+      </button>
+    );
+  }
+
+  /* ─────────────────── SKILLS ─────────────────── */
+  function emptySkill() {
+    return { name: '', description: '', prompt: '' };
+  }
+
   function SkillsTab({ agent, onUpdate }) {
-    const [expandedId, setExpandedId] = useState(null);
-    const [addOpen, setAddOpen] = useState(false);
-    const [newSkill, setNewSkill] = useState({ name: '', description: '', prompt: '' });
+    const skills = agent.skills || [];
+    const [target, setTarget] = useState(() => (skills.length ? { kind: 'skill', id: skills[0].id } : { kind: 'new' }));
+    const [draft, setDraft] = useState(emptySkill);
 
-    function addSkill() {
-      if (!newSkill.name.trim()) return;
-      const skill = { id: uid(), ...newSkill };
-      onUpdate({ ...agent, skills: [...agent.skills, skill] });
-      setNewSkill({ name: '', description: '', prompt: '' });
-      setAddOpen(false);
+    const isDraft = target.kind === 'new';
+    const selected = isDraft ? draft : skills.find(sk => sk.id === target.id) || null;
+
+    // The open skill can disappear (deleted here or elsewhere) — pick another.
+    useEffect(() => {
+      if (target.kind === 'skill' && !selected) {
+        setTarget(skills.length ? { kind: 'skill', id: skills[0].id } : { kind: 'new' });
+      }
+    }, [target.kind, !!selected, skills.length]);
+
+    if (!selected) return null;
+
+    function patch(fields) {
+      if (isDraft) setDraft(prev => ({ ...prev, ...fields }));
+      else onUpdate({ ...agent, skills: skills.map(sk => sk.id === target.id ? { ...sk, ...fields } : sk) });
     }
 
-    function updateSkill(id, field, val) {
-      onUpdate({ ...agent, skills: agent.skills.map(s => s.id === id ? { ...s, [field]: val } : s) });
+    function createFromDraft() {
+      if (!draft.name.trim()) return;
+      const created = { id: uid(), ...draft };
+      onUpdate({ ...agent, skills: [...skills, created] });
+      setTarget({ kind: 'skill', id: created.id });
     }
 
-    function deleteSkill(id) {
-      onUpdate({ ...agent, skills: agent.skills.filter(s => s.id !== id) });
+    function startDraft() {
+      setDraft(emptySkill());
+      setTarget({ kind: 'new' });
+    }
+
+    function discardDraft() {
+      setTarget(skills.length ? { kind: 'skill', id: skills[0].id } : { kind: 'new' });
+      setDraft(emptySkill());
+    }
+
+    function deleteCurrent() {
+      onUpdate({ ...agent, skills: skills.filter(sk => sk.id !== target.id) });
     }
 
     return (
-      <div style={{ maxWidth: 720, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)', flex: 1 }}>
-            💡 The agent reads the skill description to decide when to invoke it. Use <span style={{ color: 'var(--teal)' }}>#SkillName</span> in chat to force-switch.
-          </span>
-          <button onClick={() => setAddOpen(v => !v)} style={{ background: 'var(--primary)', color: '#fff', padding: '8px 16px', borderRadius: 'var(--r-xl)', fontWeight: 600, fontSize: 13 }}>＋ Add Skill</button>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 620, gap: 12 }}>
+        <WorkspaceHeader
+          badge="#"
+          name={selected.name || 'untitled skill'}
+          subtitle={selected.description || (isDraft ? 'New skill — not created yet' : 'No description — the agent uses it to decide when to switch')}
+          actions={isDraft ? (
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              <button onClick={discardDraft} style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 13 }}>Discard</button>
+              <button onClick={createFromDraft} disabled={!draft.name.trim()} title={draft.name.trim() ? 'Create this skill' : 'Give the skill a name first'}
+                style={{ background: draft.name.trim() ? 'var(--primary)' : 'var(--bg-hover)', color: draft.name.trim() ? '#0a0a0a' : 'var(--text-muted)', padding: '7px 16px', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 13 }}>
+                Create skill
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+              <span style={{ fontSize: 11, color: 'var(--success)' }}>saved automatically</span>
+              <IconBtn onClick={deleteCurrent} danger title="Delete skill">{Icons.trash}</IconBtn>
+            </div>
+          )}
+        />
+
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12 }}>
+          <WorkspaceSidebar
+            sections={[{
+              label: 'Skills',
+              items: [
+                ...skills.map(sk => ({
+                  key: sk.id, label: sk.name || 'untitled',
+                  active: !isDraft && sk.id === target.id,
+                  onClick: () => setTarget({ kind: 'skill', id: sk.id }),
+                })),
+                ...(isDraft ? [{ key: '__draft', label: draft.name.trim() || 'new skill…', active: true }] : []),
+              ],
+            }]}
+            footer={<WorkspaceNewButton label="＋ New skill" onClick={startDraft} disabled={isDraft} />}
+          />
+
+          {/* Prompt */}
+          <div style={{ ...WORKSPACE_PANEL, flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)', flexShrink: 0 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Skill Prompt</span>
+              <span style={{ fontSize: 12, fontFamily: "'JetBrains Mono','Fira Code',monospace", color: 'var(--text)', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '6px 6px 0 0', padding: '5px 12px', marginBottom: -10 }}>
+                {(selected.name || 'untitled').replace(/\s+/g, '_')}.md
+              </span>
+            </div>
+            <div style={{ flex: 1, minHeight: 0, padding: 10, display: 'flex' }}>
+              <RichPromptEditor fill value={selected.prompt} onChange={v => patch({ prompt: v })} />
+            </div>
+          </div>
+
+          {/* Configuration */}
+          <div style={{ ...WORKSPACE_PANEL, width: 'clamp(300px, 30%, 420px)', flexShrink: 0 }}>
+            <WorkspacePanelTabs tabs={[{ id: 'config', label: 'Configuration' }]} active="config" onChange={() => {}} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 14, overflowY: 'auto' }}>
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Name</label>
+                <input value={selected.name} onChange={e => patch({ name: e.target.value })} dir="auto" placeholder="e.g. Code Reviewer" />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Description</label>
+                <input value={selected.description} onChange={e => patch({ description: e.target.value })} dir="auto" placeholder="When should the agent use this skill?" />
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6, background: 'var(--bg-hover)', borderRadius: 'var(--r-sm)', padding: '8px 10px' }}>
+                💡 The agent reads the description to decide when to invoke this skill. Type <span style={{ color: 'var(--teal)' }}>#{(selected.name || 'SkillName').replace(/\s+/g, '')}</span> in chat to force-switch, and <span style={{ color: 'var(--primary)' }}>@toolName</span> in the prompt to call a tool.
+              </div>
+            </div>
+          </div>
         </div>
-
-        {agent.skills.length === 0 && !addOpen && <EmptyState icon={Icons.target} title="No skills yet" subtitle="Add skills to give your agent special capabilities" />}
-
-        {agent.skills.map(skill => (
-          <div key={skill.id} style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', cursor: 'pointer' }} onClick={() => setExpandedId(expandedId === skill.id ? null : skill.id)}>
-              <span style={{ color: 'var(--text-muted)', fontSize: 18, cursor: 'grab' }}>⠿</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, fontSize: 14 }}>{skill.name}</div>
-                {skill.description && <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 2 }}>{skill.description}</div>}
-              </div>
-              <IconBtn onClick={e => { e.stopPropagation(); deleteSkill(skill.id); }} danger title="Delete skill">{Icons.trash}</IconBtn>
-              <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>{expandedId === skill.id ? '▼' : '▶'}</span>
-            </div>
-            {expandedId === skill.id && (
-              <div style={{ padding: '0 16px 16px', borderTop: '1px solid var(--border)', paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div>
-                  <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Name</label>
-                  <input value={skill.name} onChange={e => updateSkill(skill.id, 'name', e.target.value)} dir="auto" />
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Description</label>
-                  <input value={skill.description} onChange={e => updateSkill(skill.id, 'description', e.target.value)} dir="auto" placeholder="Describe when this skill is used…" />
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Skill Prompt</label>
-                  <RichPromptEditor value={skill.prompt} onChange={v => updateSkill(skill.id, 'prompt', v)} />
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
-
-        {addOpen && (
-          <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--primary)', borderRadius: 'var(--r-lg)', padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>New Skill</div>
-            <div>
-              <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Name</label>
-              <input value={newSkill.name} onChange={e => setNewSkill(v => ({ ...v, name: e.target.value }))} dir="auto" placeholder="e.g. Code Reviewer" />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Description</label>
-              <input value={newSkill.description} onChange={e => setNewSkill(v => ({ ...v, description: e.target.value }))} dir="auto" placeholder="When should the agent use this skill?" />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Skill Prompt</label>
-              <RichPromptEditor value={newSkill.prompt} onChange={v => setNewSkill(p => ({ ...p, prompt: v }))} />
-            </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={() => setAddOpen(false)} style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '8px 16px', borderRadius: 'var(--r-md)' }}>Cancel</button>
-              <button onClick={addSkill} style={{ background: 'var(--primary)', color: '#fff', padding: '8px 16px', borderRadius: 'var(--r-md)', fontWeight: 600 }}>Add Skill</button>
-            </div>
-          </div>
-        )}
       </div>
     );
   }
@@ -1055,8 +1171,6 @@
       </div>
     );
   }
-
-  const TOOL_PRESETS = [];
 
   /* ─────────────────── FILE ICON HELPER ─────────────────── */
   function fileIcon(title) {
@@ -1355,148 +1469,26 @@
   }
 
   function ToolsTab({ agent, onUpdate }) {
-    // null = the tool list; otherwise the tool open in the workspace.
-    const [target, setTarget] = useState(null);   // { kind: 'tool', id } | { kind: 'new' }
+    const tools = agent.tools || [];
+    // { kind: 'builtin' } | { kind: 'tool', id } | { kind: 'new' }
+    const [target, setTarget] = useState(() => (tools.length ? { kind: 'tool', id: tools[0].id } : { kind: 'new' }));
     const [draft, setDraft] = useState(emptyDraft);
-
-    const tools = agent.tools || [];
-
-    function addPreset(preset) {
-      if (tools.some(t => t.name === preset.name)) return;
-      onUpdate({ ...agent, tools: [...tools, { id: uid(), ...preset }] });
-    }
-
-    function deleteTool(id) {
-      onUpdate({ ...agent, tools: tools.filter(t => t.id !== id) });
-    }
-
-    function startDraft() {
-      setDraft(emptyDraft());
-      setTarget({ kind: 'new' });
-    }
-
-    if (target) {
-      return (
-        <ToolWorkspace
-          agent={agent}
-          onUpdate={onUpdate}
-          target={target}
-          setTarget={setTarget}
-          draft={draft}
-          setDraft={setDraft}
-          onStartDraft={startDraft}
-          onExit={() => setTarget(null)}
-        />
-      );
-    }
-
-    return (
-      <div style={{ maxWidth: 720, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)', flex: 1 }}>
-            ⚙️ Invoke tools in prompts using <span style={{ color: 'var(--primary)' }}>@toolName</span>
-          </span>
-          <button onClick={startDraft} style={{ background: 'var(--primary)', color: '#0a0a0a', padding: '8px 16px', borderRadius: 'var(--r-xl)', fontWeight: 700, fontSize: 13 }}>＋ Add Tool</button>
-        </div>
-
-        {/* Built-in system tools */}
-        <div style={{ background: 'var(--bg-card)', borderRadius: 'var(--r-lg)', border: '1px solid var(--border)', overflow: 'hidden' }}>
-          <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Built-in Tools</div>
-          <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--bg-panel)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--teal)' }}>{Icons.email}</div>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>send_email</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Send emails from this agent's own Gmail account</div>
-              </div>
-            </div>
-            <button
-              onClick={() => onUpdate({ ...agent, emailEnabled: !agent.emailEnabled })}
-              title={agent.emailEnabled ? 'Disable send_email tool' : 'Enable send_email tool'}
-              style={{
-                width: 44, height: 24, borderRadius: 12, padding: 0, flexShrink: 0,
-                background: agent.emailEnabled ? 'var(--teal)' : 'var(--bg-hover)',
-                border: '1px solid ' + (agent.emailEnabled ? 'var(--teal)' : 'var(--border)'),
-                position: 'relative', cursor: 'pointer', transition: 'background 0.2s',
-              }}
-            >
-              <div style={{
-                position: 'absolute', top: 2, width: 18, height: 18, borderRadius: '50%', background: '#fff',
-                left: agent.emailEnabled ? 22 : 2, transition: 'left 0.15s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-              }} />
-            </button>
-          </div>
-          <GmailAgentConnection agent={agent} />
-        </div>
-
-        {/* Preset tools */}
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {TOOL_PRESETS.map(preset => {
-            const added = tools.some(t => t.name === preset.name);
-            return (
-              <button
-                key={preset.name}
-                onClick={() => addPreset(preset)}
-                disabled={added}
-                title={added ? 'Already added' : `Add "${preset.name}" tool`}
-                style={{
-                  background: added ? 'var(--bg-hover)' : 'var(--bg-panel)',
-                  color: added ? 'var(--text-muted)' : 'var(--teal)',
-                  border: `1px solid ${added ? 'var(--border)' : 'var(--teal)'}`,
-                  borderRadius: 'var(--r-xl)', padding: '5px 13px', fontSize: 12, fontWeight: 600,
-                  display: 'flex', alignItems: 'center', gap: 5,
-                }}
-              >
-                <span>{added ? '✓' : '＋'}</span>
-                <span>{preset.name}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {tools.length === 0 && <EmptyState icon={Icons.tool} title="No tools yet" subtitle="Add Python tools to extend your agent's capabilities" />}
-
-        {tools.length > 0 && (
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', overflow: 'hidden' }}>
-            {tools.map((tool, i) => (
-              <div key={tool.id}
-                onClick={() => setTarget({ kind: 'tool', id: tool.id })}
-                style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '12px 16px', cursor: 'pointer', borderBottom: i < tools.length - 1 ? '1px solid var(--border)' : 'none' }}
-                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-              >
-                <span style={{ color: 'var(--teal)', display: 'flex' }}>{Icons.tool}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14, fontFamily: "'JetBrains Mono','Fira Code',monospace" }}>{tool.name || 'untitled'}</div>
-                  {tool.description && <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tool.description}</div>}
-                </div>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>
-                  {(tool.parameters || []).filter(pp => pp.name).length} params
-                </span>
-                <IconBtn onClick={e => { e.stopPropagation(); deleteTool(tool.id); }} danger title="Delete tool">{Icons.trash}</IconBtn>
-                <span style={{ color: 'var(--text-muted)', fontSize: 15, flexShrink: 0 }}>›</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  /* ─────────────────── TOOL WORKSPACE ─────────────────── */
-  function ToolWorkspace({ agent, onUpdate, target, setTarget, draft, setDraft, onStartDraft, onExit }) {
     const [panelTab, setPanelTab] = useState('config');   // config | secrets | assistant
-    const tools = agent.tools || [];
-    const isDraft = target.kind === 'new';
-    const tool = isDraft ? draft : tools.find(t => t.id === target.id);
 
-    // The open tool can disappear (deleted elsewhere) — fall back to the list.
-    useEffect(() => { if (!tool) onExit(); }, [!!tool]);
-    if (!tool) return null;
+    const isDraft = target.kind === 'new';
+    const isBuiltIn = target.kind === 'builtin';
+    const selected = isDraft ? draft : isBuiltIn ? null : tools.find(t => t.id === target.id) || null;
+
+    // The open tool can disappear (deleted here or elsewhere) — pick another.
+    useEffect(() => {
+      if (target.kind === 'tool' && !selected) {
+        setTarget(tools.length ? { kind: 'tool', id: tools[0].id } : { kind: 'new' });
+      }
+    }, [target.kind, !!selected, tools.length]);
 
     function patch(fields) {
       if (isDraft) setDraft(prev => ({ ...prev, ...fields }));
-      else onUpdate({ ...agent, tools: tools.map(t => t.id === target.id ? { ...t, ...fields } : t) });
+      else if (selected) onUpdate({ ...agent, tools: tools.map(t => t.id === selected.id ? { ...t, ...fields } : t) });
     }
 
     function createFromDraft() {
@@ -1506,38 +1498,111 @@
       setTarget({ kind: 'tool', id: created.id });
     }
 
-    function deleteCurrent() {
-      onUpdate({ ...agent, tools: tools.filter(t => t.id !== target.id) });
-      onExit();
+    function startDraft() {
+      setDraft(emptyDraft());
+      setTarget({ kind: 'new' });
     }
 
-    const fileName = `${(tool.name || 'untitled').replace(/\s+/g, '_')}.py`;
-    const panelTabs = [
-      { id: 'config', label: 'Configuration' },
-      { id: 'secrets', label: 'Secrets' },
-      { id: 'assistant', label: '✨ Assistant' },
-    ];
+    function discardDraft() {
+      setTarget(tools.length ? { kind: 'tool', id: tools[0].id } : { kind: 'builtin' });
+      setDraft(emptyDraft());
+    }
+
+    function deleteCurrent() {
+      onUpdate({ ...agent, tools: tools.filter(t => t.id !== target.id) });
+    }
+
+    const sidebar = (
+      <WorkspaceSidebar
+        sections={[
+          {
+            label: 'Built-in',
+            items: [{
+              key: 'builtin', label: 'send_email', mono: true, active: isBuiltIn,
+              note: agent.emailEnabled ? 'on' : 'off',
+              onClick: () => setTarget({ kind: 'builtin' }),
+            }],
+          },
+          {
+            label: 'Python tools',
+            items: [
+              ...tools.map(t => ({
+                key: t.id, label: t.name || 'untitled', mono: true,
+                active: !isDraft && !isBuiltIn && t.id === target.id,
+                onClick: () => setTarget({ kind: 'tool', id: t.id }),
+              })),
+              ...(isDraft ? [{ key: '__draft', label: draft.name.trim() || 'new tool…', mono: true, active: true }] : []),
+            ],
+          },
+        ]}
+        footer={<WorkspaceNewButton label="＋ New tool" onClick={startDraft} disabled={isDraft} />}
+      />
+    );
+
+    /* ---- the built-in tool has no code to edit, just a switch and a mailbox ---- */
+    if (isBuiltIn) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 620, gap: 12 }}>
+          <WorkspaceHeader
+            badge="✉"
+            mono
+            name="send_email"
+            subtitle="Built-in tool · sends from this agent's own Gmail account"
+          />
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12 }}>
+            {sidebar}
+            <div style={{ ...WORKSPACE_PANEL, flex: 1, minWidth: 0, maxWidth: 720 }}>
+              <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)', fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-muted)', textTransform: 'uppercase', flexShrink: 0 }}>
+                Configuration
+              </div>
+              <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderBottom: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--bg-panel)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--teal)' }}>{Icons.email}</div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>Available to the agent</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Works in the test chat, the widget and WhatsApp</div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => onUpdate({ ...agent, emailEnabled: !agent.emailEnabled })}
+                  title={agent.emailEnabled ? 'Disable send_email tool' : 'Enable send_email tool'}
+                  style={{
+                    width: 44, height: 24, borderRadius: 12, padding: 0, flexShrink: 0,
+                    background: agent.emailEnabled ? 'var(--teal)' : 'var(--bg-hover)',
+                    border: '1px solid ' + (agent.emailEnabled ? 'var(--teal)' : 'var(--border)'),
+                    position: 'relative', cursor: 'pointer', transition: 'background 0.2s',
+                  }}
+                >
+                  <div style={{
+                    position: 'absolute', top: 2, width: 18, height: 18, borderRadius: '50%', background: '#fff',
+                    left: agent.emailEnabled ? 22 : 2, transition: 'left 0.15s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                  }} />
+                </button>
+              </div>
+              <GmailAgentConnection agent={agent} />
+              <div style={{ padding: '12px 16px', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6, borderTop: '1px solid var(--border)' }}>
+                The agent calls this tool with <span style={{ fontFamily: 'monospace', color: 'var(--text-2)' }}>to</span>, <span style={{ fontFamily: 'monospace', color: 'var(--text-2)' }}>subject</span> and <span style={{ fontFamily: 'monospace', color: 'var(--text-2)' }}>body</span>. Mail is sent from the connected mailbox above, so each agent can have its own sender address.
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (!selected) return null;
+
+    const fileName = `${(selected.name || 'untitled').replace(/\s+/g, '_')}.py`;
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 620, gap: 12 }}>
-        {/* Title bar */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-          <button onClick={onExit}
-            style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'var(--bg-hover)', color: 'var(--text-2)', padding: '6px 11px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 600, border: '1px solid var(--border)' }}>
-            {Icons.back} Tools
-          </button>
-          <div style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--bg-panel)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--teal)', flexShrink: 0, fontSize: 13, fontFamily: 'monospace' }}>{'</>'}</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 800, fontSize: 17, fontFamily: "'JetBrains Mono','Fira Code',monospace", letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {tool.name || 'untitled'}
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {tool.description || (isDraft ? 'New tool — not created yet' : 'No description')}
-            </div>
-          </div>
-          {isDraft ? (
+        <WorkspaceHeader
+          badge={'</>'}
+          mono
+          name={selected.name || 'untitled'}
+          subtitle={selected.description || (isDraft ? 'New tool — not created yet' : 'No description')}
+          actions={isDraft ? (
             <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-              <button onClick={onExit} style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 13 }}>Discard</button>
+              <button onClick={discardDraft} style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 13 }}>Discard</button>
               <button onClick={createFromDraft} disabled={!draft.name.trim()} title={draft.name.trim() ? 'Create this tool' : 'Give the tool a name first'}
                 style={{ background: draft.name.trim() ? 'var(--primary)' : 'var(--bg-hover)', color: draft.name.trim() ? '#0a0a0a' : 'var(--text-muted)', padding: '7px 16px', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 13 }}>
                 Create tool
@@ -1549,44 +1614,13 @@
               <IconBtn onClick={deleteCurrent} danger title="Delete tool">{Icons.trash}</IconBtn>
             </div>
           )}
-        </div>
+        />
 
-        {/* Workspace */}
         <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12 }}>
-          {/* Tool list */}
-          <div style={{ width: 186, flexShrink: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Tools</div>
-            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {tools.map(t => {
-                const active = !isDraft && t.id === target.id;
-                return (
-                  <button key={t.id} onClick={() => setTarget({ kind: 'tool', id: t.id })} title={t.name}
-                    style={{
-                      textAlign: 'left', padding: '7px 9px', borderRadius: 'var(--r-sm)', fontSize: 12,
-                      fontFamily: "'JetBrains Mono','Fira Code',monospace",
-                      background: active ? 'var(--primary-dim)' : 'transparent',
-                      color: active ? 'var(--primary)' : 'var(--text-2)',
-                      fontWeight: active ? 700 : 500,
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
-                    {t.name || 'untitled'}
-                  </button>
-                );
-              })}
-              {isDraft && (
-                <div style={{ padding: '7px 9px', borderRadius: 'var(--r-sm)', fontSize: 12, background: 'var(--primary-dim)', color: 'var(--primary)', fontWeight: 700, fontFamily: "'JetBrains Mono','Fira Code',monospace", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {draft.name.trim() || 'new tool…'}
-                </div>
-              )}
-            </div>
-            <button onClick={onStartDraft} disabled={isDraft}
-              style={{ margin: 6, padding: '7px 9px', borderRadius: 'var(--r-sm)', fontSize: 12, fontWeight: 700, background: 'var(--bg-hover)', border: '1px solid var(--border)', color: isDraft ? 'var(--text-muted)' : 'var(--primary)' }}>
-              ＋ New tool
-            </button>
-          </div>
+          {sidebar}
 
           {/* Code + run */}
-          <div style={{ flex: 1, minWidth: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ ...WORKSPACE_PANEL, flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)', flexShrink: 0 }}>
               <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Code Editor</span>
               <span style={{ fontSize: 12, fontFamily: "'JetBrains Mono','Fira Code',monospace", color: 'var(--text)', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '6px 6px 0 0', padding: '5px 12px', marginBottom: -10 }}>
@@ -1598,44 +1632,40 @@
               </button>
             </div>
             <div style={{ flex: 1, minHeight: 0 }}>
-              <MonacoPython value={tool.code} onChange={v => patch({ code: v })} height="100%" bare />
+              <MonacoPython value={selected.code} onChange={v => patch({ code: v })} height="100%" bare />
             </div>
-            <ToolRunPanel tool={tool} />
+            <ToolRunPanel tool={selected} />
           </div>
 
           {/* Configuration / Secrets / Assistant */}
-          <div style={{ width: 'clamp(300px, 30%, 420px)', flexShrink: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', gap: 2, padding: '0 6px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)', flexShrink: 0 }}>
-              {panelTabs.map(t => (
-                <button key={t.id} onClick={() => setPanelTab(t.id)}
-                  style={{
-                    background: 'transparent', padding: '10px 10px', fontSize: 12,
-                    fontWeight: panelTab === t.id ? 700 : 500,
-                    color: panelTab === t.id ? 'var(--text)' : 'var(--text-muted)',
-                    borderBottom: `2px solid ${panelTab === t.id ? 'var(--primary)' : 'transparent'}`,
-                  }}>
-                  {t.label}
-                </button>
-              ))}
-            </div>
+          <div style={{ ...WORKSPACE_PANEL, width: 'clamp(300px, 30%, 420px)', flexShrink: 0 }}>
+            <WorkspacePanelTabs
+              tabs={[
+                { id: 'config', label: 'Configuration' },
+                { id: 'secrets', label: 'Secrets' },
+                { id: 'assistant', label: '✨ Assistant' },
+              ]}
+              active={panelTab}
+              onChange={setPanelTab}
+            />
 
             <div style={{ display: panelTab === 'config' ? 'flex' : 'none', flexDirection: 'column', gap: 14, padding: 14, overflowY: 'auto' }}>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Name</label>
-                <input value={tool.name} onChange={e => patch({ name: e.target.value })} dir="auto" placeholder="e.g. fetch_weather" style={{ fontFamily: "'JetBrains Mono','Fira Code',monospace", fontSize: 13 }} />
+                <input value={selected.name} onChange={e => patch({ name: e.target.value })} dir="auto" placeholder="e.g. fetch_weather" style={{ fontFamily: "'JetBrains Mono','Fira Code',monospace", fontSize: 13 }} />
               </div>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Description</label>
-                <input value={tool.description} onChange={e => patch({ description: e.target.value })} dir="auto" placeholder="What does this tool do?" />
+                <input value={selected.description} onChange={e => patch({ description: e.target.value })} dir="auto" placeholder="What does this tool do?" />
               </div>
               <div style={{ background: 'var(--bg-hover)', borderRadius: 'var(--r-md)', padding: 12 }}>
-                <ParameterEditor parameters={tool.parameters || []} onChange={v => patch({ parameters: v })} />
+                <ParameterEditor parameters={selected.parameters || []} onChange={v => patch({ parameters: v })} />
               </div>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>
                   Packages <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(pip, comma-separated)</span>
                 </label>
-                <input value={tool.packages || ''} onChange={e => patch({ packages: e.target.value })} placeholder="requests, httpx, beautifulsoup4" style={{ fontFamily: 'monospace', fontSize: 13 }} />
+                <input value={selected.packages || ''} onChange={e => patch({ packages: e.target.value })} placeholder="requests, httpx, beautifulsoup4" style={{ fontFamily: 'monospace', fontSize: 13 }} />
               </div>
             </div>
 
@@ -1644,7 +1674,7 @@
                 Available to the code as <span style={{ fontFamily: 'monospace', color: 'var(--text-2)' }}>os.environ["KEY"]</span>. Values are never sent to the assistant.
               </div>
               <div style={{ background: 'var(--bg-hover)', borderRadius: 'var(--r-md)', padding: 12 }}>
-                <EnvVarEditor envVars={tool.envVars || []} onChange={v => patch({ envVars: v })} />
+                <EnvVarEditor envVars={selected.envVars || []} onChange={v => patch({ envVars: v })} />
               </div>
             </div>
 
@@ -1652,7 +1682,7 @@
             <div style={{ display: panelTab === 'assistant' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0 }}>
               <ToolCodeAssistant
                 agent={agent}
-                tool={tool}
+                tool={selected}
                 targetKey={isDraft ? 'new' : target.id}
                 onApply={patch}
               />
