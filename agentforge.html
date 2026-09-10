@@ -3718,13 +3718,20 @@ async function sendMsg(){
     const [active, setActive] = useState('intro');
 
     const sections = [
-      { id: 'intro',   label: 'מה זה AgentForge?' },
-      { id: 'create',  label: 'יצירת סוכן' },
-      { id: 'config',  label: 'הגדרות בסיסיות' },
-      { id: 'tools',   label: 'כלים (Tools)' },
-      { id: 'rag',     label: 'בסיס ידע (RAG)' },
-      { id: 'test',    label: 'בדיקת הסוכן' },
-      { id: 'tips',    label: 'טיפים מתקדמים' },
+      { id: 'intro',        label: 'מה זה 8Legs.ai' },
+      { id: 'agents',       label: 'סוכנים ועמוד הבית' },
+      { id: 'config',       label: 'Configuration' },
+      { id: 'skills',       label: 'Skills' },
+      { id: 'tools',        label: 'Tools' },
+      { id: 'assistant',    label: '✨ האסיסטנט' },
+      { id: 'knowledge',    label: 'Knowledge (RAG)' },
+      { id: 'test',         label: 'בדיקת הסוכן' },
+      { id: 'widget',       label: 'הטמעה באתר' },
+      { id: 'whatsapp',     label: 'ערוץ WhatsApp' },
+      { id: 'interactions', label: 'Interactions' },
+      { id: 'admin',        label: 'Admin' },
+      { id: 'ops',          label: 'תשתית ותחזוקה' },
+      { id: 'security',     label: 'אבטחה ופרטיות' },
     ];
 
     const H2 = ({ children }) => (
@@ -3736,14 +3743,17 @@ async function sendMsg(){
     const P = ({ children }) => (
       <p style={{ fontSize: 14, color: 'var(--text-2)', lineHeight: 1.75, marginBottom: 10 }}>{children}</p>
     );
+    const UL = ({ children }) => (
+      <ul style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 1.95, paddingRight: 20, marginBottom: 12 }}>{children}</ul>
+    );
     const Code = ({ children }) => (
       <code style={{ background: 'var(--bg-hover)', color: 'var(--teal)', padding: '2px 6px', borderRadius: 4, fontSize: 13, fontFamily: 'monospace' }}>{children}</code>
     );
     const Block = ({ children }) => (
-      <pre style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '14px 16px', fontSize: 13, fontFamily: 'monospace', color: 'var(--text)', overflowX: 'auto', lineHeight: 1.6, marginBottom: 14 }}>{children}</pre>
+      <pre dir="ltr" style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '14px 16px', fontSize: 13, fontFamily: "'JetBrains Mono','Fira Code',monospace", color: 'var(--text)', overflowX: 'auto', lineHeight: 1.6, marginBottom: 14, textAlign: 'left' }}>{children}</pre>
     );
     const Tip = ({ children }) => (
-      <div style={{ background: 'rgba(108,99,255,0.08)', border: '1px solid rgba(108,99,255,0.25)', borderRadius: 'var(--r-md)', padding: '12px 16px', marginBottom: 12, fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>
+      <div style={{ background: 'rgba(239,159,39,0.08)', border: '1px solid rgba(239,159,39,0.25)', borderRadius: 'var(--r-md)', padding: '12px 16px', marginBottom: 12, fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>
         <span style={{ color: 'var(--primary)', fontWeight: 600 }}>💡 טיפ: </span>{children}
       </div>
     );
@@ -3754,224 +3764,413 @@ async function sendMsg(){
     );
 
     const content = {
+      /* ─────────────── INTRO ─────────────── */
       intro: (
         <div dir="rtl">
-          <H2>מה זה AgentForge?</H2>
-          <P>AgentForge היא פלטפורמה לבניית סוכני AI חכמים ללא קוד. כל סוכן יכול לנהל שיחות, לגשת לבסיס ידע אישי, לסרוק אתרים, ולהריץ קוד Python בזמן אמת.</P>
-          <H3>מה אפשר לבנות?</H3>
-          <ul style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 2, paddingRight: 20, marginBottom: 12 }}>
-            <li>🤖 סוכן תמיכה לקוחות שעונה מתוך מסמכי החברה</li>
-            <li>📊 סוכן שמנתח נתונים ומחזיר תובנות</li>
-            <li>🌐 סוכן שסורק אתרים ומסכם תוכן</li>
-            <li>📝 סוכן כתיבה עם סגנון מותאם אישית</li>
-            <li>🔍 סוכן מחקר שמחפש ומסנתז מידע</li>
-          </ul>
-          <H3>ארכיטקטורה</H3>
-          <P>הפלטפורמה רצה על Vercel עם:</P>
-          <ul style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 2, paddingRight: 20 }}>
-            <li><strong>Frontend:</strong> React SPA — ממשק המשתמש</li>
-            <li><strong>AI:</strong> Claude (Anthropic) או GPT (OpenAI) — מנוע השיחה</li>
-            <li><strong>Database:</strong> Neon PostgreSQL — שמירת סוכנים ומסמכים</li>
-            <li><strong>Tools:</strong> Python serverless functions — הרצת קוד</li>
-            <li><strong>Scraper:</strong> Playwright + Chromium — סריקת אתרים</li>
-          </ul>
+          <H2>מה זה 8Legs.ai</H2>
+          <P>פלטפורמה לבניית סוכני AI בלי לכתוב תשתית. כל סוכן הוא הגדרה אחת שכוללת פרומפט, מודל, סקילים, כלי Python, בסיס ידע וערוצי הפצה — והוא זמין מיד בצ'אט בדיקה, כווידג'ט באתר וכמספר WhatsApp.</P>
+
+          <H3>מה מרכיב סוכן</H3>
+          <UL>
+            <li><strong>Configuration</strong> — זהות, פרומפט בסיס, ספק AI ומודל, מיסוך מידע רגיש</li>
+            <li><strong>Skills</strong> — מצבים ממוקדים שהסוכן עובר ביניהם, כל אחד עם פרומפט משלו</li>
+            <li><strong>Tools</strong> — פונקציות Python שהסוכן קורא בזמן שיחה, ועוד כלי מובנה לשליחת מייל</li>
+            <li><strong>Knowledge</strong> — מסמכים וסריקת אתרים שנשלפים לפי הקשר</li>
+            <li><strong>Export / WhatsApp</strong> — הטמעה באתר וחיבור למספר WhatsApp</li>
+          </UL>
+
+          <H3>איך זה בנוי</H3>
+          <UL>
+            <li><strong>Frontend</strong> — קובץ HTML אחד עם React שנטען מ-CDN, בלי build step</li>
+            <li><strong>Backend</strong> — Vercel Serverless Functions תחת <Code>/api</Code></li>
+            <li><strong>Database</strong> — Neon PostgreSQL; סוכן נשמר כ-JSONB בטבלת <Code>agents</Code></li>
+            <li><strong>מודלים</strong> — Claude (Anthropic), OpenAI, או Ollama מקומי</li>
+            <li><strong>הרצת כלים</strong> — Python serverless עם <Code>pip install</Code> לפי דרישה</li>
+            <li><strong>סריקת אתרים</strong> — Playwright + Chromium שמריץ JavaScript לפני החילוץ</li>
+          </UL>
+
+          <H3>איפה כל דבר יושב</H3>
+          <P>בסייד-בר: <strong>Home</strong> (הסוכנים שלך), <strong>Interactions</strong> (כל השיחות), <strong>Documentation</strong> (הדף הזה), <strong>Settings</strong>, ו-<strong>Admin</strong> למשתמשי אדמין בלבד.</P>
         </div>
       ),
-      create: (
+
+      /* ─────────────── AGENTS ─────────────── */
+      agents: (
         <div dir="rtl">
-          <H2>יצירת סוכן חדש</H2>
-          <P>לחיצה על <strong>+ New Agent</strong> בדף הבית פותחת עורך סוכן חדש עם ערכי ברירת מחדל.</P>
-          <H3>שלב 1 — הגדר זהות</H3>
-          <P>בחר שם, תיאור ואמוג'י לסוכן. אלו מסייעים לזיהוי בין מספר סוכנים.</P>
-          <H3>שלב 2 — כתוב System Prompt</H3>
-          <P>ה-System Prompt הוא ה"אישיות" של הסוכן — ההוראות שהוא מקבל לפני כל שיחה. זה המקום הכי חשוב לעיצוב ההתנהגות.</P>
-          <Block>{`אתה עוזר מכירות מקצועי של חברת [שם החברה].
-תענה תמיד בעברית, בגובה העיניים.
-אם אינך יודע תשובה — הודה בכך ולא תמציא מידע.
-השתמש במידע מהמסמכים שסופקו לך בלבד.`}</Block>
-          <Tip>ככל שה-System Prompt מפורט יותר — הסוכן מדויק יותר. ציין: שפה, טון, מגבלות, תחומי אחריות.</Tip>
-          <H3>שלב 3 — חבר API Key</H3>
-          <P>בלשונית <strong>Configuration</strong> הכנס את מפתח ה-API שלך (Claude או OpenAI) ובחר מודל.</P>
-          <H3>שלב 4 — הוסף יכולות (אופציונלי)</H3>
-          <P>כלים, בסיס ידע, וסקילז — פורטים בהמשך.</P>
-          <H3>שלב 5 — בדוק</H3>
-          <P>לחץ <strong>Test</strong> בכל שלב כדי לראות איך הסוכן מגיב.</P>
+          <H2>סוכנים ועמוד הבית</H2>
+
+          <H3>חשבון והתחברות</H3>
+          <P>ההרשמה דורשת שם משתמש, סיסמה וטלפון. כל סוכן שייך למשתמש שיצר אותו, ומשתמש רגיל רואה רק את הסוכנים שלו. ההתחברות מחזיקה טוקן ב-<Code>sessionStorage</Code>, כך שסגירת הדפדפן מנתקת.</P>
+
+          <H3>כרטיס סוכן</H3>
+          <P>כל סוכן בעמוד הבית מוצג בכרטיס עם האווטאר, השם, תאריך היצירה ומספר הסקילים והכלים. בתחתית הכרטיס חמש פעולות:</P>
+          <UL>
+            <li><strong>Edit</strong> — פתיחת עורך הסוכן (גם לחיצה על הכרטיס עצמו)</li>
+            <li><strong>Test</strong> — פתיחת צ'אט בדיקה בצד</li>
+            <li><strong>Duplicate</strong> — שכפול הסוכן, כולל סקילים וכלים</li>
+            <li><strong>Export</strong> — פתיחת לשונית ההטמעה</li>
+            <li><strong>Delete</strong> — מחיקה מיידית של הסוכן וכל מה שתלוי בו</li>
+          </UL>
+          <Warn>מחיקת סוכן מוחקת גם את המסמכים והשיחות שלו, וסוגרת את ערוץ ה-WhatsApp והווידג'ט שלו. אין ביטול.</Warn>
+
+          <H3>שמירה</H3>
+          <P>אין כפתור Save בשום מקום בעורך. כל שינוי נשמר אוטומטית מעט אחרי שהפסקת להקליד, וכתוב "saved automatically" בכותרת המסכים שנשמרים כך.</P>
         </div>
       ),
+
+      /* ─────────────── CONFIGURATION ─────────────── */
       config: (
         <div dir="rtl">
-          <H2>הגדרות בסיסיות (Configuration)</H2>
-          <H3>בחירת ספק AI</H3>
-          <P>שני ספקים נתמכים:</P>
-          <ul style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 2, paddingRight: 20, marginBottom: 12 }}>
-            <li><strong>Claude (Anthropic)</strong> — מצוין להבנת הקשר ארוך, עברית טובה, עקיבות הוראות</li>
-            <li><strong>OpenAI (GPT)</strong> — מהיר, function calling מוכח, אינטגרציות נרחבות</li>
-          </ul>
-          <H3>בחירת מודל</H3>
-          <P>לכל ספק מספר מודלים. המלצות:</P>
-          <ul style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 2, paddingRight: 20, marginBottom: 12 }}>
-            <li><Code>claude-sonnet-4-5</Code> — מאוזן, מהיר, עברית מצוינת ✅ מומלץ</li>
-            <li><Code>claude-opus-4-5</Code> — הכי חכם, יקר יותר</li>
-            <li><Code>gpt-4o</Code> — מהיר וחזק</li>
-            <li><Code>gpt-4o-mini</Code> — זול, לשימוש כבד</li>
-          </ul>
-          <H3>System Prompt</H3>
-          <P>ההוראות הקבועות שהסוכן מקבל. נכתב פעם אחת ופועל בכל שיחה.</P>
-          <Tip>כתוב בשפה שבה אתה רוצה שהסוכן יענה — אם רוצה עברית, כתוב בעברית.</Tip>
-          <Warn>ה-API Key נשמר בדפדפן בלבד ולא עובר לשרת. שמור אותו פרטי.</Warn>
+          <H2>Configuration</H2>
+
+          <H3>Identity</H3>
+          <UL>
+            <li><strong>Agent Name</strong> — מופיע בכרטיס, בווידג'ט וב-Interactions</li>
+            <li><strong>Avatar</strong> — אמוג'י מתוך רשימה, או העלאת תמונה</li>
+            <li><strong>Opening Message</strong> — ההודעה הראשונה שהסוכן אומר בווידג'ט ובצ'אט הבדיקה</li>
+          </UL>
+
+          <H3>Base Prompt</H3>
+          <P>הפרומפט הקבוע של הסוכן, שנשלח לפני כל שיחה. העורך תומך בכתיבה עם כותרות <Code>## Section</Code> שאפשר לקפל, ובמצב Preview שמדגיש הזכרות של <Code>@tool</Code> ו-<Code>#Skill</Code>.</P>
+          <P>הפרומפט הסופי שהמודל מקבל מורכב מהפרומפט הזה, ואחריו הידע הרלוונטי שנשלף לשיחה, ואחריו כל הסקילים תחת כותרת <Code>## Skill: שם</Code>.</P>
+          <Tip>ציין במפורש שפה, טון, מה מותר ומה אסור, ומה לעשות כשאין תשובה. פרומפט מפורט מצמצם המצאות.</Tip>
+
+          <H3>API Configuration</H3>
+          <P>שלושה ספקים:</P>
+          <UL>
+            <li><strong>Claude</strong> — <Code>claude-opus-4-5</Code>, <Code>claude-sonnet-4-5</Code>, <Code>claude-haiku-4-5</Code>. דורש מפתח Anthropic.</li>
+            <li><strong>OpenAI</strong> — <Code>gpt-4o</Code>, <Code>gpt-4o-mini</Code>, <Code>gpt-4-turbo</Code>, <Code>gpt-3.5-turbo</Code>. דורש מפתח OpenAI.</li>
+            <li><strong>Ollama</strong> — מודל מקומי. במקום מפתח מזינים כתובת שרת, והקריאות עוברות דרך פרוקסי בשרת.</li>
+          </UL>
+          <P>המפתח נשמר על הסוכן ומשמש את כל הערוצים שלו — צ'אט בדיקה, ווידג'ט, WhatsApp והאסיסטנט של הבנייה.</P>
+          <Warn>בלי מפתח (או בלי כתובת Ollama) הסוכן לא יענה בשום ערוץ, והאסיסטנט יהיה חסום עם הודעה מתאימה.</Warn>
+
+          <H3>DLP — מניעת דליפת מידע</H3>
+          <P>שני מסננים אופציונליים: <strong>מספרי כרטיס אשראי</strong> (16 ספרות עם או בלי מפרידים) ו-<strong>תעודת זהות</strong> (9 ספרות). כשהם דולקים:</P>
+          <UL>
+            <li>הטקסט של המשתמש ממוסך ל-<Code>[MASKED]</Code> לפני שהוא נשלח למודל</li>
+            <li>ההיסטוריה נשמרת ממוסכת, כך שגם ב-Interactions לא יופיע המקור</li>
+            <li>נוספת לפרומפט הוראת אבטחה שלא לחזור על מידע מזהה</li>
+          </UL>
         </div>
       ),
+
+      /* ─────────────── SKILLS ─────────────── */
+      skills: (
+        <div dir="rtl">
+          <H2>Skills</H2>
+          <P>סקיל הוא מצב ממוקד של הסוכן — למשל "בדיקת מזג אוויר" או "פתיחת קריאת שירות" — עם פרומפט משלו. לחיצה על הלשונית פותחת מסך עבודה: רשימת הסקילים בצד, עורך הפרומפט במרכז, ופאנל הגדרות בצד.</P>
+
+          <H3>מה מגדירים בסקיל</H3>
+          <UL>
+            <li><strong>Name</strong> — השם המדויק שדרכו הסוכן עובר לסקיל</li>
+            <li><strong>Description</strong> — <em>מתי</em> להשתמש בסקיל. זה מה שהמודל קורא כדי להחליט לעבור אליו, ולכן הוא החלק הכי חשוב</li>
+            <li><strong>Skill Prompt</strong> — ההוראות שהסוכן מבצע כשהסקיל פעיל</li>
+          </UL>
+
+          <H3>איך הסוכן עובר בין סקילים</H3>
+          <P>כשלסוכן יש סקילים, המודל מקבל כלי פנימי בשם <Code>switch_skill</Code> שמקבל <Code>skill_name</Code>. הוא קורא לו כשהמשתמש מגיע לתחום של סקיל מסוים. בטקסט הפרומפט הקונבנציה היא לכתוב <Code>#SkillName</Code> בלי רווחים, וכדי לקרוא לכלי — <Code>@tool_name</Code>.</P>
+          <P>כל הסקילים נמצאים בפרומפט המערכת מהרגע הראשון, כל אחד תחת <Code>## Skill: שם</Code> עם התיאור מעליו. כשסקיל פעיל בצ'אט הבדיקה, שליפת הידע מצטמצמת למסמכים של אותו סקיל.</P>
+
+          <H3>עורך הפרומפט</H3>
+          <UL>
+            <li><Code>## Heading</Code> מוסיף כותרת סקציה; Collapse All / Expand All מקפלים אותן</li>
+            <li>מצב <strong>Preview</strong> מציג את הפרומפט לפי סקציות ומדגיש <Code>@tool</Code> ו-<Code>#Skill</Code></li>
+            <li>מונה התווים בפינה עוזר לשמור על פרומפט קצר</li>
+          </UL>
+          <Tip>עדיף כמה סקילים קצרים וממוקדים על סקיל אחד ארוך. התיאור צריך להיות "מתי", לא "מה".</Tip>
+        </div>
+      ),
+
+      /* ─────────────── TOOLS ─────────────── */
       tools: (
         <div dir="rtl">
-          <H2>כלים (Tools)</H2>
-          <P>כלים הם פונקציות Python שהסוכן יכול להפעיל בזמן אמת כחלק מהשיחה. הסוכן מחליט לבד מתי להשתמש בכלי.</P>
-          <H3>איך כלי עובד?</H3>
-          <P>כל כלי הוא קוד Python שמגדיר פונקציית <Code>run(**kwargs)</Code>:</P>
-          <Block>{`import urllib.request, json
+          <H2>Tools</H2>
+          <P>לשונית Tools נפתחת ישר במסך עבודה: רשימת הכלים בצד, עורך קוד במרכז, פאנל הרצה מתחתיו, ופאנל הגדרות בצד עם שלוש לשוניות.</P>
+
+          <H3>send_email — הכלי המובנה</H3>
+          <P>בסקציית <strong>BUILT-IN</strong> בסייד-בר. מתג אחד מפעיל אותו, ומתחתיו מחברים חשבון Gmail <strong>לסוכן הזה</strong> — כל סוכן שולח מהכתובת שלו. אחרי החיבור הכלי זמין בצ'אט הבדיקה, בווידג'ט וב-WhatsApp, והמודל קורא לו עם <Code>to</Code>, <Code>subject</Code> ו-<Code>body</Code>.</P>
+
+          <H3>כלי Python — חוזה ההרצה</H3>
+          <P>הקוד רץ ב-serverless מבודד, וחייב להגדיר פונקציה בשם <Code>run</Code>:</P>
+          <Block>{`import os
+import urllib.request, json
 
 def run(**kwargs):
     city = kwargs.get("city", "")
-    # קריאה ל-API חיצוני
-    url = f"https://wttr.in/{city}?format=j1"
-    with urllib.request.urlopen(url) as r:
-        data = json.loads(r.read())
-    temp = data["current_condition"][0]["temp_C"]
-    return f"טמפרטורה ב{city}: {temp}°C"`}</Block>
-          <H3>הפרמטרים</H3>
-          <P>כל פרמטר שמגדירים בעורך הכלי הופך ל-argument שהסוכן מזין אוטומטית:</P>
-          <ul style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 2, paddingRight: 20, marginBottom: 12 }}>
-            <li><strong>Name</strong> — שם הפרמטר (כפי שנכתב ב-kwargs)</li>
-            <li><strong>Type</strong> — string / number / integer / boolean</li>
-            <li><strong>Description</strong> — הסבר שמסייע לסוכן להבין מה להעביר</li>
-          </ul>
-          <H3>Presets מובנים</H3>
-          <P>לחיצה על <strong>scrape_website</strong> בלשונית Tools מוסיפה כלי סריקת אתרים מוכן לשימוש.</P>
-          <H3>חבילות Python</H3>
-          <P>ניתן להוסיף חבילות pip בשדה Packages. הן מותקנות אוטומטית בהרצה הראשונה:</P>
-          <Block>{`# שדה Packages:
-requests, beautifulsoup4, pandas`}</Block>
-          <H3>משתני סביבה</H3>
-          <P>מפתחות API ומידע רגיש נשמרים כ-env vars ונגישים בקוד:</P>
-          <Block>{`import os
+    key  = os.environ.get("WEATHER_KEY", "")
+    url  = f"https://api.example.com/w?city={city}&key={key}"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as r:
+            data = json.loads(r.read())
+        return f"{data['temp']}°C, {data['desc']}"
+    except Exception as e:
+        return f"Could not fetch the weather: {e}"`}</Block>
+          <UL>
+            <li>הפרמטרים המוצהרים מגיעים כ-<Code>kwargs</Code> — קרא אותם עם <Code>kwargs.get</Code></li>
+            <li>מה שהפונקציה מחזירה עובר ל-<Code>str()</Code> ונמסר למודל כתוצאה</li>
+            <li>זמינות ספריית התקן, ובנוסף כל חבילה שרשמת ב-Packages</li>
+            <li>אין דיסק מתמיד ואין רשת פנימית; HTTPS יוצא מותר</li>
+            <li>מוטב להחזיר מחרוזת שגיאה קריאה מלזרוק חריגה</li>
+          </UL>
 
-def run(**kwargs):
-    api_key = os.environ["MY_API_KEY"]
-    # ...`}</Block>
-          <Tip>השתמש בשדה Test Run בתחתית כל כלי כדי לבדוק אותו לפני שהסוכן משתמש בו.</Tip>
+          <H3>Configuration</H3>
+          <UL>
+            <li><strong>Name</strong> — שם באנגלית בסגנון <Code>snake_case</Code>; זה השם שהמודל קורא לו</li>
+            <li><strong>Description</strong> — משפט שאומר מתי להשתמש בכלי</li>
+            <li><strong>Parameters</strong> — שם, טיפוס (string / number / integer / boolean) ותיאור לכל פרמטר. אלה בדיוק המפתחות שיגיעו ל-<Code>kwargs</Code></li>
+            <li><strong>Packages</strong> — חבילות pip מופרדות בפסיק, למשל <Code>requests, beautifulsoup4</Code></li>
+          </UL>
+
+          <H3>Secrets</H3>
+          <P>זוגות מפתח–ערך שנחשפים לקוד דרך <Code>os.environ["KEY"]</Code>. שם המפתח נשלח לאסיסטנט כדי שידע להשתמש בו; <strong>הערך עצמו לא נשלח</strong>.</P>
+
+          <H3>הרצה ובדיקה</H3>
+          <P>הפאנל התחתון מריץ את הכלי בלי לצאת מהמסך: <strong>Input</strong> מציג שדה לכל פרמטר מוצהר, <strong>Run</strong> מריץ, וזמן הריצה מוצג ליד הכפתור. אחרי הרצה הפאנל עובר ל-<strong>Output</strong> אם הצליח או ל-<strong>Errors</strong> אם נפל, ונקודה צבעונית מסמנת איפה יש תוכן.</P>
+
+          <H3>שימוש בכלי מתוך פרומפט</H3>
+          <P>הכלים נמסרים למודל כפונקציות אמיתיות, כך שהוא יכול לקרוא להם מעצמו. כדי לכוון אותו, כתוב את שם הכלי עם <Code>@</Code> בפרומפט הבסיס או בפרומפט של סקיל, וציין אילו פרמטרים להעביר.</P>
+          <Warn>שינוי שם כלי אחרי שהזכרת אותו בפרומפט שובר את ההפניה — עדכן גם את הפרומפט.</Warn>
         </div>
       ),
-      rag: (
+
+      /* ─────────────── ASSISTANT ─────────────── */
+      assistant: (
         <div dir="rtl">
-          <H2>בסיס ידע (RAG)</H2>
-          <P>RAG (Retrieval-Augmented Generation) מאפשר לסוכן לענות שאלות על מסמכים שהעלית — PDF, Word, Excel, או טקסט חופשי.</P>
-          <H3>איך זה עובד?</H3>
-          <ol style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 2, paddingRight: 20, marginBottom: 12 }}>
-            <li>מעלים מסמך — הטקסט נשמר ב-PostgreSQL עם אינדקס חיפוש</li>
-            <li>המשתמש שולח שאלה</li>
-            <li>המערכת מחפשת קטעים רלוונטיים מהמסמכים (Full-Text Search)</li>
-            <li>הקטעים מוזרקים אוטומטית ל-System Prompt</li>
-            <li>הסוכן עונה עם ההקשר מהמסמכים</li>
-          </ol>
-          <H3>סוגי מסמכים נתמכים</H3>
-          <ul style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 2, paddingRight: 20, marginBottom: 12 }}>
-            <li>📕 <strong>PDF</strong> — מסמכים, דוחות, מדריכים</li>
-            <li>📘 <strong>DOCX</strong> — Word documents</li>
-            <li>📗 <strong>XLSX / XLS</strong> — גיליונות Excel</li>
-            <li>📝 <strong>טקסט חופשי</strong> — כתיבה ידנית ישירות בממשק</li>
-          </ul>
-          <H3>הוספת מסמך</H3>
-          <P>בלשונית <strong>Knowledge</strong> ניתן:</P>
-          <ul style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 2, paddingRight: 20, marginBottom: 12 }}>
-            <li>לחיצה על <strong>📎 Upload File</strong> — העלאת קובץ</li>
-            <li>לחיצה על <strong>+ Add</strong> — הוספת טקסט ידני</li>
-          </ul>
-          <Tip>תן שם ברור לכל מסמך — הסוכן מציין את שם המקור בתשובות שלו.</Tip>
-          <Warn>הסוכן מחפש לפי מילות מפתח. ודא שהמסמכים כתובים בשפה שהמשתמשים ישאלו בה.</Warn>
+          <H2>✨ האסיסטנט</H2>
+          <P>גם ב-Tools וגם ב-Skills יש לשונית <strong>✨ Assistant</strong> בפאנל הצד, וכפתור <strong>✨ Ask AI</strong> ליד העורך שמקפיץ אליה. זה צ'אט שכותב בשבילך — והתוצאה נכתבת ישר לתוך העורך והשדות, לא כטקסט שצריך להעתיק.</P>
+
+          <H3>איך זה עובד</H3>
+          <UL>
+            <li>הוא משתמש ב-<strong>מפתח ובמודל של הסוכן עצמו</strong>, בלי כלים ובלי בסיס הידע</li>
+            <li>כל תשובה שמכילה קוד או פרומפט מוחלת מיד, עם כפתור <strong>Undo</strong> שמחזיר בדיוק את מה שהיה</li>
+            <li>השיחה נשמרת כשעוברים לשונית, ומתאפסת כשעוברים לכלי או לסקיל אחר</li>
+            <li>שאלה בלי בקשת שינוי מקבלת תשובה בלי לגעת בעורך</li>
+          </UL>
+
+          <H3>מה הוא יודע על הסוכן שלך</H3>
+          <UL>
+            <li><strong>בכלי:</strong> השם, התיאור, הפרמטרים המוצהרים, ה-Packages, <em>שמות</em> ה-Secrets, והקוד הנוכחי — כולל עריכות שעשית ידנית בין הודעה להודעה</li>
+            <li><strong>בסקיל:</strong> השם, התיאור, הפרומפט הנוכחי, הפרומפט הבסיס של הסוכן, ורשימת הכלים והסקילים האמיתיים שלו — כדי שכל <Code>@tool</Code> ו-<Code>#Skill</Code> שהוא כותב יצביע על משהו שקיים</li>
+          </UL>
+
+          <H3>מה הוא ממלא</H3>
+          <P>בכלי הוא כותב את הקוד וגם את השם, התיאור, הפרמטרים וה-Packages. בסקיל הוא כותב את הפרומפט וגם את השם והתיאור. הפרומפט של סקיל נכתב <strong>תמיד באנגלית</strong>, חוץ ממשפטים שהסוכן אמור לומר למשתמש מילה-במילה בשפה אחרת.</P>
+          <P>רשימת הפרמטרים שהוא מחזיר מחליפה את הרשימה כולה, כך שההצהרה והקוד תמיד מסכימים על ה-<Code>kwargs</Code>.</P>
+
+          <H3>קיצורי דרך</H3>
+          <UL>
+            <li><strong>Write it for me</strong> — כתיבה מאפס לפי השם והתיאור</li>
+            <li><strong>Explain the code</strong> / <strong>Add steps</strong> — הסבר על הקוד, או פירוק הפרומפט לשלבים</li>
+            <li><strong>Add error handling</strong> / <strong>Tighten it</strong> — חיסון הקוד, או צמצום הפרומפט</li>
+            <li><strong>Review it</strong> — ביקורת ותיקון</li>
+          </UL>
+          <Tip>תאר את המשימה בשפה חופשית ("כלי שמביא מזג אוויר לפי עיר") ותן לו למלא שם, תיאור, פרמטרים וקוד בבת אחת. מודל חזק יותר בהגדרות הסוכן נותן קוד טוב יותר.</Tip>
         </div>
       ),
-      scrape: (
+
+      /* ─────────────── KNOWLEDGE ─────────────── */
+      knowledge: (
         <div dir="rtl">
-          <H2>סריקת אתרים</H2>
-          <P>הסוכן יכול לגשת לאתרים ולשלוף מהם מידע בשני מצבים:</P>
-          <H3>🔄 Auto-Scrape — אוטומטי</H3>
-          <P>כשמשתמש שולח הודעה עם URL, המערכת <strong>אוטומטית</strong> סורקת את האתר ומחדירה את התוכן לסוכן — לפני שהסוכן עונה.</P>
-          <Block>{`// דוגמת הודעה שמפעילה auto-scrape:
-"תסכם לי את האתר הזה: https://example.com"
-"מה הפריטים הכי נמכרים ב https://shop.co.il?"
-"תתאר את החברה ב https://company.com/about"`}</Block>
-          <P>עד 3 URLs בהודעה אחת נסרקים במקביל.</P>
-          <H3>🛠️ כלי scrape_website — מפורש</H3>
-          <P>הסוכן יכול לקרוא לכלי הסריקה בעצמו כשהוא מחליט שצריך מידע מאתר. מוסיפים אותו מ-Presets בלשונית Tools.</P>
-          <H3>טכנולוגיה</H3>
-          <P>הסורק משתמש ב-<strong>Playwright + Chromium</strong> — דפדפן אמיתי שמריץ JavaScript. זה אומר שגם אתרים מבוססי React/Next.js נסרקים כראוי.</P>
-          <Warn>אתרים עם CAPTCHA, login, או חסימות IP לא יסרקו. זמן סריקה: 3-8 שניות לאתר.</Warn>
-          <Tip>אם האתר לא נסרק — נסה להוסיף את תוכן הדף ידנית לבסיס הידע (RAG).</Tip>
+          <H2>Knowledge (RAG)</H2>
+          <P>בסיס הידע הוא אוסף מסמכים שהסוכן שולף מהם קטעים רלוונטיים לכל הודעה, ומקבל אותם בפרומפט תחת <Code>## Relevant Context</Code>.</P>
+
+          <H3>איך מוסיפים מסמכים</H3>
+          <UL>
+            <li><strong>הדבקת טקסט</strong> — כותרת ותוכן</li>
+            <li><strong>העלאת קובץ</strong> — PDF או DOCX; הטקסט מחולץ בשרת ונשמר כמסמך</li>
+            <li><strong>סריקת אתר</strong> — ראה למטה</li>
+          </UL>
+
+          <H3>ידע גלובלי מול ידע של סקיל</H3>
+          <P>מסמך יכול להיות משויך לכל הסוכן או לסקיל מסוים. כשסקיל פעיל בצ'אט הבדיקה, השליפה מצטמצמת למסמכים שלו — כך שסקילים שונים לא מזהמים אחד את השני.</P>
+
+          <H3>איך השליפה עובדת</H3>
+          <P>חיפוש טקסט מלא של PostgreSQL על ההודעה האחרונה, ועד חמישה הקטעים המדורגים הגבוה נכנסים לפרומפט. האינדוקס נעשה עם המנתח <Code>simple</Code> — כלומר עברית וערבית עובדות, אבל אין נטיות: "מכונית" ו"מכוניות" הם מונחים שונים.</P>
+          <Tip>פצל מסמכים גדולים לפי נושא ותן להם כותרות תיאוריות, וכתוב אותם באותה שפה שבה ישאלו אותך. זה משפר את השליפה יותר מכל דבר אחר.</Tip>
+
+          <H3>סריקת אתרים</H3>
+          <P>מזינים כתובת אחת או יותר, וסורק מבוסס Chromium מרנדר את הדפים (כולל JavaScript) ושומר כל דף כמסמך מסומן <Code>web</Code>. הסריקה מתרעננת אוטומטית פעמיים ביום, ואפשר להריץ אותה ידנית בכל רגע.</P>
+          <P>בנוסף, כשמשתמש שולח כתובת בצ'אט הבדיקה, עד שלוש כתובות מההודעה נסרקות מיד ונמסרות למודל תחת <Code>## Fetched Web Pages</Code> — בלי להישמר בבסיס הידע.</P>
         </div>
       ),
+
+      /* ─────────────── TEST ─────────────── */
       test: (
         <div dir="rtl">
           <H2>בדיקת הסוכן</H2>
-          <H3>Test Chat</H3>
-          <P>לחיצה על <strong>Test</strong> בכרטיס הסוכן פותחת חלון שיחה. כאן בודקים את ההתנהגות הסופית.</P>
-          <H3>Tool Test Run</H3>
-          <P>בלשונית Tools, כל כלי כולל פאנל <strong>Test Run</strong> — ניתן להריץ את הכלי ישירות עם ערכים לבדיקה לפני שהסוכן משתמש בו.</P>
-          <H3>מה לבדוק?</H3>
-          <ul style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 2, paddingRight: 20, marginBottom: 12 }}>
-            <li>✅ הסוכן עונה בשפה הנכונה</li>
-            <li>✅ הסוכן לא ממציא מידע שלא קיים במסמכים</li>
-            <li>✅ הכלים מופעלים כשצריך</li>
-            <li>✅ תשובות על אתרים מכילות תוכן אמיתי מהאתר</li>
-            <li>✅ הסוכן מתנהג לפי ה-System Prompt</li>
-          </ul>
-          <Tip>שמור שאלות בדיקה קבועות ובדוק אותן אחרי כל שינוי.</Tip>
+          <P>כפתור <strong>Test</strong> פותח צ'אט בצד, מול ההגדרות המעודכנות של הסוכן — בלי לפרסם כלום.</P>
+
+          <H3>מה רואים בצ'אט</H3>
+          <UL>
+            <li><strong>קריאות לכלים</strong> — כל קריאה מוצגת עם הפרמטרים שנשלחו והתוצאה שחזרה</li>
+            <li><strong>מעבר סקיל</strong> — כשהסוכן עובר לסקיל, מוצג כרטיס עם שמו והתיאור</li>
+            <li><strong>זמני תגובה</strong> — משך כל תשובה במילישניות</li>
+            <li><strong>מיסוך DLP</strong> — הודעה שמוסכה מסומנת ככזו</li>
+          </UL>
+
+          <H3>היסטוריה</H3>
+          <P>אייקון השעון בכותרת הצ'אט פותח את השיחות הקודמות עם הסוכן הזה מהדפדפן הזה. שיחות שנוהלו דרך הווידג'ט או WhatsApp נמצאות בלשונית <strong>Interactions</strong>.</P>
+          <Warn>כל שיחה מתחילה מאפס — הסוכן לא זוכר שיחות קודמות. מה שצריך שיהיה זמין תמיד צריך להיות בפרומפט או בבסיס הידע.</Warn>
         </div>
       ),
-      tips: (
+
+      /* ─────────────── WIDGET ─────────────── */
+      widget: (
         <div dir="rtl">
-          <H2>טיפים מתקדמים</H2>
-          <H3>System Prompt אפקטיבי</H3>
-          <Block>{`// מבנה מומלץ:
-## תפקיד
-אתה [תפקיד] של [חברה/שירות].
+          <H2>הטמעה באתר</H2>
+          <P>לשונית <strong>Export</strong> מייצרת קוד הטמעה מוכן, עם תצוגה מקדימה חיה של הווידג'ט.</P>
 
-## הוראות
-- [הוראה 1]
-- [הוראה 2]
+          <H3>מה אפשר לעצב</H3>
+          <UL>
+            <li>כותרת, צבע ראשי וצבע הכותרת</li>
+            <li>טקסט ה-placeholder בתיבת ההקלדה</li>
+            <li>גובה ורדיוס פינות</li>
+          </UL>
 
-## מגבלות
-- אל תענה על [נושא]
-- תמיד [התנהגות]
+          <H3>שתי דרכי הטמעה</H3>
+          <UL>
+            <li><strong>iframe</strong> — הטמעה קבועה בתוך הדף</li>
+            <li><strong>כפתור צף</strong> — קטע script שמוסיף בועה בפינה שנפתחת ונסגרת, עם האווטאר של הסוכן</li>
+          </UL>
 
-## פורמט תשובה
-[תאר איך להציג תשובות]`}</Block>
+          <H3>מה קורה מאחורי הקלעים</H3>
+          <P>הווידג'ט מדבר עם נקודת קצה ציבורית של הסוכן. היא מחזירה רק את מה שדרוש לתצוגה — שם, אווטאר והודעת פתיחה — ולא את המפתחות או ההגדרות. הסוכן עונה בצד השרת עם המפתח שלו, כולל כלים, בסיס ידע ו-DLP, וכל שיחה נשמרת ומופיעה ב-Interactions כערוץ <Code>Widget</Code>.</P>
+          <Warn>הווידג'ט פתוח לכל מי שמגיע לדף שבו הטמעת אותו, וכל שיחה מחויבת למפתח ה-API של הסוכן. אל תטמיע סוכן יקר בדף ציבורי בלי מעקב ב-Interactions.</Warn>
+        </div>
+      ),
 
-          <H3>כלים יעילים</H3>
-          <P>כלים טובים:</P>
-          <ul style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 2, paddingRight: 20, marginBottom: 12 }}>
-            <li>עושים דבר אחד בלבד, עושים אותו טוב</li>
-            <li>מחזירים מחרוזת ברורה שהסוכן יכול לפרש</li>
-            <li>כוללים טיפול בשגיאות</li>
-            <li>משתמשים ב-env vars למפתחות API</li>
-          </ul>
+      /* ─────────────── WHATSAPP ─────────────── */
+      whatsapp: (
+        <div dir="rtl">
+          <H2>ערוץ WhatsApp</H2>
+          <P>לשונית <strong>Whatsapp</strong> מחברת את הסוכן למספר WhatsApp Business דרך Meta Cloud API. אנשים כותבים למספר, והסוכן עונה עם אותו פרומפט, כלים וידע.</P>
 
-          <H3>RAG איכותי</H3>
-          <ul style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 2, paddingRight: 20, marginBottom: 12 }}>
-            <li>חלק מסמכים גדולים לחלקים קטנים (topic per document)</li>
-            <li>שמות מסמכים תיאוריים — הסוכן מזכיר אותם</li>
-            <li>אותה שפה שהמשתמשים ישאלו בה</li>
-          </ul>
+          <H3>מה צריך מ-Meta</H3>
+          <UL>
+            <li><strong>Phone Number ID</strong> — מזהה המספר ב-WhatsApp Business</li>
+            <li><strong>Access Token</strong> — טוקן קבוע לשליחת הודעות</li>
+            <li><strong>App Secret</strong> — לאימות שכל הודעה נכנסת באמת מ-Meta</li>
+            <li><strong>Verify Token</strong> — מחרוזת שאתה בוחר (יש כפתור שמגריל אותה) ומזין גם ב-Meta</li>
+          </UL>
 
-          <H3>שימוש ב-Skills</H3>
-          <P>Skills הם זרימות עבודה מובנות — שילוב של prompt + כלים + מסמכים לתרחיש מסוים. מומלץ לסוכנים עם כמה "מצבים".</P>
+          <H3>שלבי החיבור</H3>
+          <UL>
+            <li>מלא את ארבעת השדות ולחץ <strong>Test connection</strong> — הבדיקה מאמתת מול Meta ומחזירה את שם התצוגה של המספר</li>
+            <li>העתק את כתובת ה-Webhook מהמסך והדבק אותה ב-Meta יחד עם ה-Verify Token</li>
+            <li>הפעל את המתג בראש הלשונית</li>
+          </UL>
 
-          <Tip>צור סוכן נפרד לכל תחום שימוש — סוכן מכירות, סוכן תמיכה, סוכן מחקר — במקום סוכן אחד שעושה הכל.</Tip>
-          <Warn>כל שיחה מתחילה מחדש — הסוכן לא זוכר שיחות קודמות אלא אם כן מוסיפים את ההיסטוריה לבסיס הידע.</Warn>
+          <H3>מה קורה בכל הודעה</H3>
+          <UL>
+            <li>החתימה של Meta מאומתת מול ה-App Secret; בקשה בלי חתימה תקפה נדחית</li>
+            <li>הודעה מטופלת פעם אחת בלבד, גם אם Meta שולחת אותה שוב</li>
+            <li>ההיסטוריה נשמרת פר שולח, ועשרים ההודעות האחרונות נשלחות למודל כהקשר</li>
+            <li>תשובה ארוכה מפוצלת לכמה הודעות; הודעות שאינן טקסט מקבלות תשובה מנומסת</li>
+          </UL>
+          <Warn>מספר WhatsApp יכול להיות מחובר לסוכן אחד בלבד. אם תזין מספר שכבר מחובר לסוכן אחר, השמירה תידחה עם הודעה.</Warn>
+        </div>
+      ),
+
+      /* ─────────────── INTERACTIONS ─────────────── */
+      interactions: (
+        <div dir="rtl">
+          <H2>Interactions</H2>
+          <P>לשונית בסייד-בר שמרכזת כל השיחות שנוהלו עם הסוכנים שלך, בכל הערוצים.</P>
+
+          <H3>העמודות</H3>
+          <UL>
+            <li><strong>Agent</strong> — הסוכן שענה</li>
+            <li><strong>Channel</strong> — Widget, WhatsApp או Test chat</li>
+            <li><strong>Started</strong> — מתי השיחה התחילה</li>
+            <li><strong>Duration</strong> — מהפעילות הראשונה עד האחרונה בשיחה</li>
+            <li><strong>Messages</strong> — מספר ההודעות</li>
+            <li><strong>Conversation</strong> — ההודעה הראשונה של המשתמש; לחיצה על השורה פותחת את התמלול המלא</li>
+          </UL>
+
+          <H3>סינון וחיפוש</H3>
+          <P>מתחת לכל כותרת יש פילטר: בחירת סוכן, ערוץ, טווח תאריכים, מינימום ומקסימום שניות, ומינימום הודעות. תיבת החיפוש בעמודת Conversation מחפשת בתוך <strong>כל תוכן ההודעות</strong>, לא רק בתצוגה המקדימה. Started, Duration ו-Messages ניתנים למיון בלחיצה, ו-Clear filters מאפס הכול.</P>
+          <P>לאדמין יש כפתור נוסף שמרחיב את הרשימה לכל המשתמשים ומוסיף עמודת Owner.</P>
+        </div>
+      ),
+
+      /* ─────────────── ADMIN ─────────────── */
+      admin: (
+        <div dir="rtl">
+          <H2>Admin</H2>
+          <P>לשונית שמופיעה רק למשתמשי אדמין.</P>
+
+          <H3>משתמשים</H3>
+          <UL>
+            <li>טבלה עם שם משתמש, טלפון, הרשאה, מספר סוכנים והתחברות אחרונה</li>
+            <li><strong>View Agents</strong> — צפייה ועריכה של הסוכנים של אותו משתמש, כולל שכפול סוכן משלך אליו</li>
+            <li><strong>Reset Password</strong> — מגריל סיסמה זמנית ומציג אותה פעם אחת</li>
+            <li><strong>Delete User</strong> — מוחק את המשתמש, הסוכנים שלו, השיחות והמסמכים. דורש הקלדת שם המשתמש לאישור, ואי אפשר למחוק את עצמך</li>
+          </UL>
+          <Warn>שכפול סוכן למשתמש אחר לא מעביר את חיבור ה-Gmail ואת הגדרות ה-WhatsApp — הן מתאפסות בכוונה, כדי שלא יעברו טוקנים ומספרים בין משתמשים.</Warn>
+
+          <H3>Chat History</H3>
+          <P>תצוגת כל השיחות בכל המערכת, עם תמלול מלא. Interactions נוח יותר לסינון; זה נוח יותר לסקירה כללית.</P>
+        </div>
+      ),
+
+      /* ─────────────── OPS ─────────────── */
+      ops: (
+        <div dir="rtl">
+          <H2>תשתית ותחזוקה</H2>
+
+          <H3>משתני סביבה</H3>
+          <UL>
+            <li><Code>DATABASE_URL</Code> — מחרוזת החיבור ל-Neon</li>
+            <li><Code>JWT_SECRET</Code> — חתימת טוקני ההתחברות ומצב ה-OAuth של Gmail</li>
+            <li><Code>GOOGLE_CLIENT_ID</Code> / <Code>GOOGLE_CLIENT_SECRET</Code> — נדרשים לחיבור Gmail</li>
+            <li><Code>APP_URL</Code> — כתובת הבסיס לחזרה מ-OAuth (אם לא מוגדר, נגזרת מהבקשה)</li>
+          </UL>
+
+          <H3>מיגרציות</H3>
+          <P>סכימת הבסיס נמצאת ב-<Code>schema.sql</Code>, וכל שינוי אחריה בתיקיית <Code>migrations/</Code>. הרצה:</P>
+          <Block>{`npm install
+npm run migrate -- --dry   # מה יורץ
+npm run migrate            # הרצה בפועל`}</Block>
+          <P>הריצה קוראת <Code>DATABASE_URL</Code> מהסביבה או מקובץ <Code>.env</Code>, מריצה כל קובץ פעם אחת ורושמת אותו בטבלת <Code>schema_migrations</Code>. הקבצים כתובים כך שהרצה חוזרת לא מזיקה.</P>
+
+          <H3>משימות מתוזמנות</H3>
+          <P>סריקת האתרים של כל הסוכנים רצה פעמיים ביום דרך Vercel Cron. ל-webhook של WhatsApp ולסריקות יש חלונות זמן ארוכים יותר מברירת המחדל.</P>
+        </div>
+      ),
+
+      /* ─────────────── SECURITY ─────────────── */
+      security: (
+        <div dir="rtl">
+          <H2>אבטחה ופרטיות</H2>
+
+          <H3>מה מופרד בין משתמשים</H3>
+          <UL>
+            <li>סוכן שייך למשתמש, וכל קריאה לשרת מאמתת בעלות לפני שהיא מחזירה או משנה משהו</li>
+            <li>חיבור Gmail הוא פר סוכן, וניתן לגישה רק לבעל הסוכן</li>
+            <li>מספר WhatsApp הוא בלעדי לסוכן אחד, וניתוב הודעה נקבע לפי הוכחת ה-App Secret — לא לפי מי שהזין את המספר אחרון</li>
+          </UL>
+
+          <H3>מה חשוב לדעת על סודות</H3>
+          <UL>
+            <li>מפתחות ה-API, טוקני WhatsApp וה-Secrets של הכלים נשמרים בהגדרות הסוכן בבסיס הנתונים</li>
+            <li>ערכי Secrets נחשפים לקוד הכלי שלך בזמן ריצה — כל מי שיכול לערוך את הכלי יכול לקרוא אותם</li>
+            <li>האסיסטנט מקבל את שמות ה-Secrets בלבד, לא את הערכים</li>
+          </UL>
+
+          <H3>מה חשוף לציבור</H3>
+          <UL>
+            <li>הווידג'ט וה-webhook של WhatsApp פונים לעולם; שיחה דרכם מחויבת למפתח שלך</li>
+            <li>בסיס הידע נשלף לתוך התשובות — אל תכניס אליו מה שלא מוכן להיאמר ללקוח</li>
+            <li>DLP מסתיר תבניות של כרטיס אשראי ותעודת זהות, ולא כל מידע מזהה. הוא שכבת הגנה, לא ערובה</li>
+          </UL>
+          <Tip>עקוב אחרי Interactions כדי לראות מה באמת נשאל ומה הסוכן ענה. זה הכלי הכי טוב לתפוס גם דליפות וגם תשובות שגויות.</Tip>
         </div>
       ),
     };
 
     return (
-      <div style={{ display: 'flex', gap: 32, maxWidth: 960, margin: '0 auto' }}>
+      <div style={{ display: 'flex', gap: 32, maxWidth: 1000, margin: '0 auto' }}>
         {/* Sidebar nav */}
         <div style={{ width: 200, flexShrink: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 11, color: 'var(--text-muted)', letterSpacing: 1, marginBottom: 10, textTransform: 'uppercase' }}>תוכן עניינים</div>
@@ -3994,7 +4193,7 @@ def run(**kwargs):
         {/* Content */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ marginBottom: 6, fontSize: 11, color: 'var(--text-muted)', letterSpacing: 1, textTransform: 'uppercase' }}>תיעוד</div>
-          <div style={{ fontWeight: 800, fontSize: 28, marginBottom: 24, color: 'var(--text)' }}>📖 מדריך AgentForge</div>
+          <div style={{ fontWeight: 800, fontSize: 28, marginBottom: 24, color: 'var(--text)' }}>📖 מדריך 8Legs.ai</div>
           {content[active]}
         </div>
       </div>
