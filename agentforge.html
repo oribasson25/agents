@@ -67,10 +67,17 @@
       40% { opacity: 1; transform: scale(1); }
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+    /* Draws the eye to the assistant until it has been opened once — never after. */
+    @keyframes assistantRing {
+      0%   { box-shadow: 0 6px 22px var(--primary-glow), 0 0 0 0 rgba(239,159,39,0.55); }
+      70%  { box-shadow: 0 6px 22px var(--primary-glow), 0 0 0 14px rgba(239,159,39,0); }
+      100% { box-shadow: 0 6px 22px var(--primary-glow), 0 0 0 0 rgba(239,159,39,0); }
+    }
 
     .fade-in { animation: fadeIn 0.25s ease both; }
     .slide-in-right { animation: slideInRight 0.3s cubic-bezier(0.16,1,0.3,1) both; }
     .card-highlight { animation: cardHighlight 1.2s ease-out; }
+    .assistant-ring { animation: assistantRing 2.4s ease-out infinite; }
 
     .typing-dot {
       display: inline-block;
@@ -3783,7 +3790,7 @@
           </UL>
 
           <H3>איפה כל דבר יושב</H3>
-          <P>בסייד-בר: <strong>Home</strong> (הסוכנים שלך), <strong>Assistant chats</strong> (היסטוריית השיחות עם האסיסטנטים), <strong>Interactions</strong> (שיחות של משתמשי קצה), <strong>Documentation</strong> (הדף הזה), <strong>Settings</strong>, ו-<strong>Admin</strong> למשתמשי אדמין בלבד. הכפתור <strong>✨</strong> בפינה הימנית התחתונה פותח את אסיסטנט המערכת מכל מסך.</P>
+          <P>בסייד-בר: <strong>Home</strong> (הסוכנים שלך), <strong>Assistant chats</strong> (היסטוריית השיחות עם האסיסטנטים), <strong>Interactions</strong> (שיחות של משתמשי קצה), <strong>Documentation</strong> (הדף הזה), <strong>Settings</strong>, ו-<strong>Admin</strong> למשתמשי אדמין בלבד. הכפתור <strong>✨ שאל את האסיסטנט</strong> בפינה הימנית התחתונה פותח את אסיסטנט המערכת מכל מסך.</P>
         </div>
       ),
 
@@ -3936,7 +3943,7 @@ def run(**kwargs):
       platform: (
         <div dir="rtl">
           <H2>✨ אסיסטנט המערכת</H2>
-          <P>הכפתור <strong>✨</strong> בפינה הימנית התחתונה, בכל מסך. לחיצה פותחת צ'אט צף ולחיצה נוספת מקפלת אותו — כך שאפשר לבקש שינוי בזמן שרואים את מה שרוצים לשנות. זה לא סוכן שאתה בונה אלא אסיסטנט שמתפעל את המערכת בשבילך — הוא מבצע פעולות, לא רק מסביר איפה ללחוץ.</P>
+          <P>הכפתור <strong>✨ שאל את האסיסטנט</strong> בפינה הימנית התחתונה, בכל מסך. אפשר להגיע אליו גם מ-<strong>Build with the assistant</strong> בראש עמוד הסוכנים. לחיצה פותחת צ'אט צף ולחיצה נוספת מקפלת אותו — כך שאפשר לבקש שינוי בזמן שרואים את מה שרוצים לשנות. זה לא סוכן שאתה בונה אלא אסיסטנט שמתפעל את המערכת בשבילך — הוא מבצע פעולות, לא רק מסביר איפה ללחוץ.</P>
 
           <H3>מה הוא עושה</H3>
           <UL>
@@ -4263,6 +4270,24 @@ npm run migrate            # הרצה בפועל`}</Block>
               {agents.length === 0 ? 'No agents yet' : `${agents.length} agent${agents.length !== 1 ? 's' : ''} configured`}
             </div>
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* The moment someone wants an agent is the moment to mention that
+              something here can build one for them. */}
+          <button onClick={() => askAssistant('בנה לי סוכן חדש. שאל אותי מה הוא צריך לעשות.')}
+            title="Let the assistant build an agent for you"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 7,
+              background: 'var(--bg-card)', color: 'var(--text-2)',
+              padding: '9px 16px', borderRadius: 'var(--r-md)',
+              fontWeight: 700, fontSize: 13,
+              border: '1px solid var(--border)',
+              transition: 'all 0.18s ease',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.color = 'var(--text)'; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-2)'; }}
+          >
+            <span style={{ fontSize: 15 }}>✨</span> Build with the assistant
+          </button>
           <button onClick={onNew}
             style={{
               display: 'flex', alignItems: 'center', gap: 7,
@@ -4277,6 +4302,7 @@ npm run migrate            # הרצה בפועל`}</Block>
           >
             {Icons.plus} New Agent
           </button>
+          </div>
         </div>
         {agents.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: '64px 48px', background: 'var(--bg-card)', borderRadius: 'var(--r-xl)', border: '1px dashed var(--border)' }}>
@@ -4285,8 +4311,21 @@ npm run migrate            # הרצה בפועל`}</Block>
             </div>
             <div>
               <div style={{ color: 'var(--text)', fontWeight: 700, fontSize: 15, textAlign: 'center', marginBottom: 6 }}>No agents yet</div>
-              <div style={{ color: 'var(--text-muted)', fontSize: 13, textAlign: 'center' }}>Click "New Agent" to create your first agent</div>
+              <div style={{ color: 'var(--text-muted)', fontSize: 13, textAlign: 'center', lineHeight: 1.6 }}>
+                Not sure where to start? Describe what you want in plain words<br />and the assistant will build the agent for you.
+              </div>
             </div>
+            <button onClick={() => askAssistant('בנה לי סוכן ראשון. שאל אותי מה הוא צריך לעשות.')}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                background: 'var(--primary)', color: '#0a0a0a',
+                padding: '10px 20px', borderRadius: 'var(--r-md)',
+                fontWeight: 700, fontSize: 13.5,
+                boxShadow: '0 2px 12px var(--primary-glow)',
+              }}>
+              <span style={{ fontSize: 16 }}>✨</span> Build my first agent with the assistant
+            </button>
+            <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>or click "New Agent" to build it yourself</div>
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(268px,1fr))', gap: 14 }}>
@@ -4848,7 +4887,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     ].join('\n'),
   };
 
-  function PlatformAssistantView({ agents, onAgentsChanged, language, compact }) {
+  function PlatformAssistantView({ agents, onAgentsChanged, language, compact, seed }) {
     const [messages, setMessages] = useState([]);   // { id, role: user|assistant|tool|error, … }
     const [input, setInput] = useState('');
     const [pending, setPending] = useState(false);
@@ -4860,6 +4899,17 @@ npm run migrate            # הרצה בפועל`}</Block>
     useEffect(() => {
       if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
     }, [messages, pending]);
+
+    // A question handed in from outside (an example chip, or "build with the
+    // assistant") is asked straight away. The nonce is what makes a repeat of
+    // the same text ask again.
+    const seededRef = useRef(null);
+    useEffect(() => {
+      if (!seed || !seed.text || seed.nonce === seededRef.current) return;
+      seededRef.current = seed.nonce;
+      if (accountApiUsable()) send(seed.text);
+      else setInput(seed.text);
+    }, [seed]);
 
     const noKey = !accountApiUsable();
 
@@ -5176,8 +5226,120 @@ npm run migrate            # הרצה בפועל`}</Block>
   // The platform assistant follows you across every screen: a bubble that
   // expands into a chat and collapses back, so you can ask it to change
   // something while looking at the thing you want changed.
+  // Remembered once, forever: the intro card and the attention ring are a
+  // first-visit thing, never a welcome mat you have to push aside every time.
+  const ASSISTANT_INTRO_KEY = 'agentforge_assistant_intro_v1';
+
+  function introSeen() {
+    try { return localStorage.getItem(ASSISTANT_INTRO_KEY) === '1'; } catch (e) { return true; }
+  }
+  function markIntroSeen() {
+    try { localStorage.setItem(ASSISTANT_INTRO_KEY, '1'); } catch (e) { /* private mode */ }
+  }
+
+  /** Anything on screen can hand the assistant a question and pop it open. */
+  function askAssistant(prompt) {
+    window.dispatchEvent(new CustomEvent('assistant:ask', { detail: { prompt: prompt || '' } }));
+  }
+
+  const ASSISTANT_INTRO = {
+    he: {
+      label: 'שאל את האסיסטנט',
+      title: 'האסיסטנט מתפעל את המערכת בשבילך',
+      lines: [
+        'בונה סוכן שלם מאפס — פרומפט, סקילים וכלים',
+        'משנה סוכן קיים, כותב כלי Python ומריץ אותו כדי לבדוק',
+        'עונה על כל שאלה על הפלטפורמה ומראה מה קרה בשיחות',
+      ],
+      examples: ['בנה לי סוכן שירות לקוחות', 'איך מחברים WhatsApp?'],
+      dismiss: 'הבנתי',
+    },
+    en: {
+      label: 'Ask the assistant',
+      title: 'The assistant operates the platform for you',
+      lines: [
+        'Builds a whole agent from scratch — prompt, skills and tools',
+        'Changes an existing agent, writes a Python tool and runs it to check',
+        'Answers any question about the platform and shows what happened in conversations',
+      ],
+      examples: ['Build me a customer support agent', 'How do I connect WhatsApp?'],
+      dismiss: 'Got it',
+    },
+  };
+
+  /**
+   * The first-visit card above the assistant button. It exists because a bare
+   * orange circle in the corner tells you nothing about what it can do.
+   */
+  function AssistantIntroCard({ copy, ltr, onPick, onDismiss }) {
+    return (
+      <div className="fade-in" dir={ltr ? 'ltr' : 'rtl'} style={{
+        position: 'fixed', bottom: 92, right: 24, zIndex: 200,
+        width: 'min(340px, calc(100vw - 32px))',
+        background: 'var(--bg-sidebar)', border: '1px solid var(--primary)',
+        borderRadius: 'var(--r-lg)', padding: '15px 16px 14px',
+        boxShadow: '0 12px 40px rgba(0,0,0,0.45), 0 0 0 4px var(--primary-glow)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, marginBottom: 9 }}>
+          <span style={{ fontSize: 17, lineHeight: 1.2 }}>✨</span>
+          <div style={{ flex: 1, fontWeight: 800, fontSize: 14, lineHeight: 1.45 }}>{copy.title}</div>
+          <button onClick={onDismiss} title={copy.dismiss}
+            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 16, lineHeight: 1, padding: 0, flexShrink: 0 }}>×</button>
+        </div>
+        <ul style={{ margin: 0, padding: ltr ? '0 0 0 18px' : '0 18px 0 0', fontSize: 12.5, lineHeight: 1.65, color: 'var(--text-2)' }}>
+          {copy.lines.map(line => <li key={line} style={{ marginBottom: 2 }}>{line}</li>)}
+        </ul>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
+          {copy.examples.map(ex => (
+            <button key={ex} onClick={() => onPick(ex)}
+              style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-2)', borderRadius: 999, padding: '5px 11px', fontSize: 12, fontWeight: 600, textAlign: 'start' }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.color = 'var(--text)'; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-2)'; }}
+            >{ex}</button>
+          ))}
+        </div>
+        <div style={{
+          position: 'absolute', bottom: -7, [ltr ? 'left' : 'right']: 28,
+          width: 12, height: 12, background: 'var(--bg-sidebar)',
+          borderRight: '1px solid var(--primary)', borderBottom: '1px solid var(--primary)',
+          transform: 'rotate(45deg)',
+        }} />
+      </div>
+    );
+  }
+
   function FloatingAssistant({ agents, onAgentsChanged, language }) {
     const [open, setOpen] = useState(false);
+    const [intro, setIntro] = useState(false);
+    const [seed, setSeed] = useState(null);
+    const copy = ASSISTANT_INTRO[language === 'en' ? 'en' : 'he'];
+
+    // The card arrives a beat after the page settles, so it reads as a hint
+    // rather than as something blocking the screen you just asked for.
+    useEffect(() => {
+      if (introSeen()) return;
+      const t = setTimeout(() => setIntro(true), 900);
+      return () => clearTimeout(t);
+    }, []);
+
+    function reveal(prompt) {
+      markIntroSeen();
+      setIntro(false);
+      setOpen(true);
+      if (prompt) setSeed({ text: prompt, nonce: uid() });
+    }
+
+    function dismissIntro() {
+      markIntroSeen();
+      setIntro(false);
+    }
+
+    // "Build with the assistant" and the example chips reach it from anywhere.
+    useEffect(() => {
+      const onAsk = e => reveal((e.detail || {}).prompt);
+      window.addEventListener('assistant:ask', onAsk);
+      return () => window.removeEventListener('assistant:ask', onAsk);
+    }, []);
 
     return (
       <React.Fragment>
@@ -5197,6 +5359,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             <div style={{ flex: 1, minHeight: 0, padding: '12px 14px 14px', display: 'flex', flexDirection: 'column' }}>
               <PlatformAssistantView
                 compact
+                seed={seed}
                 agents={agents}
                 language={language}
                 onAgentsChanged={onAgentsChanged}
@@ -5205,22 +5368,31 @@ npm run migrate            # הרצה בפועל`}</Block>
           </div>
         )}
 
+        {/* First visit only: says what the thing in the corner actually is. */}
+        {intro && !open && (
+          <AssistantIntroCard copy={copy} ltr={language === 'en'} onPick={reveal} onDismiss={dismissIntro} />
+        )}
+
+        {/* A labelled pill, not a mystery circle — it only shrinks once it is open. */}
         <button
-          onClick={() => setOpen(v => !v)}
-          title={open ? (language === 'en' ? 'Collapse the assistant' : 'לקפל את האסיסטנט') : (language === 'en' ? 'Open the assistant' : 'לפתוח את האסיסטנט')}
+          onClick={() => { markIntroSeen(); setIntro(false); setOpen(v => !v); }}
+          className={!open && intro ? 'assistant-ring' : undefined}
+          title={open ? (language === 'en' ? 'Collapse the assistant' : 'לקפל את האסיסטנט') : copy.label}
           style={{
             position: 'fixed', bottom: 24, right: 24, zIndex: 200,
-            width: 56, height: 56, borderRadius: '50%',
+            height: 52, borderRadius: 999,
+            padding: open ? 0 : '0 20px 0 17px',
+            width: open ? 52 : 'auto',
             background: 'var(--primary)', color: '#0a0a0a',
-            border: 'none', fontSize: 24, fontWeight: 700,
+            border: 'none', fontSize: open ? 22 : 14, fontWeight: 700,
             boxShadow: '0 6px 22px var(--primary-glow)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            transition: 'transform 0.15s',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
+            whiteSpace: 'nowrap', transition: 'transform 0.15s',
           }}
-          onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.06)'; }}
+          onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.04)'; }}
           onMouseLeave={e => { e.currentTarget.style.transform = 'none'; }}
         >
-          {open ? '▾' : '✨'}
+          {open ? '▾' : <React.Fragment><span style={{ fontSize: 17 }}>✨</span>{copy.label}</React.Fragment>}
         </button>
       </React.Fragment>
     );
@@ -5336,7 +5508,7 @@ npm run migrate            # הרצה בפועל`}</Block>
           <div>
             <div style={{ fontWeight: 800, fontSize: 26, letterSpacing: '-0.02em' }}>Assistant history</div>
             <div style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4, fontWeight: 500 }}>
-              {loading && !data ? 'טוען…' : `${sessions.length} שיחות עם האסיסטנטים · הצ'אט עצמו נמצא בכפתור ✨ בפינה`}
+              {loading && !data ? 'טוען…' : `${sessions.length} שיחות עם האסיסטנטים · הצ'אט עצמו נמצא בכפתור ✨ שאל את האסיסטנט בפינה`}
             </div>
           </div>
         </div>
@@ -5361,7 +5533,7 @@ npm run migrate            # הרצה בפועל`}</Block>
         ) : sessions.length === 0 ? (
           <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '60px 20px', fontSize: 14, background: 'var(--bg-card)', border: '1px dashed var(--border)', borderRadius: 'var(--r-lg)' }}>
             <div style={{ fontSize: 34, marginBottom: 12 }}>✨</div>
-            {query || kind ? 'אין שיחות שתואמות את הסינון.' : 'עוד לא דיברת עם האסיסטנטים. הכפתור ✨ בפינה למטה פותח את הצ\'אט.'}
+            {query || kind ? 'אין שיחות שתואמות את הסינון.' : 'עוד לא דיברת עם האסיסטנטים. הכפתור ✨ שאל את האסיסטנט בפינה למטה פותח את הצ\'אט.'}
           </div>
         ) : (
           <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', overflow: 'hidden' }}>
