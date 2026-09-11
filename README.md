@@ -60,7 +60,7 @@ npm install
 | `JWT_SECRET` | yes | signs login tokens and the Gmail OAuth state |
 | `GOOGLE_CLIENT_ID` | for Gmail | OAuth client for the `send_email` tool |
 | `GOOGLE_CLIENT_SECRET` | for Gmail | same |
-| `APP_URL` | no | base URL for the OAuth redirect; derived from the request when unset |
+| `APP_URL` | no | base URL for the OAuth redirect; derived from the request when unset. Normalised on read (whitespace stripped, scheme added, trailing slash dropped) — a newline pasted in here used to reach Google inside `redirect_uri` and get the whole flow rejected |
 
 Leaving `JWT_SECRET` unset falls back to a hard-coded development value — set it.
 

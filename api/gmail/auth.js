@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { verifyJWT } from '../_auth.js';
-import { userOwnsAgent } from '../_gmail.js';
+import { userOwnsAgent, appBaseUrl } from '../_gmail.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
 
@@ -26,7 +26,7 @@ export default async function handler(req, res) {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId) return res.status(500).json({ error: 'GOOGLE_CLIENT_ID not configured' });
 
-  const appUrl = process.env.APP_URL || `https://${req.headers.host}`;
+  const appUrl = appBaseUrl(req);
   const redirectUri = `${appUrl}/api/gmail/callback`;
 
   const state = signState({ userId: user.userId, agentId });

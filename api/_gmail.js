@@ -98,3 +98,22 @@ export async function sendGmail({ agentId, to, subject, body }) {
 
   return { ok: true, from: row.email, message: `Email sent to ${to}` };
 }
+
+/**
+ * The base URL for the OAuth redirect.
+ *
+ * Whatever is in APP_URL came out of a deployment UI, so it can carry a
+ * trailing newline, stray spaces or no scheme at all. A newline is the nasty
+ * one: it survives into the redirect_uri Google is handed — which Google
+ * rejects as `invalid_request`, "does not comply with the OAuth 2.0 policy" —
+ * and it makes the callback's own Location header throw ERR_INVALID_CHAR, so
+ * the function 500s instead of reporting the problem. Normalise it once, here.
+ */
+export function appBaseUrl(req) {
+  const raw = (process.env.APP_URL || '').replace(/[\s\u0000-\u001f\u007f]+/g, '');
+  const host = String((req && req.headers && req.headers.host) || '').replace(/[\s\u0000-\u001f\u007f]+/g, '');
+  const base = raw || (host ? `https://${host}` : '');
+  if (!base) return '';
+  const withScheme = /^https?:\/\//i.test(base) ? base : `https://${base}`;
+  return withScheme.replace(/\/+$/, '');
+}

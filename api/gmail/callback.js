@@ -1,5 +1,7 @@
 import crypto from 'crypto';
 import { sql } from '../_db.js';
+import { appBaseUrl } from '../_gmail.js';
+import { logError } from '../_errorLog.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
 
@@ -13,8 +15,21 @@ function verifyState(state) {
 }
 
 export default async function handler(req, res) {
+  // Anything that throws in here strands the user on a blank 500 halfway
+  // through Google's flow, with nothing said and nothing logged. Send them
+  // back to the app with a reason instead.
+  try {
+    return await connect(req, res);
+  } catch (err) {
+    await logError({ source: 'gmail', message: err.message, context: { step: 'oauth_callback' } });
+    const back = appBaseUrl(req);
+    return res.redirect(302, `${back}/?gmail_error=${encodeURIComponent(err.message.slice(0, 200))}`);
+  }
+}
+
+async function connect(req, res) {
   const { code, state, error } = req.query;
-  const appUrl = process.env.APP_URL || `https://${req.headers.host}`;
+  const appUrl = appBaseUrl(req);
 
   if (error) {
     return res.redirect(302, `${appUrl}/?gmail_error=${encodeURIComponent(error)}`);
