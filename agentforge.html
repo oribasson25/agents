@@ -574,7 +574,9 @@
 
   /* ─────────────────── RICH PROMPT EDITOR ─────────────────── */
   function RichPromptEditor({ value, onChange, fill }) {
-    const [mode, setMode] = useState('edit');
+    // Opens as a read-through of the prompt — collapsible sections, @tool and
+    // #Skill highlighted. Editing is a deliberate click on Edit.
+    const [mode, setMode] = useState('preview');
     const [collapsed, setCollapsed] = useState(new Set());
     const textRef = useRef(null);
 
@@ -585,6 +587,18 @@
         textRef.current.style.height = Math.max(320, textRef.current.scrollHeight) + 'px';
       }
     }, [value, mode, fill]);
+
+    // Pressing Edit means "I want to type now" — with the caret at the END, so
+    // the first keystroke appends instead of landing at position 0 and pushing
+    // itself into the middle of the first heading.
+    useEffect(() => {
+      if (mode !== 'edit') return;
+      const el = textRef.current;
+      if (!el) return;
+      el.focus();
+      const end = el.value.length;
+      el.setSelectionRange(end, end);
+    }, [mode]);
 
     function insertHeading() {
       const el = textRef.current;
@@ -641,9 +655,14 @@
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, ...(fill ? { height: '100%', minHeight: 0, flex: 1, minWidth: 0, width: '100%' } : {}) }}>
         {/* Toolbar */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', background: 'var(--bg-hover)', borderRadius: 'var(--r-sm)', flexWrap: 'wrap' }}>
-          <button onClick={insertHeading} style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '4px 10px', borderRadius: 'var(--r-sm)', fontSize: 12, fontWeight: 600 }}>## Heading</button>
-          <button onClick={() => collapseAll(sections.filter(s=>s.title))} style={{ background: 'transparent', color: 'var(--text-muted)', padding: '4px 8px', borderRadius: 'var(--r-sm)', fontSize: 12 }}>Collapse All</button>
-          <button onClick={expandAll} style={{ background: 'transparent', color: 'var(--text-muted)', padding: '4px 8px', borderRadius: 'var(--r-sm)', fontSize: 12 }}>Expand All</button>
+          {mode === 'edit' ? (
+            <button onClick={insertHeading} style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '4px 10px', borderRadius: 'var(--r-sm)', fontSize: 12, fontWeight: 600 }}>## Heading</button>
+          ) : sectionKeys.length > 0 ? (
+            <React.Fragment>
+              <button onClick={() => collapseAll(sections.filter(s=>s.title))} style={{ background: 'transparent', color: 'var(--text-muted)', padding: '4px 8px', borderRadius: 'var(--r-sm)', fontSize: 12 }}>Collapse All</button>
+              <button onClick={expandAll} style={{ background: 'transparent', color: 'var(--text-muted)', padding: '4px 8px', borderRadius: 'var(--r-sm)', fontSize: 12 }}>Expand All</button>
+            </React.Fragment>
+          ) : null}
           <div style={{ flex: 1 }} />
           <div style={{ display: 'flex', background: 'var(--bg-input)', borderRadius: 'var(--r-sm)', overflow: 'hidden' }}>
             {['edit','preview'].map(m => (
