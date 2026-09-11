@@ -5102,17 +5102,17 @@ npm run migrate            # הרצה בפועל`}</Block>
     },
     {
       name: 'create_agent',
-      description: 'Creates a new agent. You may pass its skills and tools in the same call to build a complete agent at once.',
+      description: "Creates a new agent. Pass its skills and tools in the same call to build a complete agent at once — an agent whose whole behaviour was written into base_prompt, with a task procedure inside it and no skills, is built wrong.",
       input_schema: {
         type: 'object',
         properties: {
           name: STR('Short display name'),
           avatar: STR('A single emoji'),
-          base_prompt: STR("The agent's system prompt. Use ## sections."),
-          opening_message: STR('The first line the agent says'),
+          base_prompt: STR("Written in ENGLISH, always. Always-on instructions only: who the agent is, which language and tone it answers its users in, the rules that always hold, and when to hand off to its skills. Use ## sections. Must NOT contain the step-by-step procedure for a task — that is a skill."),
+          opening_message: STR("The first line the agent says to a user — in the language the agent serves them in, NOT English unless that is their language"),
           skills: {
             type: 'array',
-            description: 'Optional skills',
+            description: "One per task the agent performs. This is where the step-by-step procedure lives. Leave empty only for an agent that answers from knowledge or persona alone, with no procedure at all.",
             items: { type: 'object', properties: { name: STR('Skill name'), description: STR('When the agent should switch to it'), prompt: STR('The skill prompt, in English') }, required: ['name', 'description', 'prompt'] },
           },
           tools: {
@@ -5141,8 +5141,8 @@ npm run migrate            # הרצה בפועל`}</Block>
           agent_id: STR('The agent id'),
           name: STR('New name'),
           avatar: STR('A single emoji'),
-          base_prompt: STR('Replacement system prompt'),
-          opening_message: STR('Replacement opening line'),
+          base_prompt: STR('Replacement always-on instructions, in ENGLISH. A task procedure belongs in a skill, not here.'),
+          opening_message: STR('Replacement opening line, in the language the agent speaks to its users'),
           email_enabled: { type: 'boolean', description: 'Enable the built-in send_email tool' },
           dlp_credit_card: { type: 'boolean', description: 'Mask credit card numbers' },
           dlp_israeli_id: { type: 'boolean', description: 'Mask Israeli ID numbers' },
@@ -5224,6 +5224,8 @@ npm run migrate            # הרצה בפועל`}</Block>
   const PLATFORM_REFERENCE = [
     'The platform (8Legs.ai) — what you are operating:',
     '- An AGENT has: a name and avatar, an opening message, a base prompt, skills, Python tools, a knowledge base, and channels.',
+    "- BASE PROMPT vs SKILL is the split that matters when you build one. The base prompt is always active, on every turn of every channel: who the agent is, the language and tone it answers in, the rules that always hold, and a short statement of what it can do and when to hand off. A SKILL holds the procedure for ONE task — the steps, what to collect, what to say at each stage. A numbered procedure for a particular task does NOT belong in the base prompt.",
+    '- Why it matters mechanically: a skill\'s prompt is only loaded once the agent switches to it, so the always-on prompt stays small; knowledge retrieval is scoped to that skill\'s own documents; and the skill can be rewritten later without touching the agent\'s identity.',
     '- The API key, provider and model are ACCOUNT-WIDE, set once in Settings. They are not per agent, so never ask the user for a key per agent.',
     '- A SKILL is a focused mode with its own prompt. The agent reads a skill\'s description to decide when to switch to it, by calling an internal switch_skill tool with skill_name. In prompt text the convention is #SkillName. Skill prompts are written in English.',
     '- A TOOL is Python that must define `def run(**kwargs)`. Declared parameters arrive in kwargs; secrets come from os.environ; only the standard library plus the packages listed on the tool are available; there is no persistent disk; outbound HTTPS works; return a string, and return a readable error string instead of raising. Reference a tool from a prompt as @tool_name.',
@@ -5252,7 +5254,10 @@ npm run migrate            # הרצה בפועל`}</Block>
       '- Do the work with your tools rather than describing what the user should click. Only explain where to click for the things you cannot do: connecting Gmail, uploading files, WhatsApp credentials, and the account API key.',
       '- Before changing an existing agent, call get_agent. When you send skills or tools you are replacing the whole list, so include the ones you are keeping.',
       '- Write tool code that satisfies the runtime contract, and declare exactly the parameters the code reads. Offer to run_tool it afterwards.',
-      '- Skill prompts are written in English even when you are talking in Hebrew.',
+      "- When you build an agent, split the work: identity and always-on rules go in base_prompt, and EVERY task procedure becomes a skill passed in the same create_agent call. Apply this test to each ## section you are about to write into a base prompt — if it is a sequence of steps for one task ('ask X, then collect Y, then send Z'), it is a skill, not base prompt. An agent that performs one task still gets one skill for it; the base prompt then says who it is and when to switch to that skill.",
+      "- Do not build a skill for something that is not a procedure: tone, language, a refusal rule or a single fact belongs in the base prompt.",
+      "- EVERY prompt you write is in English — the base prompt and every skill prompt — whatever language you and the user are speaking. The one exception is a sentence the agent must say to its users verbatim in another language: that stays in that language, quoted, and the prompt states which language the agent replies in.",
+      "- What is NOT in English: the agent's name, its opening_message, and anything the agent says to end users. Those are in the language the agent serves its users in — so a Hebrew-speaking agent gets an English prompt that instructs it to answer in Hebrew, and a Hebrew opening message.",
       '- Never delete anything without asking in chat first.',
       '- When you have changed something, say in one line what changed and where to see it.',
       '- If a tool call fails, explain what failed and what you need in order to retry — do not silently give up.',
