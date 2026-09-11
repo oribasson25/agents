@@ -43,12 +43,22 @@
       --shadow-lg: 0 8px 40px rgba(0,0,0,0.6);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    /*
+     * The whole UI is drawn at 80%, which is where it was found to read best —
+     * the same thing browser zoom at 80% does, but as the default for everyone.
+     * `zoom` multiplies viewport units too, so every 100vh/100vw inside this
+     * subtree is divided by --ui-zoom to keep filling the screen. Change the
+     * one number below to rescale the entire app.
+     */
+    :root { --ui-zoom: 0.8; }
+    html { height: 100%; }
     body {
       background: var(--bg-app);
       color: var(--text);
       font-family: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
       overflow: hidden;
-      height: 100vh;
+      height: 100%;
+      zoom: var(--ui-zoom);
     }
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -3003,7 +3013,7 @@
     });
 
     return (
-      <div style={{ display: 'flex', gap: 24, height: 'calc(100vh - 160px)', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', gap: 24, height: 'calc(100vh / var(--ui-zoom) - 160px)', overflow: 'hidden' }}>
         {/* Controls */}
         <div style={{ width: 280, flexShrink: 0, background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 20, border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto' }}>
           <div style={{ fontWeight: 700, fontSize: 15 }}>Export Controls</div>
@@ -5275,7 +5285,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     return (
       <div className="fade-in" dir={ltr ? 'ltr' : 'rtl'} style={{
         position: 'fixed', bottom: 92, right: 24, zIndex: 200,
-        width: 'min(340px, calc(100vw - 32px))',
+        width: 'min(340px, calc(100vw / var(--ui-zoom) - 32px))',
         background: 'var(--bg-sidebar)', border: '1px solid var(--primary)',
         borderRadius: 'var(--r-lg)', padding: '15px 16px 14px',
         boxShadow: '0 12px 40px rgba(0,0,0,0.45), 0 0 0 4px var(--primary-glow)',
@@ -5346,7 +5356,7 @@ npm run migrate            # הרצה בפועל`}</Block>
         {open && (
           <div className="slide-in-right" style={{
             position: 'fixed', bottom: 92, right: 24, zIndex: 200,
-            width: 'min(430px, calc(100vw - 32px))', height: 'min(640px, calc(100vh - 140px))',
+            width: 'min(430px, calc(100vw / var(--ui-zoom) - 32px))', height: 'min(640px, calc(100vh / var(--ui-zoom) - 140px))',
             background: 'var(--bg-sidebar)', border: '1px solid var(--border)',
             borderRadius: 'var(--r-lg)', boxShadow: '0 12px 40px rgba(0,0,0,0.45)',
             display: 'flex', flexDirection: 'column', overflow: 'hidden',
@@ -5624,7 +5634,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     ];
 
     return (
-      <div style={{ width: 232, flexShrink: 0, background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      <div style={{ width: 232, flexShrink: 0, background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', height: 'calc(100vh / var(--ui-zoom))' }}>
         {/* Logo */}
         <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--border)' }}>
           <svg viewBox="200 20 280 205" width="136" height="52" role="img" xmlns="http://www.w3.org/2000/svg">
@@ -5777,7 +5787,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     const canSubmit = isLogin ? (username && password) : (username && password && phone);
 
     return (
-      <div style={{ display: 'flex', height: '100vh', background: 'var(--bg-app)', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', height: 'calc(100vh / var(--ui-zoom))', background: 'var(--bg-app)', overflow: 'hidden' }}>
         {/* Left panel - branding */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #0b0d10 0%, #0f1320 100%)', borderRight: '1px solid var(--border)', position: 'relative', overflow: 'hidden' }}>
           {/* Decorative glow */}
@@ -6636,7 +6646,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     const chatAgent = state.agents.find(a => a.id === state.chatAgentId);
 
     if (loading) return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-app)', flexDirection: 'column', gap: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 'calc(100vh / var(--ui-zoom))', background: 'var(--bg-app)', flexDirection: 'column', gap: 14 }}>
         <div style={{ width: 36, height: 36, border: '2.5px solid var(--border)', borderTop: '2.5px solid var(--primary)', borderRadius: '50%', animation: 'spin 0.75s linear infinite' }} />
         <div style={{ color: 'var(--text-muted)', fontSize: 13, fontWeight: 500 }}>Loading agents…</div>
       </div>
@@ -6651,7 +6661,7 @@ npm run migrate            # הרצה בפועל`}</Block>
 
     return (
       <React.Fragment>
-      <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', height: 'calc(100vh / var(--ui-zoom))', overflow: 'hidden' }}>
         <Sidebar activeNav={nav} onNav={handleNav} user={user} onLogout={onLogout} />
         <div style={{ flex: 1, overflowY: 'auto', padding: '32px 36px 80px', background: 'var(--bg-app)', position: 'relative' }}>
           <BgLogo size={560} wrapStyle={{ bottom: '-80px', right: '-80px' }} />
