@@ -2555,7 +2555,11 @@
 
       for (let round = 0; round < 10; round++) {
         const body = { model, max_tokens: 1024, system: systemPrompt, messages: msgs };
-        if (toolDefs.length > 0) body.tools = buildClaudeTools();
+        // Gate on what was actually built, not on the agent's own tools —
+        // send_email and switch_skill are built in, and an agent with no tools
+        // of its own was being handed none of them.
+        const claudeTools = buildClaudeTools();
+        if (claudeTools.length > 0) body.tools = claudeTools;
 
         const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: claudeHeaders, body: JSON.stringify(body) });
         const d = await r.json();
@@ -2582,7 +2586,8 @@
 
       for (let round = 0; round < 10; round++) {
         const body = { model, messages: msgs };
-        if (toolDefs.length > 0) body.tools = buildOpenAITools();
+        const fnTools = buildOpenAITools();
+        if (fnTools.length > 0) body.tools = fnTools;
 
         // Route through server-side proxy to avoid mixed-content and CORS issues
         const r = await fetch('/api/ollama-proxy', {
@@ -2615,7 +2620,8 @@
 
       for (let round = 0; round < 10; round++) {
         const body = { model, messages: msgs };
-        if (toolDefs.length > 0) body.tools = buildOpenAITools();
+        const fnTools = buildOpenAITools();
+        if (fnTools.length > 0) body.tools = fnTools;
 
         const r = await fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', headers: oaiHeaders, body: JSON.stringify(body) });
         const d = await r.json();
