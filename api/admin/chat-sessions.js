@@ -25,6 +25,7 @@ export default async function handler(req, res) {
         from chat_sessions cs
         join agents a on a.id = cs.agent_id
         where cs.agent_id = ${agentId}
+          and cs.source <> 'test'   -- the builder's own test runs live in the agent, not here
         order by cs.updated_at desc
         limit ${limit} offset ${offset}
       `
@@ -40,6 +41,7 @@ export default async function handler(req, res) {
           a.data->>'avatar' as agent_avatar
         from chat_sessions cs
         join agents a on a.id = cs.agent_id
+        where cs.source <> 'test'
         order by cs.updated_at desc
         limit ${limit} offset ${offset}
       `;

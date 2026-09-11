@@ -325,6 +325,38 @@
     }
   }
 
+  /**
+   * The manual test conversations, for the assistants. When someone says "it
+   * answered the wrong thing", this is the transcript that says what it
+   * actually answered — so the fix does not have to be guessed from a summary.
+   */
+  async function fetchTestConversations(agentId, limit = 5) {
+    if (!agentId) return [];
+    try {
+      const d = await apiListTestSessions(agentId, { limit });
+      return d.sessions || [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function formatTestConversations(sessions, maxTurns = 12) {
+    if (!sessions || sessions.length === 0) return '(none yet)';
+    return sessions.map(sn => {
+      const msgs = sn.messages || [];
+      const shown = msgs.slice(-maxTurns);
+      const head = `- ${new Date(sn.started_at).toLocaleString()} · ${msgs.length} messages`
+        + (shown.length < msgs.length ? ` (last ${shown.length} shown)` : '');
+      const body = shown.map(m => {
+        const who = m.role === 'user' ? 'user' : 'agent';
+        const tools = (m.tools || []).map(t => ` [called ${t.name} -> ${String(t.result || '').slice(0, 120)}]`).join('');
+        const text = String(m.content || '').replace(/\s+/g, ' ').slice(0, 400);
+        return `    ${who}: ${text}${m.skill ? ` [skill ${m.skill}]` : ''}${tools}`;
+      }).join('\n');
+      return `${head}\n${body}`;
+    }).join('\n');
+  }
+
   /* ─────────────────── ACCOUNT API SETTINGS ─────────────────── */
   // One key, provider and model for the whole account: every agent, every
   // channel and every assistant. Kept in a module variable so the many call
@@ -410,6 +442,32 @@
   }
   async function deleteAssistantSession(id) {
     return apiFetch(`/api/assistant-sessions?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
+  /* ── manual test conversations ──
+     Stored server-side under source 'test': hidden from Interactions, shown in
+     the agent's Manual tests tab, and readable by every assistant. */
+  async function saveTestSession(id, agentId, messages) {
+    try {
+      await apiFetch('/api/chat-sessions', {
+        method: 'PUT',
+        body: JSON.stringify({ id, agentId, messages }),
+      });
+    } catch (_) { /* never let a failed save break the conversation */ }
+  }
+
+  async function apiListTestSessions(agentId, params = {}) {
+    const qs = new URLSearchParams(
+      Object.entries({ source: 'test', agentId, limit: 50, ...params })
+        .filter(([, v]) => v !== '' && v !== null && v !== undefined)
+    );
+    const r = await apiFetch(`/api/chat-sessions?${qs}`);
+    if (!r.ok) throw new Error(`Failed to load test conversations (${r.status})`);
+    return r.json();
+  }
+
+  async function deleteChatSession(id) {
+    return apiFetch(`/api/chat-sessions?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
   }
 
   async function apiListInteractions(params = {}) {
@@ -1470,6 +1528,9 @@
       '',
       'Recent failures involving this tool (newest first) — fix the cause, do not guess:',
       formatErrors(errors),
+      '',
+      "The builder's own test conversations with this agent (newest first) — how the agent behaved when they tried it, including the tools it called. If the user refers to something going wrong, read these before changing anything:",
+      formatTestConversations(diagnostics.tests),
     ].join('\n');
   }
 
@@ -1553,6 +1614,9 @@
       '',
       "Recent failures on this agent (newest first). If one of them is caused by what the base prompt asks the agent to do — a tool that isn't there, a rule that contradicts itself — fix the prompt:",
       formatErrors(diagnostics.errors),
+      '',
+      "The builder's own test conversations with this agent (newest first) — what it actually said when they tried it. If the user refers to what it answered, or to something going wrong, read these before changing anything:",
+      formatTestConversations(diagnostics.tests),
     ].filter(line => line !== '').join('\n');
   }
 
@@ -1610,6 +1674,9 @@
       '',
       "Recent failures on this agent (newest first). If one of them is caused by what this prompt asks the agent to do — a tool that isn't there, a parameter it never passes — fix the prompt:",
       formatErrors(diagnostics.errors),
+      '',
+      "The builder's own test conversations with this agent (newest first) — what it actually said when they tried it. If the user refers to what it answered, or to something going wrong, read these before changing anything:",
+      formatTestConversations(diagnostics.tests),
     ].join('\n');
   }
 
@@ -1801,8 +1868,10 @@
         // Hand it what actually failed, from this session and from the server,
         // so "fix it" doesn't require pasting a traceback.
         const serverErrors = await fetchServerErrors({ agentId: agent.id, limit: 8 });
+        const tests = await fetchTestConversations(agent.id, 4);
         const diagnostics = {
           lastRun: lastRunRef.current,
+          tests,
           errors: [
             ...sessionErrors({ agentId: agent.id, toolName: kind === 'tool' ? current.name : null }),
             ...serverErrors.filter(e => kind !== 'tool' || !e.context || !e.context.tool || e.context.tool === current.name),
@@ -3417,7 +3486,6 @@
 
   /* ─────────────────── CHAT TEST DRAWER ─────────────────── */
   function ChatTestDrawer({ agent, onClose, initialSessionId }) {
-    const historyKey = `agentforge_history_${agent.id}`;
     const openingMsg = { id: uid(), role: 'agent', content: agent.openingMessage || 'Hello!', timestamp: new Date(), isOpening: true };
     const [messages, setMessages] = useState([openingMsg]);
     const [input, setInput] = useState('');
@@ -3430,44 +3498,52 @@
     const inputRef = useRef(null);
     const currentSessionIdRef = useRef(uid());
 
-    // Save session to history on close (if has real messages)
+    // Kept server-side, written after every turn: a tab closed mid-run used to
+    // take the conversation with it, and that is exactly the run you wanted.
     const messagesRef = useRef(messages);
     useEffect(() => { messagesRef.current = messages; }, [messages]);
     useEffect(() => {
-      return () => {
-        const msgs = messagesRef.current.filter(m => m.role !== 'typing');
-        const hasReal = msgs.some(m => m.role === 'user');
-        if (!hasReal) return;
-        try {
-          const saved = JSON.parse(localStorage.getItem(historyKey) || '[]');
-          // avoid duplicate session saves
-          const filtered = saved.filter(s => s.id !== currentSessionIdRef.current);
-          const session = { id: currentSessionIdRef.current, startedAt: msgs[0]?.timestamp || new Date(), messages: msgs };
-          localStorage.setItem(historyKey, JSON.stringify([session, ...filtered].slice(0, 50)));
-        } catch (_) {}
-      };
-    }, [historyKey]);
+      const msgs = messages.filter(m => m.role !== 'typing');
+      if (!msgs.some(m => m.role === 'user')) return;   // nothing said yet
+      saveTestSession(currentSessionIdRef.current, agent.id, msgs)
+        .then(() => setHistoryTick(t => t + 1));
+    }, [messages, agent.id]);
 
-    function loadHistory() {
-      try { return JSON.parse(localStorage.getItem(historyKey) || '[]').map(s => ({ ...s, startedAt: new Date(s.startedAt), messages: s.messages.map(m => ({ ...m, timestamp: new Date(m.timestamp) })) })); }
-      catch (_) { return []; }
+    const [history, setHistory] = useState([]);
+    const [historyError, setHistoryError] = useState(null);
+    useEffect(() => {
+      let live = true;
+      apiListTestSessions(agent.id)
+        .then(d => { if (live) { setHistory(d.sessions || []); setHistoryError(null); } })
+        .catch(err => { if (live) setHistoryError(err.message); });
+      return () => { live = false; };
+    }, [agent.id, historyTick]);
+
+    // Server rows use assistant/user; the drawer renders agent/user.
+    function asDrawerSession(row) {
+      return {
+        id: row.id,
+        startedAt: new Date(row.started_at),
+        messages: (row.messages || []).map(m => ({
+          id: uid(),
+          role: m.role === 'assistant' ? 'agent' : m.role,
+          content: m.content,
+          timestamp: new Date(row.started_at),
+        })),
+      };
     }
 
-    // Auto-open a specific session from sidebar click
+    // Auto-open a specific conversation when one was asked for
     useEffect(() => {
       if (!initialSessionId) return;
-      const sessions = loadHistory();
-      const target = sessions.find(s => s.id === initialSessionId);
-      if (target) setViewingSession(target);
-    }, [initialSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+      const row = history.find(s => s.id === initialSessionId);
+      if (row) setViewingSession(asDrawerSession(row));
+    }, [initialSessionId, history]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    function deleteSession(sid) {
-      try {
-        const updated = loadHistory().filter(s => s.id !== sid);
-        localStorage.setItem(historyKey, JSON.stringify(updated));
-        if (viewingSession?.id === sid) setViewingSession(null);
-        setHistoryTick(t => t + 1);
-      } catch (_) {}
+    async function deleteSession(sid) {
+      await deleteChatSession(sid).catch(() => {});
+      if (viewingSession?.id === sid) setViewingSession(null);
+      setHistoryTick(t => t + 1);
     }
 
     useEffect(() => {
@@ -3568,7 +3644,7 @@
 
           {/* History Panel */}
           {showHistory && (() => {
-            const sessions = loadHistory();
+            const sessions = history.map(asDrawerSession);
             return (
               <div style={{ position: 'absolute', top: 73, right: 0, width: 420, bottom: 0, background: 'var(--bg-app)', zIndex: 10, display: 'flex', flexDirection: 'column', borderLeft: '1px solid var(--border)' }}>
                 <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -3576,7 +3652,9 @@
                     ? <><button onClick={() => setViewingSession(null)} style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: 13, padding: 0 }}>← Back</button>
                         <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{viewingSession.startedAt.toLocaleDateString()} {viewingSession.startedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></>
                     : <><span style={{ fontWeight: 600, fontSize: 14 }}>Previous conversations</span>
-                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{sessions.length} saved</span></>
+                        <span style={{ fontSize: 12, color: historyError ? 'var(--danger)' : 'var(--text-muted)' }}>
+                          {historyError ? historyError : `${sessions.length} saved`}
+                        </span></>
                   }
                 </div>
                 <div style={{ flex: 1, overflowY: 'auto', padding: viewingSession ? '12px 16px' : 8, display: 'flex', flexDirection: 'column', gap: viewingSession ? 10 : 4 }}>
@@ -3749,9 +3827,148 @@
   }
 
   /* ─────────────────── AGENT EDITOR ─────────────────── */
-  function AgentEditor({ agent, onUpdate, onBack, initialTab }) {
+  /* ─────────────────── MANUAL TESTS TAB ─────────────────── */
+  /**
+   * Every conversation the builder has had with this agent in the test chat.
+   * Deliberately not in Interactions — those are real end users; these are you
+   * trying things. Same store, source 'test'.
+   */
+  function ManualTestsTab({ agent, onTest }) {
+    const [sessions, setSessions] = useState(null);
+    const [error, setError] = useState(null);
+    const [query, setQuery] = useState('');
+    const [open, setOpen] = useState(null);
+    const [tick, setTick] = useState(0);
+
+    useEffect(() => {
+      let live = true;
+      setError(null);
+      const t = setTimeout(() => {
+        apiListTestSessions(agent.id, { q: query })
+          .then(d => { if (live) setSessions(d.sessions || []); })
+          .catch(err => { if (live) { setError(err.message); setSessions([]); } });
+      }, 250);
+      return () => { live = false; clearTimeout(t); };
+    }, [agent.id, query, tick]);
+
+    async function remove(id) {
+      if (!window.confirm('למחוק את שיחת הבדיקה הזאת?\n\nDelete this test conversation?')) return;
+      await deleteChatSession(id).catch(() => {});
+      if (open && open.id === id) setOpen(null);
+      setTick(t => t + 1);
+    }
+
+    if (open) {
+      const msgs = open.messages || [];
+      return (
+        <div style={{ maxWidth: 860 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
+            <button onClick={() => setOpen(null)}
+              style={{ background: 'var(--bg-hover)', color: 'var(--text-2)', padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 13, border: '1px solid var(--border)' }}>← Back</button>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              {new Date(open.started_at).toLocaleString()} · {fmtSessionDuration(open.duration_seconds)} · {msgs.length} messages
+            </div>
+            <button onClick={() => remove(open.id)}
+              style={{ marginLeft: 'auto', background: 'var(--bg-hover)', color: 'var(--text-muted)', padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 13, border: '1px solid var(--border)' }}>🗑 Delete</button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {msgs.map((m, i) => {
+              const isUser = m.role === 'user';
+              return (
+                <div key={i} style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
+                  <div dir="auto" style={{
+                    maxWidth: '82%', padding: '9px 13px', fontSize: 13.5, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                    background: isUser ? 'var(--primary)' : 'var(--bg-card)', color: isUser ? '#0a0a0a' : 'var(--text)',
+                    border: isUser ? 'none' : '1px solid var(--border)',
+                    borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                  }}>
+                    {m.content}
+                    {/* dir=ltr, or bidi drags the # and the wrench to the wrong end */}
+                    {m.skill && <div dir="ltr" style={{ fontSize: 11, marginTop: 5, opacity: 0.75, textAlign: 'start' }}>#{m.skill}</div>}
+                    {(m.tools || []).map((t, j) => (
+                      <div key={j} dir="ltr" style={{ fontSize: 11, fontFamily: "'JetBrains Mono','Fira Code',monospace", marginTop: 5, opacity: 0.8, textAlign: 'start' }}>
+                        🔧 {t.name}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ maxWidth: 860 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>Manual tests</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>
+              השיחות שלך עם הסוכן בצ'אט הבדיקה. לא מופיעות ב-Interactions, וכל האסיסטנטים רואים אותן.
+            </div>
+          </div>
+          {onTest && (
+            <button onClick={onTest}
+              style={{ background: 'var(--primary)', color: '#0a0a0a', padding: '8px 16px', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 13, boxShadow: '0 2px 12px var(--primary-glow)' }}>
+              Run a test
+            </button>
+          )}
+        </div>
+
+        <input value={query} onChange={e => setQuery(e.target.value)} dir="auto"
+          placeholder="חיפוש בכל שיחות הבדיקה…" style={{ width: '100%', marginBottom: 14 }} />
+
+        {error && (
+          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--danger)', padding: '9px 13px', borderRadius: 'var(--r-md)', fontSize: 12.5, marginBottom: 12 }}>
+            {error}
+          </div>
+        )}
+
+        {sessions === null ? (
+          <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>טוען…</div>
+        ) : sessions.length === 0 ? (
+          <div style={{ padding: '40px 24px', textAlign: 'center', background: 'var(--bg-card)', border: '1px dashed var(--border)', borderRadius: 'var(--r-lg)' }}>
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>
+              {query ? 'אין שיחת בדיקה שתואמת את החיפוש' : 'עוד לא בדקת את הסוכן הזה'}
+            </div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
+              {query ? 'נסה מילה אחרת.' : 'כל שיחה בצ\'אט הבדיקה נשמרת כאן אוטומטית.'}
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {sessions.map(s => {
+              const first = (s.messages || []).find(m => m.role === 'user');
+              return (
+                <div key={s.id} onClick={() => setOpen(s)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', cursor: 'pointer' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--primary)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div dir="auto" style={{ fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {(first && first.content) || '—'}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>
+                      {new Date(s.started_at).toLocaleString()} · {fmtSessionDuration(s.duration_seconds)} · {s.message_count} messages
+                    </div>
+                  </div>
+                  <button onClick={e => { e.stopPropagation(); remove(s.id); }} title="Delete"
+                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 14, padding: '2px 4px', flexShrink: 0 }}
+                    onMouseEnter={e => { e.currentTarget.style.color = 'var(--danger)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; }}>🗑</button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function AgentEditor({ agent, onUpdate, onBack, initialTab, onTest }) {
     const [tab, setTab] = useState(initialTab || 'configuration');
-    const TABS = ['configuration','skills','tools','knowledge','export','whatsapp'];
+    const TABS = ['configuration','skills','tools','knowledge','manual tests','export','whatsapp'];
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -3767,6 +3984,24 @@
           <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
           <AvatarDisplay value={agent.avatar} size={24} />
           <span style={{ fontWeight: 800, fontSize: 18, letterSpacing: '-0.02em' }}>{agent.name}</span>
+          {/* Test the agent without leaving its settings. The conversation is
+              saved like any other test run, so it lands in Manual tests. */}
+          {onTest && (
+            <button onClick={onTest} title="Talk to this agent — the conversation is saved in Manual tests"
+              style={{
+                marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 7,
+                background: 'var(--primary)', color: '#0a0a0a',
+                padding: '8px 17px', borderRadius: 'var(--r-md)',
+                fontWeight: 700, fontSize: 13,
+                boxShadow: '0 2px 12px var(--primary-glow)',
+                transition: 'all 0.18s ease',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--primary-hover)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'var(--primary)'; e.currentTarget.style.transform = 'none'; }}
+            >
+              ▶ Test
+            </button>
+          )}
         </div>
         {/* Tab bar */}
         <div style={{ display: 'flex', gap: 2, marginBottom: 22, background: 'var(--bg-panel)', padding: 4, borderRadius: 'var(--r-md)', width: 'fit-content', border: '1px solid var(--border)' }}>
@@ -3791,6 +4026,7 @@
           {tab === 'tools' && <ToolsTab agent={agent} onUpdate={onUpdate} />}
           {tab === 'knowledge' && <KnowledgeTab agent={agent} />}
           {tab === 'export' && <ExportTab agent={agent} />}
+          {tab === 'manual tests' && <ManualTestsTab agent={agent} onTest={onTest} />}
           {tab === 'whatsapp' && <WhatsAppTab agent={agent} onUpdate={onUpdate} />}
         </div>
       </div>
@@ -3887,7 +4123,7 @@
       { id: 'history',      label: 'היסטוריית אסיסטנטים' },
       { id: 'assistant',    label: '✨ אסיסטנט הבנייה' },
       { id: 'knowledge',    label: 'Knowledge (RAG)' },
-      { id: 'test',         label: 'בדיקת הסוכן' },
+      { id: 'test',         label: 'בדיקה ו-Manual tests' },
       { id: 'widget',       label: 'הטמעה באתר' },
       { id: 'whatsapp',     label: 'ערוץ WhatsApp' },
       { id: 'interactions', label: 'Interactions' },
@@ -4230,8 +4466,10 @@ def run(**kwargs):
             <li><strong>מיסוך DLP</strong> — הודעה שמוסכה מסומנת ככזו</li>
           </UL>
 
-          <H3>היסטוריה</H3>
-          <P>אייקון השעון בכותרת הצ'אט פותח את השיחות הקודמות עם הסוכן הזה מהדפדפן הזה. שיחות שנוהלו דרך הווידג'ט או WhatsApp נמצאות בלשונית <strong>Interactions</strong>.</P>
+          <H3>היסטוריה — לשונית Manual tests</H3>
+          <P>כל שיחת בדיקה נשמרת בשרת אוטומטית, אחרי כל תור, כך שסגירת טאב באמצע לא מאבדת את ההרצה. אייקון השעון בכותרת הצ'אט מציג אותן, ואותן שיחות בדיוק מופיעות בלשונית <strong>Manual tests</strong> של הסוכן — עם חיפוש בכל התמלילים, משך זמן, ומחיקה.</P>
+          <P>הן <strong>לא</strong> מופיעות ב-<strong>Interactions</strong>, ובכוונה: שם יושבות שיחות של משתמשי קצה אמיתיים דרך הווידג'ט או WhatsApp, ואלה השיחות שלך עם הסוכן שלך.</P>
+          <P><strong>כל האסיסטנטים קוראים אותן.</strong> האסיסטנטים של הכלים, הסקילים והבייס-פרומט מקבלים את ההרצות האחרונות כחלק מהקונטקסט, ואסיסטנט המערכת יכול לבקש אותן בעצמו דרך <Code>get_test_conversations</Code>. לכן אפשר לומר לאסיסטנט "הסוכן ענה לא נכון, תתקן" בלי להעתיק לו את השיחה.</P>
           <Warn>כל שיחה מתחילה מאפס — הסוכן לא זוכר שיחות קודמות. מה שצריך שיהיה זמין תמיד צריך להיות בפרומפט או בבסיס הידע.</Warn>
         </div>
       ),
@@ -4956,6 +5194,19 @@ npm run migrate            # הרצה בפועל`}</Block>
       },
     },
     {
+      name: 'get_test_conversations',
+      description: "The builder's own manual test conversations with an agent, as full transcripts including the tools the agent called. This is what the agent actually said when it was tried — read it before changing an agent someone says is misbehaving. Separate from list_interactions, which is real end users.",
+      input_schema: {
+        type: 'object',
+        properties: {
+          agent_id: STR('Which agent'),
+          search: STR('Only conversations containing this text'),
+          limit: { type: 'integer', description: 'How many (default 5, max 20)' },
+        },
+        required: ['agent_id'],
+      },
+    },
+    {
       name: 'list_interactions',
       description: 'Recent conversations with the account\'s agents: agent, channel, when, duration, message count and the first user message. Use it to answer questions about usage.',
       input_schema: {
@@ -4981,7 +5232,8 @@ npm run migrate            # הרצה בפועל`}</Block>
     '- KNOWLEDGE is documents (pasted, PDF/DOCX upload, or crawled sites) retrieved by full-text search into the prompt. You cannot upload files for the user.',
     '- CHANNELS: the in-app test chat, an embeddable website widget (Export tab), and WhatsApp via Meta Cloud API (Whatsapp tab, needs a phone number id, access token, app secret and verify token from Meta). A WhatsApp number belongs to one agent only.',
     '- DLP can mask credit-card and Israeli-ID numbers before they reach the model and before history is stored.',
-    '- INTERACTIONS lists every conversation across channels, filterable and searchable.',
+    '- INTERACTIONS lists every conversation real end users had across channels, filterable and searchable.',
+    "- MANUAL TESTS are the builder's own conversations with an agent in the test chat, kept on the agent's Manual tests tab and deliberately NOT in Interactions. Read them with get_test_conversations when someone reports an agent behaving wrongly.",
     '- Everything the user edits is saved automatically; there is no save button.',
   ].join('\n');
 
@@ -5026,6 +5278,7 @@ npm run migrate            # הרצה בפועל`}</Block>
       '· להדליק send_email, להגדיר מיסוך DLP, לשנות שם ואווטאר',
       '· לענות על שאלות על הפלטפורמה — איך סקילים עובדים, מה החוזה של כלי, איך מחברים WhatsApp',
       '· להראות מה קרה בשיחות — לפי סוכן, ערוץ או מילת חיפוש',
+      '· לקרוא את שיחות הבדיקה שלך עם סוכן (הטאב Manual tests) ולראות מה הוא בפועל ענה',
       '· למחוק סוכן (אשאל אותך לפני)',
       '',
       '**מה אני לא יכול**: לחבר Gmail, להעלות קבצים לבסיס הידע, ולהזין את מפתח ה-API — אלה דברים שצריך לעשות בממשק, ואגיד לך בדיוק איפה.',
@@ -5041,6 +5294,7 @@ npm run migrate            # הרצה בפועל`}</Block>
       '· Turn on send_email, set up DLP masking, change the name and avatar',
       '· Answer questions about the platform — how skills switch, the tool runtime contract, connecting WhatsApp',
       '· Show what happened in conversations — by agent, channel or keyword',
+      "· Read your own test conversations with an agent (its Manual tests tab) and see what it actually answered",
       '· Delete an agent (I will ask first)',
       '',
       "**What I can't**: connect Gmail, upload knowledge files, or enter the API key — those are done in the UI, and I'll tell you exactly where.",
@@ -5239,6 +5493,16 @@ npm run migrate            # הרצה בפועל`}</Block>
             `From this browser session (test runs, provider errors) — ${local.length}:`,
             formatErrors(local),
           ].join('\n'));
+        }
+
+        if (name === 'get_test_conversations') {
+          const data = await apiListTestSessions(input.agent_id, {
+            q: input.search || '',
+            limit: Math.min(Math.max(parseInt(input.limit, 10) || 5, 1), 20),
+          });
+          const rows = data.sessions || [];
+          if (rows.length === 0) return done('No manual test conversations for that agent yet.');
+          return done(formatTestConversations(rows, 20));
         }
 
         if (name === 'list_interactions') {
@@ -6857,6 +7121,7 @@ npm run migrate            # הרצה בפועל`}</Block>
               agent={editingAgent}
               initialTab={editorTab}
               onUpdate={handleUpdate}
+              onTest={() => dispatch({ type: 'OPEN_CHAT', id: editingAgent.id })}
               onBack={() => { setEditorTab(null); dispatch({ type: 'SET_VIEW', view: 'list' }); }}
             />
           ) : (

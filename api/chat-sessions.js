@@ -2,9 +2,15 @@ import { sql } from './_db.js';
 import { checkAuth } from './_auth.js';
 
 /**
- * Conversations ("interactions") for the signed-in user's agents, with the
- * filters the Interactions view offers. Admins may pass scope=all to see every
- * user's conversations.
+ * Conversations for the signed-in user's agents, with the filters the
+ * Interactions view offers. Admins may pass scope=all to see every user's
+ * conversations.
+ *
+ * Manual test chats live in the same table under source 'test', because they
+ * are the same thing — a conversation with an agent. They are NOT interactions
+ * though: they are the builder talking to their own agent, so they are hidden
+ * unless asked for by name (source=test), which is what the agent's Manual
+ * tests tab does.
  *
  * Every filter is sent as a nullable parameter and tested with
  * `(param is null or …)`, so the statement stays static and fully parameterized.
@@ -12,6 +18,8 @@ import { checkAuth } from './_auth.js';
 export default async function handler(req, res) {
   const user = checkAuth(req, res);
   if (!user) return;
+  if (req.method === 'PUT')    return saveTestSession(req, res, user);
+  if (req.method === 'DELETE') return deleteSession(req, res, user);
   if (req.method !== 'GET') return res.status(405).end();
 
   const q            = str(req.query.q);
@@ -48,7 +56,7 @@ export default async function handler(req, res) {
     left join users u on u.id = a.user_id
     where (${allUsers}::boolean or a.user_id = ${user.userId})
       and (${agentId}::text is null or cs.agent_id = ${agentId})
-      and (${source}::text is null or cs.source = ${source})
+      and (case when ${source}::text is null then cs.source <> 'test' else cs.source = ${source} end)
       and (${q}::text is null or cs.messages::text ilike '%' || ${q} || '%')
       and (${from}::timestamptz is null or cs.started_at >= ${from}::timestamptz)
       and (${toEnd}::timestamptz is null or cs.started_at <= ${toEnd}::timestamptz)
@@ -72,7 +80,7 @@ export default async function handler(req, res) {
     join agents a on a.id = cs.agent_id
     where (${allUsers}::boolean or a.user_id = ${user.userId})
       and (${agentId}::text is null or cs.agent_id = ${agentId})
-      and (${source}::text is null or cs.source = ${source})
+      and (case when ${source}::text is null then cs.source <> 'test' else cs.source = ${source} end)
       and (${q}::text is null or cs.messages::text ilike '%' || ${q} || '%')
       and (${from}::timestamptz is null or cs.started_at >= ${from}::timestamptz)
       and (${toEnd}::timestamptz is null or cs.started_at <= ${toEnd}::timestamptz)
@@ -87,11 +95,66 @@ export default async function handler(req, res) {
     from chat_sessions cs
     join agents a on a.id = cs.agent_id
     where (${allUsers}::boolean or a.user_id = ${user.userId})
+      and cs.source <> 'test'
     group by cs.source
     order by cs.source
   `;
 
   return res.json({ sessions: rows, total: countRow.total, sources, limit, offset });
+}
+
+/**
+ * Upsert one manual test conversation. Written after every turn rather than on
+ * close, so a shut tab does not lose the run that just revealed the bug.
+ * started_at is kept from the first write; updated_at is what gives the
+ * conversation its duration.
+ */
+async function saveTestSession(req, res, user) {
+  const { id, agentId, messages } = req.body || {};
+  if (!id || !agentId) return res.status(400).json({ error: 'id and agentId are required' });
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ error: 'messages must be a non-empty array' });
+  }
+
+  const [owned] = await sql`
+    select id from agents where id = ${agentId} and user_id = ${user.userId}
+  `;
+  if (!owned) return res.status(404).json({ error: 'Agent not found' });
+
+  // Only the conversation itself is stored — no UI bookkeeping, no typing rows.
+  const clean = messages
+    .filter(m => m && (m.role === 'user' || m.role === 'agent' || m.role === 'assistant'))
+    .map(m => ({
+      role: m.role === 'agent' ? 'assistant' : m.role,
+      content: typeof m.content === 'string' ? m.content : String(m.content ?? ''),
+      skill: m.skillName || undefined,
+      tools: Array.isArray(m.toolCalls) && m.toolCalls.length
+        ? m.toolCalls.map(t => ({ name: t.name, input: t.input, result: t.result })) : undefined,
+    }));
+  if (clean.length === 0) return res.status(400).json({ error: 'nothing worth storing' });
+
+  await sql`
+    insert into chat_sessions (id, agent_id, source, messages)
+    values (${id}, ${agentId}, 'test', ${JSON.stringify(clean)}::jsonb)
+    on conflict (id) do update set
+      messages   = excluded.messages,
+      updated_at = now()
+  `;
+  return res.json({ ok: true, id, stored: clean.length });
+}
+
+/** Only ever the caller's own conversation, test or otherwise. */
+async function deleteSession(req, res, user) {
+  const id = str(req.query.id);
+  if (!id) return res.status(400).json({ error: 'id is required' });
+  const rows = await sql`
+    delete from chat_sessions cs
+    using agents a
+    where cs.agent_id = a.id and cs.id = ${id} and a.user_id = ${user.userId}
+    returning cs.id
+  `;
+  if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
+  return res.json({ ok: true, id });
 }
 
 function str(value) {
