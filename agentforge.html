@@ -809,7 +809,16 @@
 
   function ConfigurationTab({ agent, onUpdate }) {
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const [askAI, setAskAI] = useState(false);
     const fileInputRef = React.useRef(null);
+
+    // The assistant hands back several fields at once, and undo hands the old
+    // ones back the same way.
+    function applyFields(fields) {
+      const updated = JSON.parse(JSON.stringify(agent));
+      Object.entries(fields).forEach(([key, val]) => { updated[key] = val; });
+      onUpdate(updated);
+    }
 
     function update(path, val) {
       const updated = JSON.parse(JSON.stringify(agent));
@@ -844,7 +853,16 @@
     }
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 720 }}>
+      /*
+       * Two columns: the settings on the left, the base prompt on the right
+       * where it gets the full height of the screen, and its assistant opening
+       * as a third column beside it.
+       */
+      <div style={{ display: 'flex', gap: 18, height: '100%', minHeight: 560, alignItems: 'stretch' }}>
+        <div style={{
+          flex: '0 1 460px', minWidth: 300, display: 'flex', flexDirection: 'column',
+          gap: 20, overflowY: 'auto', paddingRight: 4,
+        }}>
         {/* Identity */}
         <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 24, border: '1px solid var(--border)' }}>
           <div style={{ fontWeight: 700, marginBottom: 16, fontSize: 15 }}>Identity</div>
@@ -928,10 +946,34 @@
           );
         })()}
 
-        {/* Base Prompt */}
-        <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 24, border: '1px solid var(--border)' }}>
-          <div style={{ fontWeight: 700, marginBottom: 16, fontSize: 15 }}>Base Prompt</div>
-          <RichPromptEditor value={agent.basePrompt} onChange={v => update(['basePrompt'], v)} />
+        </div>
+
+        {/* Base Prompt — always-on instructions, so it gets the room */}
+        <div style={{ ...WORKSPACE_PANEL, flex: '1 1 460px', minWidth: 340 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)', flexShrink: 0 }}>
+            <span style={{ fontWeight: 700, fontSize: 14 }}>Base Prompt</span>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              always active, on every channel
+            </span>
+            <button onClick={() => setAskAI(v => !v)} title="Ask AI to write or change this prompt"
+              style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, padding: '4px 11px', borderRadius: 'var(--r-xl)', background: askAI ? 'var(--teal)' : 'var(--teal-dim)', color: askAI ? '#04211e' : 'var(--teal)', border: '1px solid var(--teal)', flexShrink: 0 }}>
+              ✨ Ask AI
+            </button>
+          </div>
+          <div style={{ flex: 1, minHeight: 0, padding: 10, display: 'flex', flexDirection: 'column' }}>
+            <RichPromptEditor fill value={agent.basePrompt} onChange={v => update(['basePrompt'], v)} />
+          </div>
+        </div>
+
+        {/* Kept mounted so the conversation survives closing the column */}
+        <div style={{ ...WORKSPACE_PANEL, width: 'clamp(300px, 28%, 400px)', flexShrink: 0, display: askAI ? 'flex' : 'none' }}>
+          <AssistantPanel
+            agent={agent}
+            kind="agent"
+            subject={agent}
+            targetKey={agent.id}
+            onApply={applyFields}
+          />
         </div>
       </div>
     );
@@ -1433,6 +1475,68 @@
     return extractFencedBlock(text, /^(markdown|md|text|txt|prompt)?$/);
   }
 
+  /**
+   * The base prompt is the one part of the system prompt that is always on, so
+   * this assistant has to know what belongs there versus in a skill, and how
+   * the agent reaches its tools and skills from inside it.
+   */
+  function buildAgentAssistantPrompt(agent, subject, diagnostics = {}) {
+    const tools = (agent.tools || []).filter(t => t.name);
+    const skills = (agent.skills || []).filter(sk => sk.name);
+
+    return [
+      'You are a prompt-writing assistant built into the 8Legs.ai agent builder.',
+      "You write and revise ONE agent's BASE PROMPT — the instructions that are always active, on every",
+      'channel, in every conversation, whatever skill is running.',
+      '',
+      'What belongs in a base prompt:',
+      '- Who the agent is, who it serves, and the tone and language it answers in.',
+      '- The rules that always hold: what it must never do, what it must always ask for, how it behaves',
+      '  when it does not know something or when a tool fails.',
+      '- A short statement of what it can do, and when to hand off to one of its skills.',
+      'What does NOT belong here: the step-by-step procedure for one particular task. That is a skill,',
+      "and a skill's own prompt is appended under a `## Skill: <name>` heading when it activates.",
+      '',
+      'How to reference tools and skills from inside the prompt:',
+      "- The tools listed below are real functions the agent can call. Write a tool's exact name with an",
+      '  @ prefix — `@fetch_weather` — and say which parameters to pass; the parameter names are the',
+      '  ones declared on that tool.',
+      '- To hand the conversation to a skill, instruct the agent to call the `switch_skill` tool with',
+      "  `skill_name` set to that skill's exact name. In prompt text the convention is `#SkillName`",
+      '  with no spaces.',
+      '- Reference only tools and skills that appear in the lists below. Never invent one.',
+      '',
+      'How to answer:',
+      '- Answer in the language the user writes in, briefly, with no preamble.',
+      '- The base prompt you write must ALWAYS be in English, whatever language the user writes to you',
+      '  in. The one exception: a sentence the agent has to say to its users verbatim in another',
+      '  language stays in that language, quoted — and the prompt should state which language to reply in.',
+      '- Structure it with short `## Section` headings (Role, Instructions, Constraints and so on); the',
+      '  builder can collapse them.',
+      '- Whenever you write or change it, output the COMPLETE new base prompt inside ONE ```markdown',
+      "  block. Never a diff, never a fragment — that block replaces what is in the user's editor.",
+      '- Outside the block, report identity fields as plain lines, and include a line only when you are',
+      '  setting or changing that field:',
+      '    NAME: Insurance Support',
+      '    OPENING: the first line the agent says to a user, in the language it speaks to them',
+      '- If the user only asks a question, answer it without a block or metadata lines.',
+      '',
+      `The agent being edited: ${agent.name || '(unnamed)'}`,
+      `Its opening message: ${agent.openingMessage || '(none)'}`,
+      `Its tools: ${tools.length ? tools.map(t => `@${t.name}${t.description ? ' — ' + t.description : ''}`).join('; ') : '(none)'}`,
+      `Its skills: ${skills.length ? skills.map(sk => `#${sk.name.replace(/\s+/g, '')}${sk.description ? ' — ' + sk.description : ''}`).join('; ') : '(none)'}`,
+      agent.emailEnabled ? 'It can also send email with the built-in @send_email tool.' : '',
+      '',
+      'Current base prompt:',
+      '```markdown',
+      agent.basePrompt || '(empty)',
+      '```',
+      '',
+      "Recent failures on this agent (newest first). If one of them is caused by what the base prompt asks the agent to do — a tool that isn't there, a rule that contradicts itself — fix the prompt:",
+      formatErrors(diagnostics.errors),
+    ].filter(line => line !== '').join('\n');
+  }
+
   function buildSkillAssistantPrompt(agent, skill, diagnostics = {}) {
     const tools = (agent.tools || []).filter(t => t.name);
     const others = (agent.skills || []).filter(sk => sk.name && sk.id !== skill.id);
@@ -1557,6 +1661,7 @@
     tool: {
       hint: 'Writes straight into the editor',
       placeholder: 'Describe what the tool should do…',
+      empty: "Ask for the tool's code and it is written straight into the editor on the left. You can also ask questions about the current code or request changes.",
       buildPrompt: (agent, tool, diagnostics) => buildToolAssistantPrompt(tool, diagnostics),
       parse: (reply, tool) => {
         const fields = {};
@@ -1580,9 +1685,33 @@
         { label: 'Review it', prompt: 'Review the current code against the runtime contract and fix anything that would break at runtime.' },
       ],
     },
+    agent: {
+      hint: 'Writes straight into the base prompt',
+      placeholder: 'Describe what this agent should be…',
+      empty: 'Ask for this agent\'s base prompt and it is written straight into the editor on the left. It can set the name and opening message too, and it knows which tools and skills this agent actually has.',
+      buildPrompt: (agent, subject, diagnostics) => buildAgentAssistantPrompt(agent, subject, diagnostics),
+      parse: (reply, current) => {
+        const fields = {};
+        const meta = withoutFencedBlocks(reply);
+        const prompt = extractPromptBlock(reply);
+        const name = extractMetaLine(meta, 'NAME');
+        const opening = extractMetaLine(meta, 'OPENING');
+        if (prompt && prompt !== current.basePrompt) fields.basePrompt = prompt;
+        if (name && name !== current.name) fields.name = name;
+        if (opening && opening !== current.openingMessage) fields.openingMessage = opening;
+        return fields;
+      },
+      quickPrompts: [
+        { label: 'Write it for me', prompt: 'Write the full base prompt for this agent, and set its name and opening message.' },
+        { label: 'Add guardrails', prompt: 'Add a Constraints section: what this agent must never do, what it must always ask for, and how it behaves when it does not know something or a tool fails.' },
+        { label: 'Wire up the skills', prompt: 'Update the base prompt so it says what this agent can do and when to hand off to each of its skills and tools, using their exact names.' },
+        { label: 'Review it', prompt: 'Review the current base prompt: what would the agent get wrong, what is missing, and is anything in here that really belongs in a skill? Then fix it.' },
+      ],
+    },
     skill: {
       hint: 'Writes straight into the prompt',
       placeholder: 'Describe what this skill should do…',
+      empty: "Ask for this skill's prompt and it is written straight into the editor on the left. You can also ask questions about it or request changes.",
       buildPrompt: (agent, skill, diagnostics) => buildSkillAssistantPrompt(agent, skill, diagnostics),
       parse: (reply, skill) => {
         const fields = {};
@@ -1709,9 +1838,7 @@
         <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12, background: 'var(--bg-app)' }}>
           {messages.length === 0 && (
             <div style={{ color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.6 }}>
-              {kind === 'tool'
-                ? "Ask for the tool's code and it is written straight into the editor on the left. You can also ask questions about the current code or request changes."
-                : "Ask for this skill's prompt and it is written straight into the editor on the left. You can also ask questions about it or request changes."}
+              {profile.empty}
             </div>
           )}
 
