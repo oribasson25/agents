@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>8Legs.ai</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='285 18 115 140'%3E%3Cellipse cx='340' cy='108' rx='21' ry='29' fill='%23EF9F27'/%3E%3Cellipse cx='340' cy='72' rx='14' ry='14' fill='%23EF9F27'/%3E%3Ccircle cx='335' cy='70' r='3.5' fill='%23854F0B'/%3E%3Ccircle cx='345' cy='70' r='3.5' fill='%23854F0B'/%3E%3Cpath d='M345,136 C372,138 390,122 390,98 C390,72 374,56 379,38' fill='none' stroke='%23EF9F27' stroke-width='8' stroke-linecap='round'/%3E%3Cpolygon points='375,40 382,24 389,40' fill='%23D85A30'/%3E%3Cpolyline points='319,95 293,80 278,72' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='319,105 291,102 276,100' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='319,115 291,119 276,124' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='319,125 293,136 281,146' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='361,95 387,80 402,72' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='361,105 389,102 404,100' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='361,115 389,119 404,124' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='361,125 387,136 399,146' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M328,62 L313,48' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round'/%3E%3Cpath d='M313,48 L304,40' fill='none' stroke='%23EF9F27' stroke-width='4' stroke-linecap='round'/%3E%3Cpath d='M313,48 L309,57' fill='none' stroke='%23EF9F27' stroke-width='4' stroke-linecap='round'/%3E%3Cpath d='M352,62 L367,48' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round'/%3E%3Cpath d='M367,48 L376,40' fill='none' stroke='%23EF9F27' stroke-width='4' stroke-linecap='round'/%3E%3Cpath d='M367,48 L371,57' fill='none' stroke='%23EF9F27' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -88,6 +88,19 @@
     .slide-in-right { animation: slideInRight 0.3s cubic-bezier(0.16,1,0.3,1) both; }
     .card-highlight { animation: cardHighlight 1.2s ease-out; }
     .assistant-ring { animation: assistantRing 2.4s ease-out infinite; }
+
+    /* ── phones ──
+       The one place CSS knows about mobile. Everything else is a separate
+       React branch (see MOBILE), so none of this touches the desktop. */
+    @media (max-width: 768px) {
+      :root { --ui-zoom: 1; }                       /* the 80% desktop scale is wrong on a phone */
+      .m-app { height: 100vh; height: 100dvh; }     /* dvh: the toolbar slides, the app keeps fitting */
+      .m-nav, .m-sheet { padding-bottom: env(safe-area-inset-bottom); }
+      .m-root input, .m-root textarea, .m-root select { font-size: 16px; }   /* iOS zooms in on anything smaller */
+      .m-scroll-x { scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+      .m-scroll-x::-webkit-scrollbar { display: none; }
+      .m-root button { -webkit-tap-highlight-color: transparent; }
+    }
 
     .typing-dot {
       display: inline-block;
@@ -884,7 +897,7 @@
   /* ─────────────────── CONFIGURATION TAB ─────────────────── */
   const EMOJI_OPTIONS = ['🤖','🧠','💼','🎯','🔥','🚀','⚡','💡','🛡️','🌟','👾','🎨','🔬','📊','🗺️','🎤','🌐','🔑','⚙️','🦁'];
 
-  function ConfigurationTab({ agent, onUpdate }) {
+  function ConfigurationTab({ agent, onUpdate, stacked }) {
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [askAI, setAskAI] = useState(false);
     const fileInputRef = React.useRef(null);
@@ -935,11 +948,12 @@
        * where it gets the full height of the screen, and its assistant opening
        * as a third column beside it.
        */
-      <div style={{ display: 'flex', gap: 18, height: '100%', minHeight: 560, alignItems: 'stretch' }}>
-        <div style={{
-          flex: '0 1 460px', minWidth: 300, display: 'flex', flexDirection: 'column',
-          gap: 20, overflowY: 'auto', paddingRight: 4,
-        }}>
+      <div style={stacked
+        ? { display: 'flex', flexDirection: 'column', gap: 14 }                                   /* phone: one column */
+        : { display: 'flex', gap: 18, height: '100%', minHeight: 560, alignItems: 'stretch' }}>
+        <div style={stacked
+          ? { display: 'flex', flexDirection: 'column', gap: 14 }
+          : { flex: '0 1 460px', minWidth: 300, display: 'flex', flexDirection: 'column', gap: 20, overflowY: 'auto', paddingRight: 4 }}>
         {/* Identity */}
         <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 24, border: '1px solid var(--border)' }}>
           <div style={{ fontWeight: 700, marginBottom: 16, fontSize: 15 }}>Identity</div>
@@ -1026,7 +1040,7 @@
         </div>
 
         {/* Base Prompt — always-on instructions, so it gets the room */}
-        <div style={{ ...WORKSPACE_PANEL, flex: '1 1 460px', minWidth: 340 }}>
+        <div style={stacked ? { ...WORKSPACE_PANEL, height: 480 } : { ...WORKSPACE_PANEL, flex: '1 1 460px', minWidth: 340 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)', flexShrink: 0 }}>
             <span style={{ fontWeight: 700, fontSize: 14 }}>Base Prompt</span>
             <span style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1042,16 +1056,24 @@
           </div>
         </div>
 
-        {/* Kept mounted so the conversation survives closing the column */}
-        <div style={{ ...WORKSPACE_PANEL, width: 'clamp(300px, 28%, 400px)', flexShrink: 0, display: askAI ? 'flex' : 'none' }}>
-          <AssistantPanel
-            agent={agent}
-            kind="agent"
-            subject={agent}
-            targetKey={agent.id}
-            onApply={applyFields}
-          />
-        </div>
+        {/* Kept mounted so the conversation survives closing the column.
+            On a phone there is no room for a third column: the same panel
+            opens as a sheet from the bottom. */}
+        {stacked ? (
+          <MobileSheet open={askAI} onClose={() => setAskAI(false)} full title="✨ Assistant">
+            <AssistantPanel agent={agent} kind="agent" subject={agent} targetKey={agent.id} onApply={applyFields} />
+          </MobileSheet>
+        ) : (
+          <div style={{ ...WORKSPACE_PANEL, width: 'clamp(300px, 28%, 400px)', flexShrink: 0, display: askAI ? 'flex' : 'none' }}>
+            <AssistantPanel
+              agent={agent}
+              kind="agent"
+              subject={agent}
+              targetKey={agent.id}
+              onApply={applyFields}
+            />
+          </div>
+        )}
       </div>
     );
   }
@@ -2748,7 +2770,7 @@
                 clearInterval(crawlPollRef.current);
                 // Reload docs list to show newly crawled pages
                 apiFetch(`/api/agents/${agent.id}/documents`)
-                  .then(r => r.json()).then(rows => setDocs(rows)).catch(() => {});
+                  .then(r => r.json()).then(rows => setDocs(Array.isArray(rows) ? rows : [])).catch(() => {});
               }
             }
           } catch {}
@@ -2780,7 +2802,7 @@
         if (r.ok) {
           setCrawlConfig(c => ({ ...c, ...data.crawlConfig, status: 'done', pagesCrawled: data.pagesCrawled }));
           apiFetch(`/api/agents/${agent.id}/documents`)
-            .then(r => r.json()).then(rows => setDocs(rows)).catch(() => {});
+            .then(r => r.json()).then(rows => setDocs(Array.isArray(rows) ? rows : [])).catch(() => {});
           // Reload agent crawlConfig from server
           const cfg = await apiFetch(`/api/agents/${agent.id}/crawl`).then(r => r.json()).catch(() => null);
           if (cfg) setCrawlConfig(cfg);
@@ -2801,7 +2823,7 @@
         setCrawlConfig(c => ({ ...c, urls: (c.urls || []).filter(u => u !== url) }));
         // Reload docs
         apiFetch(`/api/agents/${agent.id}/documents`)
-          .then(r => r.json()).then(rows => setDocs(rows)).catch(() => {});
+          .then(r => r.json()).then(rows => setDocs(Array.isArray(rows) ? rows : [])).catch(() => {});
       } catch {}
     }
 
@@ -2814,7 +2836,7 @@
     useEffect(() => {
       apiFetch(`/api/agents/${agent.id}/documents`)
         .then(r => r.json())
-        .then(rows => { setDocs(rows); setLoading(false); })
+        .then(rows => { setDocs(Array.isArray(rows) ? rows : []); setLoading(false); })
         .catch(() => setLoading(false));
     }, [agent.id]);
 
@@ -3174,7 +3196,7 @@
   }
 
   /* ─────────────────── EXPORT TAB ─────────────────── */
-  function ExportTab({ agent }) {
+  function ExportTab({ agent, stacked }) {
     const [title, setTitle] = useState(agent.name);
     const [accent, setAccent] = useState('#6c63ff');
     const [titleColor, setTitleColor] = useState('#ffffff');
@@ -3234,9 +3256,11 @@
     });
 
     return (
-      <div style={{ display: 'flex', gap: 24, height: 'calc(100vh / var(--ui-zoom) - 160px)', overflow: 'hidden' }}>
+      <div style={stacked
+        ? { display: 'flex', flexDirection: 'column', gap: 16 }                                                  /* phone: controls, then preview */
+        : { display: 'flex', gap: 24, height: 'calc(100vh / var(--ui-zoom) - 160px)', overflow: 'hidden' }}>
         {/* Controls */}
-        <div style={{ width: 280, flexShrink: 0, background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 20, border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto' }}>
+        <div style={{ width: stacked ? '100%' : 280, flexShrink: 0, background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 20, border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 16, overflowY: stacked ? 'visible' : 'auto' }}>
           <div style={{ fontWeight: 700, fontSize: 15 }}>Export Controls</div>
 
           {/* Mode toggle */}
@@ -3294,7 +3318,7 @@
         </div>
 
         {/* Preview + code */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto', minWidth: 0 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16, overflowY: stacked ? 'visible' : 'auto', minWidth: 0 }}>
           <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 20, border: '1px solid var(--border)', position: 'relative', flexShrink: 0 }}>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>Live Preview</div>
             <span style={{ position: 'absolute', top: 16, right: 16, background: 'var(--bg-hover)', color: 'var(--text-2)', fontSize: 11, padding: '3px 8px', borderRadius: 'var(--r-sm)', fontWeight: 600 }}>PREVIEW</span>
@@ -3485,7 +3509,7 @@
 
 
   /* ─────────────────── CHAT TEST DRAWER ─────────────────── */
-  function ChatTestDrawer({ agent, onClose, initialSessionId }) {
+  function ChatTestDrawer({ agent, onClose, initialSessionId, fullScreen }) {
     const openingMsg = { id: uid(), role: 'agent', content: agent.openingMessage || 'Hello!', timestamp: new Date(), isOpening: true };
     const [messages, setMessages] = useState([openingMsg]);
     const [input, setInput] = useState('');
@@ -3627,7 +3651,7 @@
         {/* Backdrop */}
         <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 200 }} />
         {/* Drawer */}
-        <div className="slide-in-right" style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 420, background: 'var(--bg-sidebar)', borderLeft: '1px solid var(--border)', zIndex: 201, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+        <div className="slide-in-right" style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: fullScreen ? '100vw' : 420, background: 'var(--bg-sidebar)', borderLeft: fullScreen ? 'none' : '1px solid var(--border)', zIndex: 201, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
           {/* Header */}
           <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#1e1e1e', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}><AvatarDisplay value={agent.avatar} size={40} /></div>
@@ -3646,7 +3670,7 @@
           {showHistory && (() => {
             const sessions = history.map(asDrawerSession);
             return (
-              <div style={{ position: 'absolute', top: 73, right: 0, width: 420, bottom: 0, background: 'var(--bg-app)', zIndex: 10, display: 'flex', flexDirection: 'column', borderLeft: '1px solid var(--border)' }}>
+              <div style={{ position: 'absolute', top: 73, right: 0, width: fullScreen ? '100%' : 420, bottom: 0, background: 'var(--bg-app)', zIndex: 10, display: 'flex', flexDirection: 'column', borderLeft: '1px solid var(--border)' }}>
                 <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   {viewingSession
                     ? <><button onClick={() => setViewingSession(null)} style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: 13, padding: 0 }}>← Back</button>
@@ -4110,7 +4134,7 @@
   }
 
   /* ─────────────────── DOCS VIEW ─────────────────── */
-  function DocsView() {
+  function DocsView({ stacked }) {
     const [active, setActive] = useState('intro');
 
     const sections = [
@@ -4629,14 +4653,20 @@ npm run migrate            # הרצה בפועל`}</Block>
     };
 
     return (
-      <div style={{ display: 'flex', gap: 32, maxWidth: 1000, margin: '0 auto' }}>
-        {/* Sidebar nav */}
-        <div style={{ width: 200, flexShrink: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: 11, color: 'var(--text-muted)', letterSpacing: 1, marginBottom: 10, textTransform: 'uppercase' }}>תוכן עניינים</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <div style={stacked ? { display: 'flex', flexDirection: 'column', gap: 16 } : { display: 'flex', gap: 32, maxWidth: 1000, margin: '0 auto' }}>
+        {/* Sidebar nav — on a phone, a strip of chips above the text */}
+        <div style={{ width: stacked ? '100%' : 200, flexShrink: 0 }}>
+          {!stacked && <div style={{ fontWeight: 700, fontSize: 11, color: 'var(--text-muted)', letterSpacing: 1, marginBottom: 10, textTransform: 'uppercase' }}>תוכן עניינים</div>}
+          <div className={stacked ? 'm-scroll-x' : undefined} dir={stacked ? 'rtl' : undefined} style={stacked ? { display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 } : { display: 'flex', flexDirection: 'column', gap: 2 }}>
             {sections.map(s => (
               <button key={s.id} onClick={() => setActive(s.id)}
-                style={{
+                style={stacked ? {
+                  flexShrink: 0, whiteSpace: 'nowrap', height: 36, padding: '0 13px', borderRadius: 999, fontSize: 13,
+                  background: active === s.id ? 'var(--primary-dim)' : 'var(--bg-card)',
+                  color: active === s.id ? 'var(--primary)' : 'var(--text-2)',
+                  fontWeight: active === s.id ? 700 : 500,
+                  border: `1px solid ${active === s.id ? 'rgba(239,159,39,0.35)' : 'var(--border)'}`,
+                } : {
                   textAlign: 'right', padding: '8px 10px', borderRadius: 'var(--r-sm)', fontSize: 13,
                   background: active === s.id ? 'rgba(239,159,39,0.10)' : 'transparent',
                   color: active === s.id ? 'var(--primary)' : 'var(--text-2)',
@@ -6206,11 +6236,12 @@ npm run migrate            # הרצה בפועל`}</Block>
 
     const isLogin = mode === 'login';
     const canSubmit = isLogin ? (username && password) : (username && password && phone);
+    const isMobile = useIsMobile();   // on a phone the form is the whole screen
 
     return (
       <div style={{ display: 'flex', height: 'calc(100vh / var(--ui-zoom))', background: 'var(--bg-app)', overflow: 'hidden' }}>
         {/* Left panel - branding */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #0b0d10 0%, #0f1320 100%)', borderRight: '1px solid var(--border)', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ flex: 1, display: isMobile ? 'none' : 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #0b0d10 0%, #0f1320 100%)', borderRight: '1px solid var(--border)', position: 'relative', overflow: 'hidden' }}>
           {/* Decorative glow */}
           <div style={{ position: 'absolute', top: '30%', left: '50%', transform: 'translate(-50%,-50%)', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(239,159,39,0.08) 0%, transparent 70%)', pointerEvents: 'none' }} />
           {/* Watermark logo */}
@@ -6258,7 +6289,7 @@ npm run migrate            # הרצה בפועל`}</Block>
           </div>
         </div>
         {/* Right panel - form */}
-        <div style={{ width: 420, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 48px' }}>
+        <div style={{ width: isMobile ? '100%' : 420, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: isMobile ? '32px 24px' : '40px 48px' }}>
           <div style={{ width: '100%', maxWidth: 340 }}>
             <div style={{ marginBottom: 28 }}>
               <div style={{ fontWeight: 800, fontSize: 22, letterSpacing: '-0.02em', color: 'var(--text)', marginBottom: 6 }}>
@@ -6956,6 +6987,618 @@ npm run migrate            # הרצה בפועל`}</Block>
     );
   }
 
+  /* ─────────────────── MOBILE ───────────────────
+     A separate shell for phones, chosen by useIsMobile(). It shares App's
+     state, reducer, handlers and API calls; only the chrome and the screen
+     layouts differ. Nothing in here runs above 768px, so the desktop path is
+     unchanged byte for byte. */
+
+  const MOBILE_QUERY = '(max-width: 768px)';
+
+  function useIsMobile() {
+    const [mobile, setMobile] = useState(() =>
+      typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(MOBILE_QUERY).matches : false);
+    useEffect(() => {
+      if (typeof window === 'undefined' || !window.matchMedia) return;
+      const mq = window.matchMedia(MOBILE_QUERY);
+      const on = e => setMobile(e.matches);
+      if (mq.addEventListener) mq.addEventListener('change', on); else mq.addListener(on);
+      return () => { if (mq.removeEventListener) mq.removeEventListener('change', on); else mq.removeListener(on); };
+    }, []);
+    return mobile;
+  }
+
+  const MobileIcons = {
+    more: <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="19" cy="12" r="1.9"/></svg>,
+    back: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>,
+    chevron: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>,
+    clock: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>,
+    play: <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4l14 8-14 8z"/></svg>,
+  };
+
+  /** 52px bar: an optional left control, a title block, an optional right control. */
+  function MobileTopBar({ left, title, subtitle, right, onBack }) {
+    return (
+      <div style={{ height: 52, display: 'flex', alignItems: 'center', gap: 8, padding: '0 10px 0 8px', flexShrink: 0, borderBottom: '1px solid var(--border)', background: 'var(--bg-sidebar)' }}>
+        {onBack && (
+          <button onClick={onBack} aria-label="Back" style={{ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', color: 'var(--text-2)', borderRadius: 10, flexShrink: 0 }}>
+            {MobileIcons.back}
+          </button>
+        )}
+        {left}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 9 }}>
+          {typeof title === 'string' ? (
+            <div style={{ minWidth: 0 }}>
+              <div dir="auto" style={{ fontWeight: 800, fontSize: 17, letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'start' }}>{title}</div>
+              {subtitle && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtitle}</div>}
+            </div>
+          ) : title}
+        </div>
+        {right}
+      </div>
+    );
+  }
+
+  /**
+   * The bottom navigation. Five stops; the assistant sits in the middle,
+   * raised, because on a phone it is the thing you reach for most. Hidden on
+   * depth screens (editor, chat) — there the back button owns the corner.
+   */
+  function MobileBottomNav({ active, onNav, onAssistant, assistantOpen }) {
+    const items = [
+      { id: 'home',         label: 'Home',         icon: Icons.home },
+      { id: 'interactions', label: 'Interactions', icon: Icons.interactions },
+      null,
+      { id: 'settings',     label: 'Settings',     icon: Icons.settings },
+      { id: 'more',         label: 'More',         icon: MobileIcons.more },
+    ];
+    return (
+      <nav className="m-nav" style={{ flexShrink: 0, background: 'var(--bg-sidebar)', borderTop: '1px solid var(--border)' }}>
+        <div style={{ height: 58, display: 'flex', alignItems: 'stretch', padding: '0 6px' }}>
+          {items.map((it, i) => {
+            if (!it) return (
+              <button key="assistant" onClick={onAssistant} aria-label="Assistant"
+                style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', position: 'relative', background: 'transparent', padding: 0 }}>
+                <div style={{
+                  position: 'absolute', top: -24, width: 56, height: 56, borderRadius: '50%',
+                  background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 23,
+                  boxShadow: '0 8px 24px rgba(239,159,39,0.35), 0 0 0 5px var(--bg-app)',
+                  transform: assistantOpen ? 'scale(0.94)' : 'none', transition: 'transform 0.15s',
+                }}>✨</div>
+                <div style={{ marginTop: 36, fontSize: 10.5, fontWeight: 700, color: 'var(--primary)' }}>Assistant</div>
+              </button>
+            );
+            const on = active === it.id;
+            return (
+              <button key={it.id} onClick={() => onNav(it.id)}
+                style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, paddingTop: 8, background: 'transparent', color: on ? 'var(--primary)' : 'var(--text-2)' }}>
+                <span style={{ display: 'flex', transform: 'scale(1.25)', transformOrigin: 'center', marginTop: 2 }}>{it.icon}</span>
+                <span style={{ fontSize: 10.5, fontWeight: on ? 700 : 600 }}>{it.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+    );
+  }
+
+  /** A bottom sheet. `full` takes the whole screen bar a sliver at the top. */
+  function MobileSheet({ open, onClose, title, subtitle, right, children, full }) {
+    useEffect(() => {
+      if (!open) return;
+      function onKey(e) { if (e.key === 'Escape') onClose(); }
+      document.addEventListener('keydown', onKey);
+      return () => document.removeEventListener('keydown', onKey);
+    }, [open, onClose]);
+    // Hidden rather than unmounted when closed: the assistant conversation
+    // inside must survive collapsing the sheet.
+    return (
+      <React.Fragment>
+        <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 300, display: open ? 'block' : 'none' }} />
+        <div className="m-sheet" style={{
+          position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 301, display: open ? 'flex' : 'none',
+          height: full ? 'calc(100% - 28px)' : 'auto', maxHeight: 'calc(100% - 28px)',
+          background: 'var(--bg-sidebar)', borderRadius: '22px 22px 0 0', borderTop: '1px solid var(--border)',
+          flexDirection: 'column', overflow: 'hidden',
+          boxShadow: '0 -12px 40px rgba(0,0,0,0.5)',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 2px', flexShrink: 0 }}>
+            <div style={{ width: 40, height: 5, borderRadius: 3, background: 'var(--border)' }} />
+          </div>
+          {(title || right) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 16px 12px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {title && <div style={{ fontWeight: 800, fontSize: 16 }}>{title}</div>}
+                {subtitle && <div style={{ fontSize: 11.5, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtitle}</div>}
+              </div>
+              {right}
+              <button onClick={onClose} aria-label="Close" style={{ width: 40, height: 40, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-2)', fontSize: 18 }}>▾</button>
+            </div>
+          )}
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>{children}</div>
+        </div>
+      </React.Fragment>
+    );
+  }
+
+  /** The platform assistant as a full-height sheet, reached from the centre tab. */
+  function MobileAssistantSheet({ open, onClose, agents, language, onAgentsChanged, onHistory, seed }) {
+    return (
+      <MobileSheet open={open} onClose={onClose} full
+        title={<span><span style={{ marginRight: 8 }}>✨</span>Assistant</span>}
+        right={onHistory && (
+          <button onClick={onHistory} title={language === 'en' ? 'Conversation history' : 'היסטוריית שיחות'}
+            style={{ width: 40, height: 40, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-2)' }}>
+            {MobileIcons.clock}
+          </button>
+        )}>
+        <div style={{ flex: 1, minHeight: 0, padding: '12px 14px 10px', display: 'flex', flexDirection: 'column' }}>
+          {/* Hidden, not unmounted, when closed — so the conversation survives. */}
+          <PlatformAssistantView compact seed={seed} agents={agents} language={language} onAgentsChanged={onAgentsChanged} />
+        </div>
+      </MobileSheet>
+    );
+  }
+
+  /** The Home screen: the agents, one per row, with the same card the desktop uses. */
+  function MobileHome({ agents, onNew, onEdit, onTest, onDuplicate, onDelete }) {
+    const cfg = accountApi();
+    const usable = accountApiUsable(cfg);
+    return (
+      <div style={{ padding: '14px 16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div dir="rtl" style={{
+          display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', borderRadius: 'var(--r-md)', fontSize: 12, lineHeight: 1.5,
+          background: usable ? 'var(--bg-card)' : 'rgba(245,158,11,0.10)', border: `1px solid ${usable ? 'var(--border)' : 'rgba(245,158,11,0.35)'}`, color: 'var(--text-2)',
+        }}>
+          <span>🔑</span>
+          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {usable
+              ? <React.Fragment><strong style={{ color: 'var(--text)' }}>{cfg.provider} · {cfg.model}</strong> — מפתח אחד לכל המערכת</React.Fragment>
+              : <strong style={{ color: 'var(--warning)' }}>{cfg.provider === 'ollama' ? 'לא הוגדר שרת Ollama' : 'לא הוגדר API Key'} — מסך Settings</strong>}
+          </span>
+          {usable && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '3px 8px', borderRadius: 7, background: 'rgba(34,197,94,0.12)', color: 'var(--success)', flexShrink: 0 }}>מוגדר</span>}
+        </div>
+
+        <div style={{ marginTop: 4 }}>
+          <div style={{ fontWeight: 800, fontSize: 24, letterSpacing: '-0.02em' }}>Agents</div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 2, fontWeight: 500 }}>
+            {agents.length === 0 ? 'No agents yet' : `${agents.length} agent${agents.length !== 1 ? 's' : ''} configured`}
+          </div>
+        </div>
+
+        <button onClick={() => askAssistant('בנה לי סוכן חדש. שאל אותי מה הוא צריך לעשות.')}
+          style={{ width: '100%', height: 46, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: 'var(--bg-card)', color: 'var(--text-2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 13.5 }}>
+          <span style={{ fontSize: 16 }}>✨</span> Build with the assistant
+        </button>
+
+        {agents.length === 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '40px 20px', background: 'var(--bg-card)', borderRadius: 'var(--r-xl)', border: '1px dashed var(--border)', textAlign: 'center' }}>
+            <div style={{ color: 'var(--text)', fontWeight: 700, fontSize: 15 }}>No agents yet</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.6 }}>Describe what you want in plain words and the assistant will build the agent for you.</div>
+            <button onClick={onNew} style={{ height: 44, padding: '0 18px', background: 'var(--bg-hover)', color: 'var(--text-2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 13 }}>
+              {Icons.plus} New Agent
+            </button>
+          </div>
+        ) : (
+          agents.map(a => (
+            <AgentCard key={a.id} agent={a} isNew={a._isNew}
+              onEdit={() => onEdit(a.id)} onTest={() => onTest(a.id)}
+              onDuplicate={() => onDuplicate(a.id)} onDelete={() => onDelete(a.id)} onExport={() => onEdit(a.id)} />
+          ))
+        )}
+      </div>
+    );
+  }
+
+  /** Everything that did not fit in five tabs, as tappable rows. */
+  function MobileMore({ user, theme, onToggleTheme, onLogout, onOpen }) {
+    const Row = ({ icon, label, hint, onClick, danger }) => (
+      <button onClick={onClick} style={{ width: '100%', minHeight: 56, display: 'flex', alignItems: 'center', gap: 14, padding: '0 16px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', color: danger ? 'var(--danger)' : 'var(--text)', textAlign: 'left' }}>
+        <span style={{ display: 'flex', color: danger ? 'var(--danger)' : 'var(--text-2)', transform: 'scale(1.15)' }}>{icon}</span>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'block', fontWeight: 700, fontSize: 14.5 }}>{label}</span>
+          {hint && <span style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{hint}</span>}
+        </span>
+        {!danger && <span style={{ color: 'var(--text-muted)', display: 'flex' }}>{MobileIcons.chevron}</span>}
+      </button>
+    );
+    return (
+      <div style={{ padding: '14px 16px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', marginBottom: 6 }}>
+          <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--primary-dim)', border: '1px solid rgba(239,159,39,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}>{Icons.user}</div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 800, fontSize: 16 }}>{user.username}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{user.isAdmin ? 'Admin' : 'Member'} · 8Legs.ai</div>
+          </div>
+        </div>
+        <Row icon={Icons.sparkle} label="Assistant chats" hint="היסטוריית השיחות עם כל האסיסטנטים" onClick={() => onOpen('assistant')} />
+        <Row icon={Icons.docs} label="Documentation" hint="איך כל חלק במערכת עובד" onClick={() => onOpen('docs')} />
+        {user.isAdmin && <Row icon={Icons.admin} label="Admin" hint="משתמשים וסוכני התבנית" onClick={() => onOpen('admin')} />}
+        <Row icon={theme === 'dark' ? Icons.sun : Icons.moon} label={theme === 'dark' ? 'Light mode' : 'Dark mode'} onClick={onToggleTheme} />
+        <div style={{ height: 6 }} />
+        <Row icon={Icons.logout} label="Log out" onClick={onLogout} danger />
+      </div>
+    );
+  }
+
+  /* ── phone workspaces: a list, then one thing at a time ──
+     The desktop puts a sidebar, an editor and a side panel side by side. On a
+     phone that is a list screen and a detail screen with a segmented control.
+     Same leaf components (Monaco, the prompt editor, the run panel, the
+     assistant); the desktop workspaces are not touched. */
+
+  function MobileSegments({ items, active, onChange }) {
+    return (
+      <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 12, flexShrink: 0 }}>
+        {items.map(it => (
+          <button key={it.id} onClick={() => onChange(it.id)}
+            style={{
+              flex: 1, height: 36, borderRadius: 9, fontSize: 12.5, fontWeight: active === it.id ? 700 : 600, whiteSpace: 'nowrap',
+              background: active === it.id ? 'var(--bg-card)' : 'transparent', color: active === it.id ? 'var(--text)' : 'var(--text-2)',
+              border: active === it.id ? '1px solid var(--border)' : '1px solid transparent',
+              boxShadow: active === it.id ? '0 1px 4px rgba(0,0,0,0.4)' : 'none',
+            }}>{it.label}</button>
+        ))}
+      </div>
+    );
+  }
+
+  function MobileListRow({ label, note, mono, onClick, badge }) {
+    return (
+      <button onClick={onClick}
+        style={{ width: '100%', minHeight: 54, display: 'flex', alignItems: 'center', gap: 12, padding: '0 14px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', textAlign: 'left', color: 'var(--text)' }}>
+        {badge && <span style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--bg-panel)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--teal)', fontSize: 13, fontFamily: 'monospace', flexShrink: 0 }}>{badge}</span>}
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span dir="auto" style={{ display: 'block', fontWeight: 700, fontSize: 14, fontFamily: mono ? "'JetBrains Mono','Fira Code',monospace" : undefined, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+          {note && <span dir="auto" style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{note}</span>}
+        </span>
+        <span style={{ color: 'var(--text-muted)', display: 'flex', flexShrink: 0 }}>{MobileIcons.chevron}</span>
+      </button>
+    );
+  }
+
+  function MobileDetailHeader({ badge, name, mono, onBack, onDelete }) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        <button onClick={onBack} aria-label="Back to list" style={{ width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text-2)', flexShrink: 0 }}>{MobileIcons.back}</button>
+        <div style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--bg-panel)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--teal)', flexShrink: 0, fontSize: 13, fontFamily: 'monospace' }}>{badge}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div dir="auto" style={{ fontWeight: 800, fontSize: 16, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: mono ? "'JetBrains Mono','Fira Code',monospace" : undefined }}>{name}</div>
+          <div style={{ fontSize: 11, color: 'var(--success)', marginTop: 1 }}>saved automatically</div>
+        </div>
+        {onDelete && <IconBtn onClick={onDelete} danger title="Delete">{Icons.trash}</IconBtn>}
+      </div>
+    );
+  }
+
+  const M_FIELD_LABEL = { fontSize: 12, color: 'var(--text-2)', marginBottom: 5, display: 'block' };
+
+  function MobileSkillsTab({ agent, onUpdate }) {
+    const skills = agent.skills || [];
+    const [openId, setOpenId] = useState(null);
+    const [seg, setSeg] = useState('prompt');
+    const selected = openId ? skills.find(sk => sk.id === openId) || null : null;
+
+    function patch(fields) {
+      if (selected) onUpdate({ ...agent, skills: skills.map(sk => sk.id === selected.id ? { ...sk, ...fields } : sk) });
+    }
+    function addSkill() {
+      const created = { id: uid(), name: uniqueName(skills.map(sk => sk.name), 'New Skill', ' '), description: '', prompt: '' };
+      onUpdate({ ...agent, skills: [...skills, created] });
+      setOpenId(created.id); setSeg('config');
+    }
+    function deleteCurrent() {
+      if (!window.confirm(`Delete the skill "${selected.name}"?`)) return;
+      onUpdate({ ...agent, skills: skills.filter(sk => sk.id !== selected.id) });
+      setOpenId(null);
+    }
+
+    if (!selected) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <div><div style={{ fontWeight: 800, fontSize: 18 }}>Skills</div><div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{skills.length ? `${skills.length} focused modes the agent can switch into` : 'Focused modes the agent can switch into'}</div></div>
+            <button onClick={addSkill} style={{ height: 38, padding: '0 14px', background: 'var(--primary)', color: '#0a0a0a', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 13 }}>＋ New</button>
+          </div>
+          {skills.length === 0 && <EmptyState icon={Icons.target} title="No skills yet" subtitle="Tap New — or ask the assistant to build one" />}
+          {skills.map(sk => <MobileListRow key={sk.id} badge="#" label={sk.name || 'untitled'} note={sk.description || 'No description yet'} onClick={() => { setOpenId(sk.id); setSeg('prompt'); }} />)}
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <MobileDetailHeader badge="#" name={selected.name || 'untitled skill'} onBack={() => setOpenId(null)} onDelete={deleteCurrent} />
+        <MobileSegments active={seg} onChange={setSeg} items={[{ id: 'prompt', label: 'Prompt' }, { id: 'config', label: 'Config' }, { id: 'assistant', label: '✨ Assistant' }]} />
+
+        {seg === 'prompt' && (
+          <div style={{ ...WORKSPACE_PANEL, height: 'calc(100dvh - 300px)', minHeight: 380, padding: 10 }}>
+            <RichPromptEditor fill value={selected.prompt} onChange={v => patch({ prompt: v })} />
+          </div>
+        )}
+        {seg === 'config' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 14 }}>
+            <div><label style={M_FIELD_LABEL}>Name</label><input value={selected.name} onChange={e => patch({ name: e.target.value })} dir="auto" placeholder="e.g. Code Reviewer" /></div>
+            <div><label style={M_FIELD_LABEL}>Description</label><input value={selected.description} onChange={e => patch({ description: e.target.value })} dir="auto" placeholder="When should the agent use this skill?" /></div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6, background: 'var(--bg-hover)', borderRadius: 'var(--r-sm)', padding: '9px 11px' }}>
+              💡 The agent reads the description to decide when to switch. In chat, <span style={{ color: 'var(--teal)' }}>#{(selected.name || 'SkillName').replace(/\s+/g, '')}</span> forces it; in a prompt, <span style={{ color: 'var(--primary)' }}>@toolName</span> calls a tool.
+            </div>
+          </div>
+        )}
+        {/* mounted throughout so the conversation survives switching segments */}
+        <div style={{ ...WORKSPACE_PANEL, height: 'calc(100dvh - 300px)', minHeight: 420, display: seg === 'assistant' ? 'flex' : 'none' }}>
+          <AssistantPanel agent={agent} kind="skill" subject={selected} targetKey={selected.id} onApply={patch} />
+        </div>
+      </div>
+    );
+  }
+
+  function MobileToolsTab({ agent, onUpdate }) {
+    const tools = agent.tools || [];
+    // null = list · 'builtin' = send_email · an id = that tool
+    const [open, setOpen] = useState(null);
+    const [seg, setSeg] = useState('code');
+    const [lastRun, setLastRun] = useState(null);
+    const selected = open && open !== 'builtin' ? tools.find(t => t.id === open) || null : null;
+    useEffect(() => { setLastRun(null); }, [open]);
+
+    function patch(fields) {
+      if (selected) onUpdate({ ...agent, tools: tools.map(t => t.id === selected.id ? { ...t, ...fields } : t) });
+    }
+    function addTool() {
+      const created = { id: uid(), name: uniqueName(tools.map(t => t.name), 'new_tool'), description: '', parameters: [], packages: '', envVars: [], code: DEFAULT_TOOL_CODE };
+      onUpdate({ ...agent, tools: [...tools, created] });
+      setOpen(created.id); setSeg('config');
+    }
+    function deleteCurrent() {
+      if (!window.confirm(`Delete the tool "${selected.name}"?`)) return;
+      onUpdate({ ...agent, tools: tools.filter(t => t.id !== selected.id) });
+      setOpen(null);
+    }
+
+    if (open === 'builtin') {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <MobileDetailHeader badge="✉" mono name="send_email" onBack={() => setOpen(null)} />
+          <div style={{ ...WORKSPACE_PANEL }}>
+            <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderBottom: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--bg-panel)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--teal)', flexShrink: 0 }}>{Icons.email}</div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600 }}>Available to the agent</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>Test chat, widget and WhatsApp</div>
+                </div>
+              </div>
+              <button onClick={() => onUpdate({ ...agent, emailEnabled: !agent.emailEnabled })} title={agent.emailEnabled ? 'Disable' : 'Enable'}
+                style={{ width: 50, height: 28, borderRadius: 14, padding: 0, flexShrink: 0, background: agent.emailEnabled ? 'var(--teal)' : 'var(--bg-hover)', border: '1px solid ' + (agent.emailEnabled ? 'var(--teal)' : 'var(--border)'), position: 'relative', transition: 'background 0.2s' }}>
+                <div style={{ position: 'absolute', top: 2, width: 22, height: 22, borderRadius: '50%', background: '#fff', left: agent.emailEnabled ? 25 : 2, transition: 'left 0.15s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+              </button>
+            </div>
+            <GmailAgentConnection agent={agent} />
+            <div style={{ padding: '12px 16px', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6, borderTop: '1px solid var(--border)' }}>
+              The agent calls this tool with <span style={{ fontFamily: 'monospace', color: 'var(--text-2)' }}>to</span>, <span style={{ fontFamily: 'monospace', color: 'var(--text-2)' }}>subject</span> and <span style={{ fontFamily: 'monospace', color: 'var(--text-2)' }}>body</span>, and mail goes out from the mailbox above.
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (!selected) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <div><div style={{ fontWeight: 800, fontSize: 18 }}>Tools</div><div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Python the agent can call at runtime</div></div>
+            <button onClick={addTool} style={{ height: 38, padding: '0 14px', background: 'var(--primary)', color: '#0a0a0a', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 13 }}>＋ New</button>
+          </div>
+          <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-muted)', textTransform: 'uppercase', padding: '6px 2px 0' }}>Built-in</div>
+          <MobileListRow badge="✉" mono label="send_email" note={agent.emailEnabled ? 'on — sends from this agent\'s Gmail' : 'off'} onClick={() => setOpen('builtin')} />
+          <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-muted)', textTransform: 'uppercase', padding: '10px 2px 0' }}>Python tools</div>
+          {tools.length === 0 && <div style={{ padding: '14px 4px', fontSize: 13, color: 'var(--text-muted)' }}>None yet — tap New, or ask the assistant to write one.</div>}
+          {tools.map(t => <MobileListRow key={t.id} badge="py" mono label={t.name || 'untitled'} note={t.description || 'No description yet'} onClick={() => { setOpen(t.id); setSeg('code'); }} />)}
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <MobileDetailHeader badge="py" mono name={`${selected.name || 'untitled'}.py`} onBack={() => setOpen(null)} onDelete={deleteCurrent} />
+        <MobileSegments active={seg} onChange={setSeg} items={[{ id: 'code', label: 'Code' }, { id: 'config', label: 'Config' }, { id: 'run', label: 'Run' }, { id: 'assistant', label: '✨ AI' }]} />
+
+        {seg === 'code' && (
+          <div style={{ ...WORKSPACE_PANEL, height: 'calc(100dvh - 300px)', minHeight: 380 }}>
+            <MonacoPython value={selected.code} onChange={v => patch({ code: v })} height="100%" bare />
+          </div>
+        )}
+        {seg === 'config' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 14 }}>
+            <div><label style={M_FIELD_LABEL}>Name</label><input value={selected.name} onChange={e => patch({ name: e.target.value })} dir="auto" placeholder="e.g. fetch_weather" style={{ fontFamily: "'JetBrains Mono','Fira Code',monospace" }} /></div>
+            <div><label style={M_FIELD_LABEL}>Description</label><input value={selected.description} onChange={e => patch({ description: e.target.value })} dir="auto" placeholder="What does this tool do?" /></div>
+            <div style={{ background: 'var(--bg-hover)', borderRadius: 'var(--r-md)', padding: 12 }}>
+              <ParameterEditor parameters={selected.parameters || []} onChange={v => patch({ parameters: v })} />
+            </div>
+            <div><label style={M_FIELD_LABEL}>Packages <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(pip, comma-separated)</span></label>
+              <input value={selected.packages || ''} onChange={e => patch({ packages: e.target.value })} placeholder="requests, httpx" style={{ fontFamily: 'monospace' }} /></div>
+            <div>
+              <label style={M_FIELD_LABEL}>Secrets <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>— os.environ["KEY"], never sent to the assistant</span></label>
+              <div style={{ background: 'var(--bg-hover)', borderRadius: 'var(--r-md)', padding: 12 }}>
+                <EnvVarEditor envVars={selected.envVars || []} onChange={v => patch({ envVars: v })} />
+              </div>
+            </div>
+          </div>
+        )}
+        {seg === 'run' && (
+          <div style={{ ...WORKSPACE_PANEL, minHeight: 320 }}>
+            <ToolRunPanel tool={selected} onResult={setLastRun} />
+          </div>
+        )}
+        <div style={{ ...WORKSPACE_PANEL, height: 'calc(100dvh - 300px)', minHeight: 420, display: seg === 'assistant' ? 'flex' : 'none' }}>
+          <AssistantPanel agent={agent} kind="tool" subject={selected} targetKey={selected.id} onApply={patch} lastRun={lastRun} />
+        </div>
+      </div>
+    );
+  }
+
+  /**
+   * The agent editor on a phone: back, name and Test in the bar; the tabs as a
+   * strip you can swipe; each tab stacked in one column.
+   */
+  function MobileAgentEditor({ agent, onUpdate, onBack, onTest, initialTab }) {
+    const [tab, setTab] = useState(initialTab || 'configuration');
+    const TABS = [
+      ['configuration', 'Configuration'], ['skills', 'Skills'], ['tools', 'Tools'], ['knowledge', 'Knowledge'],
+      ['manual tests', 'Manual tests'], ['export', 'Export'], ['whatsapp', 'WhatsApp'],
+    ];
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+        <MobileTopBar onBack={onBack}
+          title={<React.Fragment><AvatarDisplay value={agent.avatar} size={24} /><span dir="auto" style={{ fontWeight: 800, fontSize: 17, letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agent.name}</span></React.Fragment>}
+          right={onTest && (
+            <button onClick={onTest} style={{ height: 36, padding: '0 14px', display: 'flex', alignItems: 'center', gap: 6, background: 'var(--primary)', color: '#0a0a0a', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 12.5, boxShadow: '0 2px 12px var(--primary-glow)', flexShrink: 0 }}>
+              {MobileIcons.play} Test
+            </button>
+          )} />
+        <div className="m-scroll-x" style={{ display: 'flex', gap: 2, padding: '10px 12px', overflowX: 'auto', flexShrink: 0, borderBottom: '1px solid var(--border)' }}>
+          {TABS.map(([id, label]) => (
+            <button key={id} onClick={() => setTab(id)}
+              style={{ flexShrink: 0, height: 36, padding: '0 14px', borderRadius: 9, fontSize: 13, fontWeight: tab === id ? 700 : 600, whiteSpace: 'nowrap', background: tab === id ? 'var(--primary)' : 'transparent', color: tab === id ? '#0a0a0a' : 'var(--text-2)' }}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px 16px 24px' }}>
+          {tab === 'configuration' && <ConfigurationTab agent={agent} onUpdate={onUpdate} stacked />}
+          {tab === 'skills' && <MobileSkillsTab agent={agent} onUpdate={onUpdate} />}
+          {tab === 'tools' && <MobileToolsTab agent={agent} onUpdate={onUpdate} />}
+          {tab === 'knowledge' && <KnowledgeTab agent={agent} />}
+          {tab === 'manual tests' && <ManualTestsTab agent={agent} onTest={onTest} />}
+          {tab === 'export' && <ExportTab agent={agent} stacked />}
+          {tab === 'whatsapp' && <WhatsAppTab agent={agent} onUpdate={onUpdate} />}
+        </div>
+      </div>
+    );
+  }
+
+  /** The phone shell: top-level screens with the bottom nav, depth screens without. */
+  function MobileApp({
+    state, dispatch, nav, setNav, user, theme, onToggleTheme, onLogout, settings, onSaveSettings,
+    onCreate, onUpdate, onDelete, onDuplicate, editingAgent, chatAgent, editorTab, setEditorTab,
+    adminSelectedUser, setAdminSelectedUser,
+  }) {
+    const [assistantOpen, setAssistantOpen] = useState(false);
+    const [seed, setSeed] = useState(null);
+    const language = (settings || accountApi()).assistantLanguage || 'he';
+
+    // Anything that calls askAssistant() opens the sheet with its question.
+    useEffect(() => {
+      const onAsk = e => { setAssistantOpen(true); const p = (e.detail || {}).prompt; if (p) setSeed({ text: p, nonce: uid() }); };
+      window.addEventListener('assistant:ask', onAsk);
+      return () => window.removeEventListener('assistant:ask', onAsk);
+    }, []);
+
+    const inEditor = nav === 'home' && state.view === 'editor' && editingAgent;
+    const moreScreens = ['assistant', 'docs', 'admin'];
+    const navActive = moreScreens.includes(nav) ? 'more' : nav;
+
+    function go(id) {
+      setNav(id);
+      if (id === 'home') { dispatch({ type: 'SET_VIEW', view: 'list' }); setAdminSelectedUser(null); }
+      if (id !== 'admin') setAdminSelectedUser(null);
+    }
+    function openAgent(id) { setNav('home'); setEditorTab(null); dispatch({ type: 'SET_VIEW', view: 'editor', editingId: id }); }
+
+    let screen;
+    if (inEditor) {
+      screen = (
+        <MobileAgentEditor agent={editingAgent} initialTab={editorTab} onUpdate={onUpdate}
+          onTest={() => dispatch({ type: 'OPEN_CHAT', id: editingAgent.id })}
+          onBack={() => { setEditorTab(null); dispatch({ type: 'SET_VIEW', view: 'list' }); }} />
+      );
+    } else if (nav === 'interactions') {
+      screen = (
+        <div style={{ height: '100%', overflowY: 'auto', padding: '14px 16px 24px' }}>
+          <InteractionsView agents={state.agents} user={user} onOpenAgent={openAgent} />
+        </div>
+      );
+    } else if (nav === 'settings') {
+      screen = (
+        <div style={{ height: '100%', overflowY: 'auto' }}>
+          <SettingsPanel theme={theme} onToggleTheme={onToggleTheme} user={user} onLogout={onLogout} settings={settings} onSaveSettings={onSaveSettings} />
+        </div>
+      );
+    } else if (nav === 'more') {
+      screen = (
+        <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <MobileTopBar title="More" />
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+            <MobileMore user={user} theme={theme} onToggleTheme={onToggleTheme} onLogout={onLogout} onOpen={go} />
+          </div>
+        </div>
+      );
+    } else if (nav === 'assistant') {
+      screen = (
+        <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <MobileTopBar title="Assistant chats" onBack={() => go('more')} />
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px 16px 24px' }}>
+            <AssistantHistoryView onOpenAgent={openAgent} />
+          </div>
+        </div>
+      );
+    } else if (nav === 'docs') {
+      screen = (
+        <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <MobileTopBar title="Documentation" onBack={() => go('more')} />
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px 16px 24px' }}>
+            <DocsView stacked />
+          </div>
+        </div>
+      );
+    } else if (nav === 'admin') {
+      screen = (
+        <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <MobileTopBar title="Admin" onBack={() => adminSelectedUser ? setAdminSelectedUser(null) : go('more')} />
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px 16px 24px' }}>
+            {adminSelectedUser
+              ? <UserAgentsView targetUser={adminSelectedUser} myAgents={state.agents} onBack={() => setAdminSelectedUser(null)} />
+              : <AdminView onSelectUser={setAdminSelectedUser} myAgents={state.agents} />}
+          </div>
+        </div>
+      );
+    } else {
+      screen = (
+        <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <MobileTopBar
+            left={<svg viewBox="255 40 170 130" width="40" height="31" role="img" aria-label="8Legs.ai" style={{ marginLeft: 6 }}><ellipse cx="340" cy="108" rx="21" ry="29" fill="#EF9F27"/><ellipse cx="340" cy="72" rx="14" ry="14" fill="#EF9F27"/><circle cx="335" cy="70" r="3.5" fill="#854F0B"/><circle cx="345" cy="70" r="3.5" fill="#854F0B"/><path d="M345,136 C372,138 390,122 390,98 C390,72 374,56 379,38" fill="none" stroke="#EF9F27" strokeWidth="8" strokeLinecap="round"/><polygon points="375,40 382,24 389,40" fill="#D85A30"/><polyline points="319,95 293,80 278,72" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/><polyline points="319,105 291,102 276,100" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/><polyline points="319,115 291,119 276,124" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/><polyline points="319,125 293,136 281,146" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/><polyline points="361,95 387,80 402,72" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/><polyline points="361,105 389,102 404,100" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/><polyline points="361,115 389,119 404,124" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/><polyline points="361,125 387,136 399,146" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+            title={<span style={{ fontWeight: 800, fontSize: 17, letterSpacing: '-0.02em' }}>8Legs<span style={{ color: 'var(--primary)' }}>.ai</span></span>}
+            right={
+              <button onClick={onCreate} style={{ height: 36, padding: '0 13px', display: 'flex', alignItems: 'center', gap: 5, background: 'var(--primary)', color: '#0a0a0a', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 12.5, boxShadow: '0 2px 12px var(--primary-glow)' }}>
+                {Icons.plus} New
+              </button>
+            } />
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+            <MobileHome agents={state.agents} onNew={onCreate}
+              onEdit={id => dispatch({ type: 'SET_VIEW', view: 'editor', editingId: id })}
+              onTest={id => dispatch({ type: 'OPEN_CHAT', id })}
+              onDuplicate={onDuplicate} onDelete={onDelete} />
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="m-root m-app" style={{ display: 'flex', flexDirection: 'column', background: 'var(--bg-app)', overflow: 'hidden' }}>
+        <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>{screen}</div>
+        {!inEditor && (
+          <MobileBottomNav active={navActive} onNav={go} onAssistant={() => setAssistantOpen(v => !v)} assistantOpen={assistantOpen} />
+        )}
+        {chatAgent && <ChatTestDrawer fullScreen agent={chatAgent} initialSessionId={state.chatInitialSessionId} onClose={() => dispatch({ type: 'CLOSE_CHAT' })} />}
+        <MobileAssistantSheet open={assistantOpen} onClose={() => setAssistantOpen(false)} seed={seed}
+          agents={state.agents} language={language}
+          onHistory={() => { setAssistantOpen(false); go('assistant'); }}
+          onAgentsChanged={() => apiList().then(list => dispatch({ type: 'HYDRATE', agents: list })).catch(() => {})} />
+      </div>
+    );
+  }
+
   function App({ user, onLogout, theme, onToggleTheme }) {
     const [state, dispatch] = useReducer(reducer, {
       agents: [],
@@ -6970,6 +7613,7 @@ npm run migrate            # הרצה בפועל`}</Block>
 
     const [editorTab, setEditorTab] = useState(null);
     const [settings, setSettings] = useState(null);
+    const isMobile = useIsMobile();
 
     // One account-wide API config, mirrored into the module so every model call
     // site can read it without threading props through the whole tree.
@@ -7079,6 +7723,20 @@ npm run migrate            # הרצה בפועל`}</Block>
       if (id === 'interactions' || id === 'assistant') setAdminSelectedUser(null);
       if (id === 'admin') setAdminSelectedUser(null);
     }
+
+    // Phones get their own shell over the same state and handlers. The
+    // desktop tree below is untouched.
+    if (isMobile) return (
+      <MobileApp
+        state={state} dispatch={dispatch} nav={nav} setNav={setNav}
+        user={user} theme={theme} onToggleTheme={onToggleTheme} onLogout={onLogout}
+        settings={settings} onSaveSettings={handleSaveSettings}
+        onCreate={handleCreate} onUpdate={handleUpdate} onDelete={handleDelete} onDuplicate={handleDuplicate}
+        editingAgent={editingAgent} chatAgent={chatAgent}
+        editorTab={editorTab} setEditorTab={setEditorTab}
+        adminSelectedUser={adminSelectedUser} setAdminSelectedUser={setAdminSelectedUser}
+      />
+    );
 
     return (
       <React.Fragment>
