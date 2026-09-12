@@ -4794,7 +4794,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     minSeconds: '', maxSeconds: '', minMessages: '',
   };
 
-  function InteractionsView({ agents, user, onOpenAgent }) {
+  function InteractionsView({ agents, user, onOpenAgent, stacked }) {
     const PAGE_SIZE = 25;
     const [filters, setFilters] = useState(EMPTY_FILTERS);
     const [sort, setSort]       = useState({ sort: 'started', dir: 'desc' });
@@ -4804,6 +4804,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     const [error, setError]    = useState(null);
     const [loading, setLoading] = useState(true);
     const [openSession, setOpenSession] = useState(null);
+    const [filtersOpen, setFiltersOpen] = useState(false);   // the phone's filter sheet
 
     const set = (key, val) => { setFilters(f => ({ ...f, [key]: val })); setOffset(0); };
     const activeFilters = Object.keys(EMPTY_FILTERS).filter(k => filters[k] !== '').length;
@@ -4903,6 +4904,129 @@ npm run migrate            # הרצה בפועל`}</Block>
         >
           {label}<span style={{ opacity: active ? 1 : 0.25 }}>{active && sort.dir === 'asc' ? '↑' : '↓'}</span>
         </button>
+      );
+    }
+
+    /* ---- phone: cards, a search box, the filters in a sheet ---- */
+    if (stacked) {
+      const chip = (label, on, onClick) => (
+        <button key={label} onClick={onClick}
+          style={{ flexShrink: 0, height: 34, padding: '0 12px', borderRadius: 999, fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap',
+                   background: on ? 'var(--primary-dim)' : 'var(--bg-card)', color: on ? 'var(--primary)' : 'var(--text-2)',
+                   border: `1px solid ${on ? 'rgba(239,159,39,0.35)' : 'var(--border)'}` }}>{label}</button>
+      );
+      const agentName = filters.agentId ? (agentOptions.find(o => o.id === filters.agentId) || {}).name : '';
+      const sheetField = (label, control) => (
+        <div><label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 5, display: 'block' }}>{label}</label>{control}</div>
+      );
+      const selStyle = { width: '100%', height: 44, borderRadius: 'var(--r-md)', padding: '0 12px' };
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 10 }}>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 24, letterSpacing: '-0.02em' }}>Interactions</div>
+              <div style={{ color: 'var(--text-muted)', fontSize: 12.5, marginTop: 2, fontWeight: 500 }}>
+                {loading && !data ? 'Loading…' : `${total} conversation${total !== 1 ? 's' : ''}${activeFilters ? ` · ${activeFilters} filter${activeFilters !== 1 ? 's' : ''}` : ''}`}
+              </div>
+            </div>
+            {user?.isAdmin && chip(scopeAll ? 'All users' : 'My agents', scopeAll, () => { setScopeAll(v => !v); setOffset(0); })}
+          </div>
+
+          <input type="search" dir="auto" placeholder="Search every message…" value={filters.q} onChange={e => set('q', e.target.value)}
+            style={{ width: '100%', height: 46, borderRadius: 'var(--r-md)', padding: '0 14px' }} />
+
+          <div className="m-scroll-x" style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
+            {chip(`⚙ Filters${activeFilters ? ` (${activeFilters})` : ''}`, activeFilters > 0, () => setFiltersOpen(true))}
+            {chip(agentName ? agentName : 'All agents ▾', !!filters.agentId, () => setFiltersOpen(true))}
+            {sourceOptions.map(sx => chip(SOURCE_LABELS[sx] || sx, filters.source === sx, () => set('source', filters.source === sx ? '' : sx)))}
+            {activeFilters > 0 && chip('✕ Clear', false, () => { setFilters(EMPTY_FILTERS); setOffset(0); })}
+          </div>
+
+          {error && <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--danger)', padding: '9px 13px', borderRadius: 'var(--r-md)', fontSize: 12.5 }}>{error}</div>}
+
+          {loading && !data ? (
+            <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: 20, textAlign: 'center' }}>Loading…</div>
+          ) : sessions.length === 0 ? (
+            <div style={{ padding: '40px 20px', textAlign: 'center', background: 'var(--bg-card)', border: '1px dashed var(--border)', borderRadius: 'var(--r-lg)', color: 'var(--text-muted)', fontSize: 13 }}>
+              {activeFilters ? 'No conversations match these filters.' : 'No conversations yet.'}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {sessions.map(sx => {
+                const msgs = sx.messages || [];
+                const firstUser = msgs.find(m => m.role === 'user');
+                const preview = typeof firstUser?.content === 'string' ? firstUser.content : '—';
+                const chColor = sx.source === 'whatsapp' ? '#25D366' : 'var(--teal)';
+                return (
+                  <button key={sx.id} onClick={() => setOpenSession(sx)}
+                    style={{ width: '100%', textAlign: 'left', display: 'flex', gap: 12, alignItems: 'flex-start', padding: '13px 14px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, color: 'var(--text)' }}>
+                    <div style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--bg-panel)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <AvatarDisplay value={sx.agent_avatar || '🤖'} size={22} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                        <span dir="auto" style={{ fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sx.agent_name}</span>
+                        <span style={{ fontSize: 10.5, fontWeight: 700, color: chColor, background: sx.source === 'whatsapp' ? 'rgba(37,211,102,0.12)' : 'var(--teal-dim)', padding: '2px 7px', borderRadius: 6, flexShrink: 0 }}>{SOURCE_LABELS[sx.source] || sx.source}</span>
+                        {scopeAll && sx.owner_username && <span style={{ fontSize: 10.5, color: 'var(--text-muted)', flexShrink: 0 }}>@{sx.owner_username}</span>}
+                      </div>
+                      <div dir="auto" style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{preview}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 5 }}>
+                        {new Date(sx.started_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })} · {fmtSessionDuration(sx.duration_seconds)} · {sx.message_count} messages
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '6px 0' }}>
+              <button disabled={currentPage === 0} onClick={() => setOffset(o => Math.max(0, o - PAGE_SIZE))}
+                style={{ height: 40, padding: '0 16px', borderRadius: 'var(--r-md)', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-2)', opacity: currentPage === 0 ? 0.4 : 1 }}>‹ Prev</button>
+              <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{currentPage + 1} / {totalPages}</span>
+              <button disabled={currentPage + 1 >= totalPages} onClick={() => setOffset(o => o + PAGE_SIZE)}
+                style={{ height: 40, padding: '0 16px', borderRadius: 'var(--r-md)', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-2)', opacity: currentPage + 1 >= totalPages ? 0.4 : 1 }}>Next ›</button>
+            </div>
+          )}
+
+          <MobileSheet open={filtersOpen} onClose={() => setFiltersOpen(false)} title="Filters"
+            right={activeFilters > 0 && (
+              <button onClick={() => { setFilters(EMPTY_FILTERS); setOffset(0); }} style={{ height: 36, padding: '0 12px', borderRadius: 'var(--r-md)', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-2)', fontSize: 12.5, fontWeight: 600 }}>Clear all</button>
+            )}>
+            <div style={{ padding: '14px 16px 20px', display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto' }}>
+              {sheetField('Agent',
+                <select value={filters.agentId} onChange={e => set('agentId', e.target.value)} style={selStyle}>
+                  <option value="">All agents</option>
+                  {agentOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                </select>)}
+              {sheetField('Channel',
+                <select value={filters.source} onChange={e => set('source', e.target.value)} style={selStyle}>
+                  <option value="">All channels</option>
+                  {sourceOptions.map(sx => <option key={sx} value={sx}>{SOURCE_LABELS[sx] || sx}</option>)}
+                </select>)}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                {sheetField('From', <input type="date" value={filters.from} onChange={e => set('from', e.target.value)} style={selStyle} />)}
+                {sheetField('To', <input type="date" value={filters.to} onChange={e => set('to', e.target.value)} style={selStyle} />)}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                {sheetField('Min seconds', <input type="number" min="0" inputMode="numeric" value={filters.minSeconds} onChange={e => set('minSeconds', e.target.value)} style={selStyle} />)}
+                {sheetField('Max seconds', <input type="number" min="0" inputMode="numeric" value={filters.maxSeconds} onChange={e => set('maxSeconds', e.target.value)} style={selStyle} />)}
+              </div>
+              {sheetField('Min messages', <input type="number" min="0" inputMode="numeric" value={filters.minMessages} onChange={e => set('minMessages', e.target.value)} style={selStyle} />)}
+              {sheetField('Sort by',
+                <select value={`${sort.sort}:${sort.dir}`} onChange={e => { const [k, d] = e.target.value.split(':'); setSort({ sort: k, dir: d }); }} style={selStyle}>
+                  <option value="started:desc">Newest first</option>
+                  <option value="started:asc">Oldest first</option>
+                  <option value="duration:desc">Longest first</option>
+                  <option value="messages:desc">Most messages first</option>
+                </select>)}
+              <button onClick={() => setFiltersOpen(false)} style={{ height: 48, borderRadius: 'var(--r-md)', background: 'var(--primary)', color: '#0a0a0a', fontWeight: 700, fontSize: 14, marginTop: 4 }}>
+                Show {total} conversation{total !== 1 ? 's' : ''}
+              </button>
+            </div>
+          </MobileSheet>
+        </div>
       );
     }
 
@@ -7516,7 +7640,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     } else if (nav === 'interactions') {
       screen = (
         <div style={{ height: '100%', overflowY: 'auto', padding: '14px 16px 24px' }}>
-          <InteractionsView agents={state.agents} user={user} onOpenAgent={openAgent} />
+          <InteractionsView agents={state.agents} user={user} onOpenAgent={openAgent} stacked />
         </div>
       );
     } else if (nav === 'settings') {
