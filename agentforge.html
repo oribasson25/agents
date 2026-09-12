@@ -6787,7 +6787,7 @@ npm run migrate            # הרצה בפועל`}</Block>
   }
 
   /* ─────────────────── ADMIN: USER AGENTS ─────────────────── */
-  function UserAgentsView({ targetUser, myAgents, onBack }) {
+  function UserAgentsView({ targetUser, myAgents, onBack, stacked }) {
     const [agents, setAgents] = useState(null);
     const [duplicating, setDuplicating] = useState(false);
     const [showDupPicker, setShowDupPicker] = useState(false);
@@ -6831,6 +6831,15 @@ npm run migrate            # הרצה בפועל`}</Block>
     }
 
     if (editingAgent) {
+      // On a phone the desktop editor does not fit; the phone editor does,
+      // minus Test — an admin has no test chat for someone else's agent.
+      if (stacked) return (
+        <MobileAgentEditor
+          agent={editingAgent}
+          onUpdate={handleAdminUpdate}
+          onBack={() => { setEditingAgent(null); reload(); }}
+        />
+      );
       return (
         <AgentEditor
           agent={editingAgent}
@@ -7682,8 +7691,8 @@ npm run migrate            # הרצה בפועל`}</Block>
           <MobileTopBar title="Admin" onBack={() => adminSelectedUser ? setAdminSelectedUser(null) : go('more')} />
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px 16px 24px' }}>
             {adminSelectedUser
-              ? <UserAgentsView targetUser={adminSelectedUser} myAgents={state.agents} onBack={() => setAdminSelectedUser(null)} />
-              : <AdminView onSelectUser={setAdminSelectedUser} myAgents={state.agents} />}
+              ? <UserAgentsView targetUser={adminSelectedUser} myAgents={state.agents} onBack={() => setAdminSelectedUser(null)} stacked />
+              : <div style={{ overflowX: 'auto' }}><AdminView onSelectUser={setAdminSelectedUser} myAgents={state.agents} /></div>}
           </div>
         </div>
       );
