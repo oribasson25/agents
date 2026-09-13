@@ -1,4 +1,5 @@
 import { sql } from './_db.js';
+import { searchDocuments } from './_knowledge.js';
 import { sendGmail } from './_gmail.js';
 import { logError } from './_errorLog.js';
 
@@ -48,21 +49,17 @@ export async function saveSession(sessionId, agentId, allMessages, source = 'wid
   } catch (_) {}
 }
 
+/**
+ * Knowledge for the public channels (widget, WhatsApp).
+ *
+ * includeSkills is true here on purpose: buildSystemPrompt below appends every
+ * skill's prompt unconditionally, so on these channels all skills are active
+ * at once. Restricting retrieval to global documents — which is what this did —
+ * meant a document attached to a skill was reachable from the test chat and
+ * from nowhere else.
+ */
 async function retrieveRagChunks(agentId, query) {
-  try {
-    const chunks = await sql`
-      select title, content
-      from documents
-      where agent_id = ${agentId}
-        and skill_id is null
-        and tsv @@ plainto_tsquery('simple', ${query})
-      order by ts_rank(tsv, plainto_tsquery('simple', ${query})) desc
-      limit 5
-    `;
-    return chunks;
-  } catch (_) {
-    return [];
-  }
+  return searchDocuments({ agentId, query, includeSkills: true, limit: 5 });
 }
 
 const EMAIL_TOOL = {

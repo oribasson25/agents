@@ -15,6 +15,12 @@
     },
     "api/whatsapp/webhook.js": {
       "maxDuration": 90
+    },
+    "api/agents/[id]/documents.js": {
+      "maxDuration": 300
+    },
+    "api/documents/[docId].js": {
+      "maxDuration": 300
     }
   },
   "rewrites": [

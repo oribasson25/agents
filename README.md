@@ -64,6 +64,18 @@ npm install
 
 Leaving `JWT_SECRET` unset falls back to a hard-coded development value — set it.
 
+### Knowledge base
+
+A document is rewritten once by the account's model on upload — short titled
+sections, resolved references, and a keyword line in both Hebrew and English —
+then split into chunk rows that search reads. The original is kept in
+`raw_content`, so the rewrite is always undoable from the UI.
+
+`node migrations/backfill-knowledge.mjs --dry` reports what would happen to
+documents stored before this existed; without `--dry` it rewrites and re-chunks
+them, spending the owner's API credits, one call per ~9k characters.
+`--chunk-only` rebuilds chunks without calling any model.
+
 ## Account API settings
 
 The provider, API key and model are account-wide, held in `user_settings` and edited in the

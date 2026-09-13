@@ -616,17 +616,19 @@
   }
 
   /* ─────────────────── ICON BUTTON ─────────────────── */
-  function IconBtn({ onClick, title, children, danger, style }) {
+  function IconBtn({ onClick, title, children, danger, style, disabled }) {
     return (
       <button
         onClick={onClick}
         title={title}
+        disabled={disabled}
         style={{
           background: 'transparent',
           color: danger ? 'var(--danger)' : 'var(--text-2)',
           padding: '5px 7px',
           borderRadius: 'var(--r-sm)',
           fontSize: 15,
+          opacity: disabled ? 0.4 : 1,
           ...style,
         }}
         onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
@@ -2865,6 +2867,38 @@
       }
     }
 
+    // The model rewrite runs on the server and takes a few seconds, so the row
+    // says which document is busy rather than freezing the whole list.
+    const [busyDoc, setBusyDoc] = useState(null);
+    const [docError, setDocError] = useState('');
+
+    async function reorganizeDoc(docId) {
+      setBusyDoc(docId); setDocError('');
+      try {
+        const r = await apiFetch(`/api/documents/${docId}`, { method: 'POST', body: JSON.stringify({ action: 'normalize' }) });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) { setDocError(d.error || `לא הצליח לסדר את המסמך (${r.status})`); return; }
+        setDocs(list => list.map(x => x.id === docId ? { ...x, content: d.content, normalized: true, has_original: true, chunks: d.chunks } : x));
+      } catch (err) {
+        setDocError(err.message);
+      } finally {
+        setBusyDoc(null);
+      }
+    }
+
+    async function restoreDoc(docId) {
+      if (!window.confirm('להחזיר את הטקסט המקורי?\n\nRestore the original text?')) return;
+      setBusyDoc(docId); setDocError('');
+      try {
+        const r = await apiFetch(`/api/documents/${docId}`, { method: 'POST', body: JSON.stringify({ action: 'restore' }) });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) { setDocError(d.error || 'Restore failed'); return; }
+        setDocs(list => list.map(x => x.id === docId ? { ...x, content: d.content, normalized: false, has_original: false, chunks: d.chunks } : x));
+      } finally {
+        setBusyDoc(null);
+      }
+    }
+
     async function deleteDoc(docId) {
       await apiFetch(`/api/documents/${docId}`, { method: 'DELETE' });
       setDocs(d => d.filter(x => x.id !== docId));
@@ -3139,6 +3173,12 @@
           </div>
         </div>
 
+        {docError && (
+          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--danger)', padding: '9px 13px', borderRadius: 'var(--r-md)', fontSize: 12.5, marginBottom: 10 }}>
+            {docError}
+          </div>
+        )}
+
         {/* Doc list */}
         {loading ? (
           <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: 8 }}>Loading…</div>
@@ -3173,16 +3213,29 @@
                 </div>
               ) : (
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6 }}>
-                      {doc.source_type === 'crawl' ? '🌐' : fileIcon(doc.title)} {doc.title}
-                      {doc.source_type === 'crawl' && <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 6, fontWeight: 400 }}>web</span>}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span>{doc.source_type === 'crawl' ? '🌐' : fileIcon(doc.title)} {doc.title}</span>
+                      {doc.source_type === 'crawl' && <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>web</span>}
+                      {/* Says whether this document is in a shape the agent can retrieve from */}
+                      {doc.normalized
+                        ? <span title="סודר על ידי מודל: חולק לסעיפים קצרים עם מילות מפתח בעברית ובאנגלית"
+                            style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 6, background: 'var(--teal-dim)', color: 'var(--teal)' }}>✨ מסודר</span>
+                        : <span title="נשמר כמו שהוא — לא בהכרח קל לסוכן למצוא בו"
+                            style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 6, background: 'var(--bg-hover)', color: 'var(--text-muted)' }}>גולמי</span>}
+                      {doc.chunks > 0 && <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>{doc.chunks} קטעי חיפוש</span>}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6, maxHeight: 64, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>
                       {doc.content}
                     </div>
+                    {busyDoc === doc.id && <div style={{ fontSize: 11.5, color: 'var(--teal)', marginTop: 6 }}>מסדר את המסמך…</div>}
                   </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    <IconBtn onClick={() => reorganizeDoc(doc.id)} disabled={busyDoc === doc.id}
+                      title={doc.normalized ? 'לסדר מחדש מהמקור' : 'לסדר את המסמך לקריאה של הסוכן'}>✨</IconBtn>
+                    {doc.has_original && (
+                      <IconBtn onClick={() => restoreDoc(doc.id)} disabled={busyDoc === doc.id} title="להחזיר את הטקסט המקורי">↩</IconBtn>
+                    )}
                     <IconBtn onClick={() => { setEditingDocId(doc.id); setEditDoc({ title: doc.title, content: doc.content }); }} title="Edit document">{Icons.edit}</IconBtn>
                     <IconBtn onClick={() => deleteDoc(doc.id)} danger title="Delete document">{Icons.trash}</IconBtn>
                   </div>
@@ -4464,11 +4517,22 @@ def run(**kwargs):
           </UL>
 
           <H3>ידע גלובלי מול ידע של סקיל</H3>
-          <P>מסמך יכול להיות משויך לכל הסוכן או לסקיל מסוים. כשסקיל פעיל בצ'אט הבדיקה, השליפה מצטמצמת למסמכים שלו — כך שסקילים שונים לא מזהמים אחד את השני.</P>
+          <P>מסמך יכול להיות משויך לכל הסוכן או לסקיל מסוים. בצ'אט הבדיקה השליפה מצטמצמת למסמכים הגלובליים ולאלה של הסקיל הפעיל. בווידג'ט וב-WhatsApp כל הסקילים פעילים במקביל, ולכן נשלפים שם המסמכים של כולם.</P>
+
+          <H3>סידור אוטומטי בהעלאה</H3>
+          <P>כשמוסיפים מסמך, הוא עובר פעם אחת דרך המודל של החשבון ונכתב מחדש לצורה שאפשר למצוא בה: סעיפים קצרים תחת כותרות, כל סעיף על נושא אחד, הפניות מפוענחות (<Code>הוא</Code>, <Code>החברה</Code> מוחלפים בשם עצמו), ובסוף כל סעיף שורת <strong>מילות מפתח בעברית ובאנגלית</strong>.</P>
+          <P>שורת מילות המפתח היא הסיבה שאפשר לשאול בעברית על מסמך שכתוב באנגלית — החיפוש הוא לקסיקלי ולא סמנטי, ובלי המילים בעברית לא הייתה חפיפה בכלל.</P>
+          <UL>
+            <li>המקור נשמר תמיד. הכפתור <Code>↩</Code> בכרטיס המסמך מחזיר אותו</li>
+            <li><Code>✨</Code> מריץ את הסידור שוב, תמיד מהמקור ולא מעל סידור קודם</li>
+            <li>אם אין מפתח API או שהמודל נכשל, המסמך נשמר כמו שהוא ומסומן <strong>גולמי</strong></li>
+            <li>דפים שנסרקו מאתר מחולקים לקטעים אבל לא עוברים סידור — סריקה יכולה להיות מאה דפים, וזה מאה קריאות מודל</li>
+          </UL>
 
           <H3>איך השליפה עובדת</H3>
-          <P>חיפוש טקסט מלא של PostgreSQL על ההודעה האחרונה, ועד חמישה הקטעים המדורגים הגבוה נכנסים לפרומפט. האינדוקס נעשה עם המנתח <Code>simple</Code> — כלומר עברית וערבית עובדות, אבל אין נטיות: "מכונית" ו"מכוניות" הם מונחים שונים.</P>
-          <Tip>פצל מסמכים גדולים לפי נושא ותן להם כותרות תיאוריות, וכתוב אותם באותה שפה שבה ישאלו אותך. זה משפר את השליפה יותר מכל דבר אחר.</Tip>
+          <P>כל מסמך מחולק לקטעי חיפוש של כמה מאות תווים, עם חפיפה קלה ביניהם וכותרת הסעיף נגררת לתוך כל קטע. השליפה מחזירה קטעים, לא את המסמך כולו — כך הסוכן מקבל את מה שרלוונטי במקום קובץ שלם.</P>
+          <P>החיפוש הוא <Code>tsvector</Code> של PostgreSQL על ההודעה האחרונה. המילים בשאלה מחוברות ב-<strong>OR</strong> ולא ב-AND, והאינדקס מחזיק כל מסמך גם ב-<Code>simple</Code> (מילים כפי שנכתבו — מה שעברית צריכה) וגם ב-<Code>english</Code> (גזעי מילים — כך ש-<Code>experience</Code> מוצא <Code>experiences</Code>).</P>
+          <Tip>עדיין שווה לתת למסמך כותרת תיאורית ולפצל לפי נושא. הסידור האוטומטי עושה הרבה, אבל מסמך שמאורגן היטב מלכתחילה תמיד יימצא טוב יותר.</Tip>
 
           <H3>סריקת אתרים</H3>
           <P>מזינים כתובת אחת או יותר, וסורק מבוסס Chromium מרנדר את הדפים (כולל JavaScript) ושומר כל דף כמסמך מסומן <Code>web</Code>. הסריקה מתרעננת אוטומטית פעמיים ביום, ואפשר להריץ אותה ידנית בכל רגע.</P>
@@ -5385,7 +5449,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     '- A TOOL is Python that must define `def run(**kwargs)`. Declared parameters arrive in kwargs; secrets come from os.environ; only the standard library plus the packages listed on the tool are available; there is no persistent disk; outbound HTTPS works; return a string, and return a readable error string instead of raising. Reference a tool from a prompt as @tool_name.',
     '- Parameter types are string, number, integer or boolean.',
     '- send_email is a built-in tool, switched on per agent, that sends from a Gmail account connected on that agent (Tools tab). You cannot connect Gmail for the user — say where to do it.',
-    '- KNOWLEDGE is documents (pasted, PDF/DOCX upload, or crawled sites) retrieved by full-text search into the prompt. You cannot upload files for the user.',
+    "- KNOWLEDGE is documents (pasted, PDF/DOCX upload, or crawled sites). On upload each one is rewritten by the model into short titled sections with a bilingual keyword line, then split into chunks; a question retrieves chunks by full-text search into the prompt. The search is LEXICAL, not semantic — it matches words, so a document only answers questions phrased with words it contains. You cannot upload files for the user, but you can tell them to press ✨ on a document to have it reorganised.",
     '- CHANNELS: the in-app test chat, an embeddable website widget (Export tab), and WhatsApp via Meta Cloud API (Whatsapp tab, needs a phone number id, access token, app secret and verify token from Meta). A WhatsApp number belongs to one agent only.',
     '- DLP can mask credit-card and Israeli-ID numbers before they reach the model and before history is stored.',
     '- INTERACTIONS lists every conversation real end users had across channels, filterable and searchable.',

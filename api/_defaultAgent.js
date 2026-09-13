@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { sql } from './_db.js';
+import { rechunk } from './_knowledge.js';
 
 /**
  * Every new account starts with a copy of each starter agent — the agents named
@@ -68,18 +69,22 @@ async function copyTemplate(userId, row) {
 
   // Knowledge documents are separate rows. skill_id points at a skill inside
   // the agent JSON, which is copied verbatim, so those ids stay valid.
+  // Only the documents themselves: their chunks are rebuilt for the copy, so
+  // the new rows carry their own ids and parent links.
   const docs = await sql`
-    select skill_id, title, content, source_type, source_url
+    select skill_id, title, content, normalized, source_type, source_url
     from documents
-    where agent_id = ${row.id}
+    where agent_id = ${row.id} and parent_id is null
     limit 200
   `;
   for (const doc of docs) {
+    const copyId = crypto.randomUUID();
     await sql`
-      insert into documents (id, agent_id, skill_id, title, content, source_type, source_url)
-      values (${crypto.randomUUID()}, ${agent.id}, ${doc.skill_id}, ${doc.title}, ${doc.content},
-              ${doc.source_type || 'manual'}, ${doc.source_url})
+      insert into documents (id, agent_id, skill_id, title, content, normalized, source_type, source_url)
+      values (${copyId}, ${agent.id}, ${doc.skill_id}, ${doc.title}, ${doc.content},
+              ${doc.normalized === true}, ${doc.source_type || 'manual'}, ${doc.source_url})
     `;
+    await rechunk(copyId, agent.id, doc.skill_id, doc.title, doc.content);
   }
 
   console.log(`[seed] user=${userId} got a copy of "${row.template_name}" (${docs.length} documents)`);

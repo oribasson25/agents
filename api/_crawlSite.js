@@ -1,4 +1,5 @@
 import { sql } from './_db.js';
+import { rechunk } from './_knowledge.js';
 
 const CRAWL_DELAY_MS = 500;
 const DEFAULT_MAX_PAGES = 100;
@@ -102,12 +103,17 @@ export async function crawlSite({ startUrl, agentId, maxPages = DEFAULT_MAX_PAGE
 
       pages.push({ url, title, content });
 
-      // Insert document into DB
+      // Insert document into DB. A crawled page is chunked like any other
+      // document — a whole page is far too much to hand an agent as one hit.
+      // It is not put through the model rewrite: a crawl can be a hundred
+      // pages, and that would be a hundred model calls on the user's key.
       const docId = uid();
+      const pageTitle = title.slice(0, 200);
       await sql`
         INSERT INTO documents (id, agent_id, skill_id, title, content, source_type, source_url)
-        VALUES (${docId}, ${agentId}, NULL, ${title.slice(0, 200)}, ${content}, 'crawl', ${startNormalized})
+        VALUES (${docId}, ${agentId}, NULL, ${pageTitle}, ${content}, 'crawl', ${startNormalized})
       `;
+      await rechunk(docId, agentId, null, pageTitle, content);
 
       // Enqueue internal links
       const links = extractInternalLinks(html, url);
