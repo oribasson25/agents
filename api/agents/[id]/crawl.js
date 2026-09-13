@@ -3,13 +3,19 @@ import { checkAuth } from '../../_auth.js';
 import { crawlSite } from '../../_crawlSite.js';
 
 export default async function handler(req, res) {
-  if (!checkAuth(req, res)) return;
+  const user = checkAuth(req, res);
+  if (!user) return;
 
   const { id } = req.query;
 
+  // Every branch here reads or writes an agent's knowledge base, so the agent
+  // has to be the caller's. Without this, any signed-in account could start a
+  // crawl on someone else's agent and write documents into it.
+  const [owned] = await sql`select id from agents where id = ${id} and user_id = ${user.userId}`;
+  if (!owned) return res.status(404).json({ error: 'Agent not found' });
+
   if (req.method === 'GET') {
     const rows = await sql`SELECT data FROM agents WHERE id = ${id}`;
-    if (!rows.length) return res.status(404).json({ error: 'Agent not found' });
     const crawlConfig = rows[0].data.crawlConfig || { urls: [], status: 'idle' };
     return res.json(crawlConfig);
   }
@@ -50,6 +56,8 @@ export default async function handler(req, res) {
             lastCrawledAt: new Date().toISOString(),
             pagesCrawled: result.pagesCrawled,
             totalChars: result.totalChars,
+            stoppedEarly: result.stoppedEarly || false,
+            thinPages: result.thinPages || 0,
             maxPages,
           }
         })}::jsonb

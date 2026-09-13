@@ -3159,7 +3159,19 @@
               </span>
             )}
             {crawlConfig.status === 'done' && (
-              <span style={{ color: 'var(--teal)' }}>✓ סריקה אחרונה: {formatCrawlTime(crawlConfig.lastCrawledAt)} | {crawlConfig.pagesCrawled || 0} עמודים</span>
+              <React.Fragment>
+                <span style={{ color: 'var(--teal)' }}>✓ סריקה אחרונה: {formatCrawlTime(crawlConfig.lastCrawledAt)} | {crawlConfig.pagesCrawled || 0} עמודים</span>
+                {/* A crawl that ran out of time, or a site that needs JavaScript,
+                    both look like "it worked" otherwise. */}
+                {crawlConfig.stoppedEarly && (
+                  <span style={{ color: 'var(--warning)' }} title="נעצר לפני שהספיק את כל האתר. אפשר להריץ שוב כדי להמשיך">⏱ נעצר מוקדם</span>
+                )}
+                {crawlConfig.thinPages > 0 && (
+                  <span style={{ color: 'var(--warning)' }} title="הסורק קורא את ה-HTML שהשרת מחזיר ולא מריץ JavaScript, אז דפים שנבנים בדפדפן חוזרים ריקים">
+                    ⚠ {crawlConfig.thinPages} דפים כמעט ריקים
+                  </span>
+                )}
+              </React.Fragment>
             )}
             {crawlConfig.status === 'error' && (
               <span style={{ color: 'var(--danger)' }}>✗ שגיאה: {crawlConfig.errorMessage}</span>
@@ -4535,7 +4547,13 @@ def run(**kwargs):
           <Tip>עדיין שווה לתת למסמך כותרת תיאורית ולפצל לפי נושא. הסידור האוטומטי עושה הרבה, אבל מסמך שמאורגן היטב מלכתחילה תמיד יימצא טוב יותר.</Tip>
 
           <H3>סריקת אתרים</H3>
-          <P>מזינים כתובת אחת או יותר, וסורק מבוסס Chromium מרנדר את הדפים (כולל JavaScript) ושומר כל דף כמסמך מסומן <Code>web</Code>. הסריקה מתרעננת אוטומטית פעמיים ביום, ואפשר להריץ אותה ידנית בכל רגע.</P>
+          <P>מזינים כתובת אחת או יותר, והסורק עובר על האתר ושומר כל דף כמסמך מסומן <Code>web</Code>. הכותרות (<Code>h1</Code>-<Code>h6</Code>) נשמרות כסעיפים, וכל דף מחולק לקטעי חיפוש כמו כל מסמך אחר. הסריקה מתרעננת אוטומטית פעמיים ביום.</P>
+          <Warn>הסורק קורא את ה-HTML שהשרת מחזיר — הוא <strong>לא מריץ JavaScript</strong>. אתר שנבנה בדפדפן (React, Vue, Angular) יחזיר דפים כמעט ריקים, והממשק יסמן כמה דפים כאלה נמצאו. במקרה כזה עדיף להדביק את התוכן ידנית.</Warn>
+          <UL>
+            <li>דפים שנסרקו <strong>לא</strong> עוברים את הסידור האוטומטי — סריקה יכולה להיות מאה דפים. אפשר להריץ <Code>✨</Code> על דף בודד ידנית</li>
+            <li>עמוד גדול במיוחד נחתך ב-60 אלף תווים</li>
+            <li>סריקה נעצרת לבד לפני שנגמר הזמן ומסמנת <strong>נעצר מוקדם</strong> — הרצה חוזרת ממשיכה</li>
+          </UL>
           <P>בנוסף, כשמשתמש שולח כתובת בצ'אט הבדיקה, עד שלוש כתובות מההודעה נסרקות מיד ונמסרות למודל תחת <Code>## Fetched Web Pages</Code> — בלי להישמר בבסיס הידע.</P>
         </div>
       ),

@@ -3,29 +3,57 @@ import { rechunk } from './_knowledge.js';
 
 const CRAWL_DELAY_MS = 500;
 const DEFAULT_MAX_PAGES = 100;
+// One page of a registry or a price table can be hundreds of thousands of
+// characters, which would become hundreds of chunk rows on its own and drown
+// everything else in the knowledge base. Keep the top of it.
+const MAX_PAGE_CHARS = 60000;
 
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
+const DECODE = {
+  '&nbsp;': ' ', '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"',
+  '&#39;': "'", '&apos;': "'", '&mdash;': '—', '&ndash;': '–', '&hellip;': '…',
+};
+
+/**
+ * HTML to text, keeping the shape of the document.
+ *
+ * This used to end with `.replace(/\s{2,}/g, ' ')`, which flattened every page
+ * into one unbroken line: no paragraphs, and headings swallowed into the
+ * sentence next to them. Chunking splits on blank lines, so a whole page
+ * arrived as a single block and every chunk lost the heading that said what it
+ * was about. Headings now become `## ` lines and block elements become line
+ * breaks, which is what makes a crawled page retrievable at all.
+ */
 function extractTextFromHtml(html) {
-  // Remove script, style, nav, footer, header content
   let text = html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<nav[\s\S]*?<\/nav>/gi, ' ')
-    .replace(/<footer[\s\S]*?<\/footer>/gi, ' ')
-    .replace(/<header[\s\S]*?<\/header>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\s{2,}/g, ' ')
+    // Chrome, furniture and anything with no readable text in it.
+    .replace(/<(script|style|noscript|svg|iframe|form|select|button|template)[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<(nav|footer|header|aside)[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    // Headings carry the structure chunking relies on.
+    .replace(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi, (_, level, inner) =>
+      `\n\n${'#'.repeat(Math.min(Number(level) + 1, 6))} ${inner.replace(/<[^>]+>/g, ' ').trim()}\n\n`)
+    .replace(/<li[^>]*>/gi, '\n- ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|section|article|tr|ul|ol|li|table|blockquote|pre|h[1-6])>/gi, '\n\n')
+    .replace(/<\/(td|th)>/gi, '\t')
+    .replace(/<[^>]+>/g, ' ');
+
+  for (const [entity, ch] of Object.entries(DECODE)) text = text.split(entity).join(ch);
+  text = text.replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)));
+
+  return text
+    .split('\n')
+    .map(line => line.replace(/[ \t\u00a0]{2,}/g, ' ').trim())
+    // A stripped-out link leaves its bullet behind; a page of nav links would
+    // otherwise arrive as a column of bare dashes.
+    .filter(line => line !== '-' && line !== '#' && !/^#{2,6}\s*$/.test(line))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')     // at most one blank line between blocks
     .trim();
-  return text;
 }
 
 function extractTitle(html) {
@@ -58,14 +86,27 @@ function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-export async function crawlSite({ startUrl, agentId, maxPages = DEFAULT_MAX_PAGES }) {
+/**
+ * Crawls a site into the agent's knowledge base.
+ *
+ * budgetMs exists because the old loop could only stop on page count. A slow
+ * site with a few 15-second timeouts ran past the function's own limit, the
+ * process was killed, the catch in the caller never ran — and since the crawl
+ * deletes the previous documents before it starts, the agent was left with
+ * fewer documents than before and a spinner that never stopped.
+ */
+export async function crawlSite({ startUrl, agentId, maxPages = DEFAULT_MAX_PAGES, budgetMs = 240000 }) {
   const origin = new URL(startUrl).origin;
   const startNormalized = startUrl.split('?')[0].split('#')[0].replace(/\/$/, '') || startUrl;
+  const deadline = Date.now() + budgetMs;
 
   const visited = new Set();
+  const queued = new Set([startNormalized]);   // membership, so enqueueing stays O(1)
   const queue = [startNormalized];
   const pages = [];
   const errors = [];
+  let stoppedEarly = false;
+  let truncated = 0;
 
   // Delete old crawl docs for this URL
   await sql`
@@ -75,6 +116,7 @@ export async function crawlSite({ startUrl, agentId, maxPages = DEFAULT_MAX_PAGE
   `;
 
   while (queue.length > 0 && pages.length < maxPages) {
+    if (Date.now() > deadline) { stoppedEarly = true; break; }
     const url = queue.shift();
     if (visited.has(url)) continue;
     visited.add(url);
@@ -97,9 +139,13 @@ export async function crawlSite({ startUrl, agentId, maxPages = DEFAULT_MAX_PAGE
 
       const html = await resp.text();
       const title = extractTitle(html) || url.replace(origin, '') || url;
-      const content = extractTextFromHtml(html);
+      let content = extractTextFromHtml(html);
 
       if (content.length < 50) continue; // skip near-empty pages
+      if (content.length > MAX_PAGE_CHARS) {
+        content = content.slice(0, MAX_PAGE_CHARS) + '\n\n[…truncated]';
+        truncated++;
+      }
 
       pages.push({ url, title, content });
 
@@ -118,7 +164,8 @@ export async function crawlSite({ startUrl, agentId, maxPages = DEFAULT_MAX_PAGE
       // Enqueue internal links
       const links = extractInternalLinks(html, url);
       for (const link of links) {
-        if (!visited.has(link) && !queue.includes(link)) {
+        if (!visited.has(link) && !queued.has(link)) {
+          queued.add(link);
           queue.push(link);
         }
       }
@@ -130,5 +177,9 @@ export async function crawlSite({ startUrl, agentId, maxPages = DEFAULT_MAX_PAGE
   }
 
   const totalChars = pages.reduce((s, p) => s + p.content.length, 0);
-  return { pagesCrawled: pages.length, totalChars, errors };
+  // A page that renders its content with JavaScript comes back nearly empty
+  // here: this crawler reads the HTML the server sends, it does not run scripts.
+  // Saying so is better than the user wondering why the agent knows nothing.
+  const thin = pages.filter(p => p.content.length < 200).length;
+  return { pagesCrawled: pages.length, totalChars, errors, stoppedEarly, thinPages: thin, truncatedPages: truncated };
 }

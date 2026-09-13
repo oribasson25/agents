@@ -17,6 +17,8 @@ export default async function handler(req, res) {
   const startTime = Date.now();
   const results = [];
 
+  const skippedUrls = [];
+
   try {
     // Find all agents that have crawl URLs configured
     const agents = await sql`
@@ -26,12 +28,20 @@ export default async function handler(req, res) {
         AND jsonb_array_length(data->'crawlConfig'->'urls') > 0
     `;
 
+    // One deadline for the whole run, shared out as we go. Each crawl used to
+    // get the full default budget, so the second agent's crawl could still be
+    // running when this function was killed — leaving that agent's status stuck
+    // on "running" with its previous documents already deleted.
+    const deadline = Date.now() + 260000;
+
     for (const agent of agents) {
       const crawlConfig = agent.data.crawlConfig || {};
       const urls = crawlConfig.urls || [];
       const maxPages = crawlConfig.maxPages || 100;
 
       for (const url of urls) {
+        const left = deadline - Date.now();
+        if (left < 20000) { skippedUrls.push(`${agent.id} ${url}`); continue; }
         try {
           // Mark as running
           await sql`
@@ -40,7 +50,7 @@ export default async function handler(req, res) {
             WHERE id = ${agent.id}
           `;
 
-          const result = await crawlSite({ startUrl: url, agentId: agent.id, maxPages });
+          const result = await crawlSite({ startUrl: url, agentId: agent.id, maxPages, budgetMs: left - 10000 });
 
           // Update with success stats
           await sql`
@@ -74,6 +84,6 @@ export default async function handler(req, res) {
   }
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-  console.log(`[CronCrawl] Done in ${elapsed}s. Processed ${results.length} URL(s).`);
-  return res.json({ success: true, elapsed: `${elapsed}s`, results });
+  console.log(`[CronCrawl] Done in ${elapsed}s. Processed ${results.length} URL(s), skipped ${skippedUrls.length} for time.`);
+  return res.json({ success: true, elapsed: `${elapsed}s`, results, skipped: skippedUrls });
 }
