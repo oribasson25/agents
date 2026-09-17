@@ -3,6 +3,7 @@ import { sql } from '../_db.js';
 import { runAgentTurn, dlpMessages } from '../_agentRunner.js';
 import { resolveAgentApiConfig } from '../_settings.js';
 import { logError } from '../_errorLog.js';
+import { branchForSession, loadForConversation } from '../_branches.js';
 
 const GRAPH = 'https://graph.facebook.com/v20.0';
 
@@ -208,6 +209,15 @@ async function respond(agentId, agent, wa, msg, baseUrl) {
   if (!text.trim()) return; // nothing to answer, and providers reject empty turns
 
   const sessionId = `wa_${agentId}_${from}`;
+
+  // Which version of the agent this person is talking to. Decided the first
+  // time they write and then kept, so nobody's agent changes mid-conversation.
+  const branchId = await branchForSession(agentId, sessionId);
+  if (branchId) {
+    const chosen = await loadForConversation(agentId, branchId);
+    // The account's key was resolved for the owner, not for the branch.
+    agent = { ...chosen.agent, apiConfig: agent.apiConfig };
+  }
   const userMsg = { role: 'user', content: text };
 
   const [sess] = await sql`select messages from chat_sessions where id = ${sessionId}`;
@@ -243,8 +253,8 @@ async function respond(agentId, agent, wa, msg, baseUrl) {
     { role: 'assistant', content: reply },
   ];
   await sql`
-    insert into chat_sessions (id, agent_id, source, messages, started_at, updated_at)
-    values (${sessionId}, ${agentId}, 'whatsapp', ${JSON.stringify(turn)}, now(), now())
+    insert into chat_sessions (id, agent_id, source, messages, branch_id, started_at, updated_at)
+    values (${sessionId}, ${agentId}, 'whatsapp', ${JSON.stringify(turn)}, ${branchId}, now(), now())
     on conflict (id) do update
       set messages   = chat_sessions.messages || excluded.messages,
           updated_at = now()

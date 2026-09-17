@@ -27,9 +27,11 @@ globalThis.__db = (text, params) => {
     return params[0] === hash ? [{ id: 'tok1', user_id: 'u1', username: 'ori', is_admin: false }] : [];
   }
   if (text.includes('update api_tokens set last_used_at')) return [];
-  if (text.includes('select data from agents')) {
-    return params[0] === stored.id && params[1] === 'u1' ? [{ data: stored }] : [];
+  /* loadAgent's ownership check, and the main-branch read behind it. */
+  if (text.includes('select data, user_id from agents')) {
+    return params[0] === stored.id ? [{ data: stored, user_id: 'u1' }] : [];
   }
+  if (text.includes('from agent_branches')) return [];
   if (text.includes('update agents set data')) { updates++; stored = JSON.parse(params[0]); return []; }
   throw new Error('unexpected query: ' + text.slice(0, 70));
 };

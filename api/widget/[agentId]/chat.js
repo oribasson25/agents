@@ -2,6 +2,7 @@ import { sql } from '../../_db.js';
 import { runAgentTurn, saveSession } from '../../_agentRunner.js';
 import { resolveAgentApiConfig } from '../../_settings.js';
 import { logError } from '../../_errorLog.js';
+import { branchForSession, loadForConversation } from '../../_branches.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -21,15 +22,20 @@ export default async function handler(req, res) {
   const [row] = await sql`select data, user_id from agents where id = ${agentId}`;
   if (!row) return res.status(404).json({ error: 'Agent not found' });
 
+  // Which version of the agent answers: main, or a branch taking a share of
+  // conversations. Decided once per conversation and then kept on the session.
+  const branchId = await branchForSession(agentId, sessionId);
+  const chosen = await loadForConversation(agentId, branchId);
+
   // The key, provider and model come from the owner's account settings.
-  const agent = { ...row.data, apiConfig: await resolveAgentApiConfig(row) };
+  const agent = { ...chosen.agent, apiConfig: await resolveAgentApiConfig(row) };
   const proto = req.headers['x-forwarded-proto'] || 'https';
   const baseUrl = `${proto}://${req.headers.host}`;
 
   try {
     const { text, safeMessages } = await runAgentTurn({ agent, agentId, messages, baseUrl });
     const finalMessages = [...safeMessages, { role: 'assistant', content: text }];
-    await saveSession(sessionId, agentId, finalMessages, 'widget');
+    await saveSession(sessionId, agentId, finalMessages, 'widget', chosen.branchId);
     return res.json({ content: text });
 
   } catch (err) {

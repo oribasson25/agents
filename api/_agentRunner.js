@@ -36,12 +36,12 @@ function buildSystemPrompt(agent, ragChunks = []) {
   return system.trim();
 }
 
-export async function saveSession(sessionId, agentId, allMessages, source = 'widget') {
+export async function saveSession(sessionId, agentId, allMessages, source = 'widget', branchId = null) {
   if (!sessionId) return;
   try {
     await sql`
-      insert into chat_sessions (id, agent_id, source, messages, started_at, updated_at)
-      values (${sessionId}, ${agentId}, ${source}, ${JSON.stringify(allMessages)}, now(), now())
+      insert into chat_sessions (id, agent_id, source, messages, branch_id, started_at, updated_at)
+      values (${sessionId}, ${agentId}, ${source}, ${JSON.stringify(allMessages)}, ${branchId}, now(), now())
       on conflict (id) do update
         set messages   = excluded.messages,
             updated_at = now()

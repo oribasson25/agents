@@ -1,6 +1,6 @@
-import { sql } from '../../_db.js';
 import { checkAuthOrToken } from '../../_auth.js';
 import { agentToFiles, filesToAgent, agentVersion } from '../../_agentFiles.js';
+import { loadAgent, saveAgent, MAIN } from '../../_branches.js';
 
 /**
  * The agent as a folder of files: what `8legs pull` reads and `8legs push`
@@ -15,17 +15,23 @@ export default async function handler(req, res) {
   if (!user) return;
 
   const { id } = req.query;
-  const [row] = await sql`
-    select data from agents where id = ${id} and user_id = ${user.userId}
-  `;
-  if (!row) return res.status(404).json({ error: 'Agent not found' });
-  const agent = row.data;
+  const branch = req.query.branch || MAIN;
+
+  let loaded;
+  try {
+    loaded = await loadAgent({ agentId: id, user, branch });
+  } catch (e) {
+    if (e.code === 'NO_BRANCH') return res.status(404).json({ error: e.message });
+    throw e;
+  }
+  if (!loaded) return res.status(404).json({ error: 'Agent not found' });
+  const agent = loaded.agent;
 
   if (req.method === 'GET') {
     return res.json({
       agentId: id,
-      branch: 'main',
-      version: agentVersion(agent),
+      branch: loaded.branch,
+      version: loaded.version,
       files: agentToFiles(agent),
     });
   }
@@ -39,7 +45,7 @@ export default async function handler(req, res) {
     /* Someone changed the agent since this checkout was pulled. Refusing here
        is the whole point of the version: the alternative is silently throwing
        their edit away. `8legs pull` then merges and pushes again. */
-    const current = agentVersion(agent);
+    const current = loaded.version;
     if (baseVersion && baseVersion !== current) {
       return res.status(409).json({
         error: 'The agent changed since you pulled it',
@@ -54,11 +60,9 @@ export default async function handler(req, res) {
     /* Nothing may move the agent's identity or its owner. */
     next.id = agent.id;
 
-    await sql`
-      update agents set data = ${JSON.stringify(next)}::jsonb, updated_at = now()
-      where id = ${id} and user_id = ${user.userId}
-    `;
-    return res.json({ agentId: id, version: agentVersion(next), branch: 'main' });
+    const saved = await saveAgent({ agentId: id, user, branch, data: next });
+    if (!saved) return res.status(404).json({ error: 'Agent not found' });
+    return res.json({ agentId: id, version: saved.version, branch: saved.branch });
   }
 
   res.status(405).end();
