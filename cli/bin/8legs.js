@@ -121,6 +121,12 @@ commands.pull = async () => {
   const count = Object.keys(pulled.files).length;
   console.log(C.green('✓ ') + `Pulled ${count} files into ${C.bold(path.relative(process.cwd(), root) || '.')}`);
   console.log(C.dim(`  ${pulled.branch} · ${pulled.version}`));
+  if (pulled.git) {
+    console.log(C.dim(`  git  ${pulled.git.cloneUrl}`));
+    if (!fs.existsSync(path.join(root, '.git'))) {
+      console.log(C.dim('       run `8legs git` to work with git as well as the CLI'));
+    }
+  }
 };
 
 /** The agent's own folder name, taken from the config it just sent. */
@@ -271,6 +277,34 @@ commands.push = async () => {
   console.log(C.dim(`  ${result.version}`));
 };
 
+/**
+ * Connects the folder to its repository.
+ *
+ * Deliberately a command rather than something `pull` does by itself: running
+ * `git init` inside a folder someone just downloaded, without being asked,
+ * is the kind of surprise that costs trust.
+ */
+commands.git = async () => {
+  const { root, lock } = requireRoot();
+  const { execFileSync } = await import('child_process');
+  const pulled = await api(`/api/agents/${lock.agentId}/files`);
+  if (!pulled.git) {
+    die('This platform has no GitHub organisation configured, so there is no repository to connect to.');
+  }
+  const run = (...a) => execFileSync('git', a, { cwd: root, stdio: 'pipe', encoding: 'utf8' }).trim();
+  try {
+    if (!fs.existsSync(path.join(root, '.git'))) run('init', '-b', lock.branch || 'main');
+    const remotes = run('remote').split('\n').filter(Boolean);
+    if (remotes.includes('origin')) run('remote', 'set-url', 'origin', pulled.git.cloneUrl);
+    else run('remote', 'add', 'origin', pulled.git.cloneUrl);
+  } catch (e) {
+    die(`git said: ${(e.stderr || e.message).toString().trim()}`);
+  }
+  console.log(C.green('✓ ') + `origin → ${pulled.git.cloneUrl}`);
+  console.log(C.dim('  A `git push` to this remote is applied to the agent, the same as `8legs push`.'));
+  console.log(C.dim('  A commit that does not validate is marked failed on GitHub and is not made live.'));
+};
+
 commands.branches = async () => {
   const { lock } = requireRoot();
   const { branches } = await api(`/api/agents/${lock.agentId}/branches`);
@@ -385,6 +419,7 @@ ${C.bold('8legs')} — edit an agent in your own editor, then push it
   ${C.bold('8legs validate')}           check the folder before pushing
   ${C.bold('8legs push')}               send the changes
   ${C.bold('8legs open')}               open this agent in the browser
+  ${C.bold('8legs git')}                point this folder's git remote at the agent
 
   ${C.bold('8legs branches')}           the branches, and their share of conversations
   ${C.bold('8legs branch <name>')}      open one and switch to it

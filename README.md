@@ -188,3 +188,40 @@ worth transforming the `text/babel` script once before deploying if you changed 
 Documents are indexed with Postgres's `simple` tokenizer, so Hebrew, Arabic and CJK text work
 and matching is case-insensitive — but there is no stemming: "car" and "cars" are different
 terms. Split long documents by topic and write them in the language users will ask in.
+
+## Agents as code
+
+An agent can be edited in an editor instead of the browser. `npx @8legs/cli
+pull <agent>` writes it to a folder — `config.json`, `prompt.md`, a directory
+per skill and per tool — and `8legs push` sends it back. The agent editor has
+the exact pull command for the agent on screen.
+
+Each agent also gets a private GitHub repository, made the first time someone
+pulls it. A `git push` to it is applied the same as `8legs push`: the webhook
+validates the pushed tree and, if it holds together, makes it live. If it does
+not, the commit is marked failed on GitHub and the agent stays on the last
+commit that worked — git has already accepted the push, so declining to run it
+is the only honest answer.
+
+Editing in the browser writes to a **draft**, not to the live agent, and the
+bar above the tabs is where you publish it. Branches beyond that are
+experiments: each can take a share of real conversations, drawn once per
+conversation so nobody's agent changes personality halfway through.
+
+### Environment
+
+| Variable | What it is for |
+|---|---|
+| `GITHUB_AGENTS_TOKEN` | fine-grained token on the agents organisation, with Administration and Contents write |
+| `GITHUB_AGENTS_ORG` | the organisation the repositories live in |
+| `GITHUB_WEBHOOK_SECRET` | signs webhook deliveries; without it nothing incoming is trusted |
+
+All three are optional. Without them the CLI still works and no repository is
+made — only the git half is off.
+
+### Probes
+
+`npm run probe` runs everything under `probes/`. It is the substitute for a
+test framework in the two places that have none: `agentforge.html` has no
+build step and fails as a blank screen, and a bug in the file converter
+deletes fields from a live agent.

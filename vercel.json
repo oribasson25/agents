@@ -1,7 +1,13 @@
 {
   "crons": [
-    { "path": "/api/cron/crawl-all", "schedule": "0 4 * * *" },
-    { "path": "/api/cron/crawl-all", "schedule": "0 10 * * *" }
+    {
+      "path": "/api/cron/crawl-all",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/crawl-all",
+      "schedule": "0 10 * * *"
+    }
   ],
   "functions": {
     "api/scrape_browser.js": {
@@ -21,20 +27,66 @@
     },
     "api/documents/[docId].js": {
       "maxDuration": 300
+    },
+    "api/agents/[id]/files.js": {
+      "maxDuration": 60
+    },
+    "api/github/webhook.js": {
+      "maxDuration": 60
     }
   },
   "rewrites": [
-    { "source": "/api/run-tool", "destination": "/api/run_tool.py" },
-    { "source": "/api/scrape", "destination": "/api/scrape.py" },
-    { "source": "/api/scrape-browser", "destination": "/api/scrape_browser.js" },
-    { "source": "/api/extract-file", "destination": "/api/extract_file.py" },
-    { "source": "/api/gmail/auth", "destination": "/api/gmail/auth.js" },
-    { "source": "/api/gmail/callback", "destination": "/api/gmail/callback.js" },
-    { "source": "/api/gmail/status", "destination": "/api/gmail/status.js" },
-    { "source": "/api/gmail/send", "destination": "/api/gmail/send.js" },
-    { "source": "/api/gmail/disconnect", "destination": "/api/gmail/disconnect.js" },
-    { "source": "/api/whatsapp/webhook", "destination": "/api/whatsapp/webhook.js" },
-    { "source": "/api/whatsapp/test", "destination": "/api/whatsapp/test.js" },
-    { "source": "/", "destination": "/agentforge.html" }
+    {
+      "source": "/api/run-tool",
+      "destination": "/api/run_tool.py"
+    },
+    {
+      "source": "/api/scrape",
+      "destination": "/api/scrape.py"
+    },
+    {
+      "source": "/api/scrape-browser",
+      "destination": "/api/scrape_browser.js"
+    },
+    {
+      "source": "/api/extract-file",
+      "destination": "/api/extract_file.py"
+    },
+    {
+      "source": "/api/gmail/auth",
+      "destination": "/api/gmail/auth.js"
+    },
+    {
+      "source": "/api/gmail/callback",
+      "destination": "/api/gmail/callback.js"
+    },
+    {
+      "source": "/api/gmail/status",
+      "destination": "/api/gmail/status.js"
+    },
+    {
+      "source": "/api/gmail/send",
+      "destination": "/api/gmail/send.js"
+    },
+    {
+      "source": "/api/gmail/disconnect",
+      "destination": "/api/gmail/disconnect.js"
+    },
+    {
+      "source": "/api/whatsapp/webhook",
+      "destination": "/api/whatsapp/webhook.js"
+    },
+    {
+      "source": "/api/whatsapp/test",
+      "destination": "/api/whatsapp/test.js"
+    },
+    {
+      "source": "/api/github/webhook",
+      "destination": "/api/github/webhook.js"
+    },
+    {
+      "source": "/",
+      "destination": "/agentforge.html"
+    }
   ]
 }

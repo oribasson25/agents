@@ -3,3 +3,5 @@ node_modules/
 .env.local
 .env*.local
 .vercel/
+probes/node_modules/
+probes/package-lock.json

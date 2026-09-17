@@ -1,0 +1,11 @@
+{
+  "name": "8legs-probes",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Dev-only deps for the probes that compile and render agentforge.html",
+  "devDependencies": {
+    "@babel/standalone": "^7.28.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}

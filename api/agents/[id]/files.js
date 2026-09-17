@@ -1,6 +1,7 @@
 import { checkAuthOrToken } from '../../_auth.js';
 import { agentToFiles, filesToAgent, agentVersion } from '../../_agentFiles.js';
 import { loadAgent, saveAgent, MAIN } from '../../_branches.js';
+import { ensureAgentRepo, mirrorToGit } from '../../_github.js';
 
 /**
  * The agent as a folder of files: what `8legs pull` reads and `8legs push`
@@ -28,12 +29,15 @@ export default async function handler(req, res) {
   const agent = loaded.agent;
 
   if (req.method === 'GET') {
-    return res.json({
-      agentId: id,
-      branch: loaded.branch,
-      version: loaded.version,
-      files: agentToFiles(agent),
-    });
+    const files = agentToFiles(agent);
+    /* First pull is also when the repository gets made. It never fails the
+       pull: editing through the CLI works whether or not the mirror does. */
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+    const appUrl = (process.env.APP_URL || `${proto}://${req.headers.host}`).trim();
+    const git = loaded.branch === MAIN
+      ? await ensureAgentRepo({ agent, files, appUrl })
+      : null;
+    return res.json({ agentId: id, branch: loaded.branch, version: loaded.version, files, git });
   }
 
   if (req.method === 'PUT') {
@@ -62,6 +66,12 @@ export default async function handler(req, res) {
 
     const saved = await saveAgent({ agentId: id, user, branch, data: next });
     if (!saved) return res.status(404).json({ error: 'Agent not found' });
+
+    /* Mirror it, so `git log` on the repository is the whole history and not
+       only the half that happened to arrive through git. */
+    await mirrorToGit({ agentId: id, branch: saved.branch, files,
+                        message: (req.body || {}).message || `Update ${agent.name || id}` });
+
     return res.json({ agentId: id, version: saved.version, branch: saved.branch });
   }
 
