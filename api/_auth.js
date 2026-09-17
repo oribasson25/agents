@@ -45,6 +45,59 @@ export function verifyPassword(password, stored) {
   return candidate === hash;
 }
 
+/* ─────────────────── personal access tokens ─────────────────── */
+
+const TOKEN_PREFIX = '8legs_pat_';
+
+/** A new token. The caller shows `token` once and stores the rest. */
+export function createToken() {
+  const token = TOKEN_PREFIX + crypto.randomBytes(24).toString('base64url');
+  return { token, hash: hashToken(token), prefix: token.slice(0, TOKEN_PREFIX.length + 4) };
+}
+
+/** Plain sha256, not scrypt: the token is 24 random bytes, not a password. */
+export function hashToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+export function looksLikeToken(value) {
+  return typeof value === 'string' && value.startsWith(TOKEN_PREFIX);
+}
+
+/**
+ * Like checkAuth, but also accepts a personal access token.
+ *
+ * It is a separate, async function rather than a change to checkAuth on
+ * purpose: checkAuth is synchronous and is called that way in nineteen files,
+ * so making it async to reach the database would mean touching all of them to
+ * add an `await` — for the sake of the two endpoints the CLI talks to.
+ */
+export async function checkAuthOrToken(req, res) {
+  const header = req.headers['authorization'] || '';
+  if (!header.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'unauthorized' });
+    return false;
+  }
+  const credential = header.slice(7);
+  if (!looksLikeToken(credential)) return checkAuth(req, res);
+
+  /* Imported here, not at the top: _auth.js is pulled in by nineteen files and
+     _db.js needs DATABASE_URL the moment it loads. Only this path needs it. */
+  const { sql } = await import('./_db.js');
+  const [row] = await sql`
+    select t.id, t.user_id, u.username, u.is_admin
+    from api_tokens t join users u on u.id = t.user_id
+    where t.token_hash = ${hashToken(credential)} and t.revoked_at is null
+  `;
+  if (!row) {
+    res.status(401).json({ error: 'invalid token' });
+    return false;
+  }
+  /* Best-effort: a failed bookkeeping write must not fail the request. */
+  sql`update api_tokens set last_used_at = now() where id = ${row.id}`.catch(() => {});
+  return { userId: row.user_id, username: row.username, isAdmin: !!row.is_admin, viaToken: true };
+}
+
 // Returns the decoded JWT payload or responds 401
 export function checkAuth(req, res) {
   const authHeader = req.headers['authorization'];
