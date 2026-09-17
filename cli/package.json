@@ -1,0 +1,11 @@
+{
+  "name": "@8legs/cli",
+  "version": "0.1.0",
+  "description": "Edit 8Legs agents in your own editor, then push them to the platform",
+  "type": "module",
+  "bin": { "8legs": "./bin/8legs.js" },
+  "files": ["bin", "src", "README.md"],
+  "engines": { "node": ">=18" },
+  "license": "UNLICENSED",
+  "repository": { "type": "git", "url": "https://github.com/oribasson25/agents.git", "directory": "cli" }
+}

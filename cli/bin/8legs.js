@@ -1,0 +1,309 @@
+#!/usr/bin/env node
+/**
+ * 8legs — edit an agent in your own editor, then push it to the platform.
+ *
+ * Run `8legs` with no arguments for the command list.
+ */
+import fs from 'fs';
+import path from 'path';
+import readline from 'readline';
+import { api, session, ApiError } from '../src/api.js';
+import { readConfig, writeConfig, clearConfig, configPath, DEFAULT_HOST } from '../src/config.js';
+import { writeTree, writeLock, readLock, findRoot, changes } from '../src/workdir.js';
+
+const C = process.stdout.isTTY
+  ? { dim: s => `\x1b[2m${s}\x1b[0m`, bold: s => `\x1b[1m${s}\x1b[0m`, green: s => `\x1b[32m${s}\x1b[0m`,
+      red: s => `\x1b[31m${s}\x1b[0m`, yellow: s => `\x1b[33m${s}\x1b[0m`, cyan: s => `\x1b[36m${s}\x1b[0m` }
+  : new Proxy({}, { get: () => (s => s) });
+
+const argv = process.argv.slice(2);
+const flags = {};
+const args = [];
+for (let i = 0; i < argv.length; i++) {
+  if (argv[i].startsWith('--')) {
+    const [k, inline] = argv[i].slice(2).split('=');
+    flags[k] = inline !== undefined ? inline : (argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[++i] : true);
+  } else args.push(argv[i]);
+}
+
+const die = (msg) => { console.error(C.red('✗ ') + msg); process.exit(1); };
+
+function ask(question, { hidden = false } = {}) {
+  return new Promise(resolve => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+    if (hidden) {
+      /* Keep the token off the screen and out of the shell's scrollback. */
+      const onData = () => { readline.clearLine(process.stdout, 0); readline.cursorTo(process.stdout, 0);
+                             process.stdout.write(question); };
+      process.stdin.on('data', onData);
+      rl.question(question, answer => { process.stdin.off('data', onData); process.stdout.write('\n');
+                                        rl.close(); resolve(answer.trim()); });
+    } else rl.question(question, answer => { rl.close(); resolve(answer.trim()); });
+  });
+}
+
+/** The agent folder for commands that need one. */
+function requireRoot() {
+  const root = findRoot();
+  if (!root) die('Not inside an agent folder. Run `8legs pull <agent>` first.');
+  return { root, lock: readLock(root) };
+}
+
+/* ─────────────────── commands ─────────────────── */
+
+const commands = {};
+
+commands.login = async () => {
+  const host = flags.host || DEFAULT_HOST;
+  console.log(`Create a token at ${C.cyan(`${host}/#settings`)} → Personal access tokens.\n`);
+  const token = await ask('Paste your token: ', { hidden: true });
+  if (!token) die('No token given.');
+  const me = await api('/api/agents', { token, host }).catch(e => {
+    if (e.status === 401) die('That token was not accepted.');
+    throw e;
+  });
+  writeConfig({ ...readConfig(), token, host });
+  console.log(C.green('✓ ') + `Logged in to ${host}. ${me.length} agent(s) available.`);
+  console.log(C.dim(`  Stored in ${configPath}`));
+};
+
+commands.logout = async () => { clearConfig(); console.log(C.green('✓ ') + 'Logged out.'); };
+
+commands.whoami = async () => {
+  const { host } = session();
+  const agents = await api('/api/agents');
+  console.log(`${host} — ${agents.length} agent(s)`);
+};
+
+commands.list = async () => {
+  const agents = await api('/api/agents');
+  if (!agents.length) return console.log('No agents yet.');
+  const width = Math.max(...agents.map(a => (a.name || '').length));
+  for (const a of agents) {
+    console.log(`  ${(a.name || '(unnamed)').padEnd(width)}  ${C.dim(a.id)}`);
+  }
+  console.log(C.dim(`\n  8legs pull ${agents[0].id}`));
+};
+
+commands.pull = async () => {
+  const wanted = args[1];
+  const existing = !wanted ? requireRoot() : null;
+  let agentId = existing ? existing.lock.agentId : wanted;
+
+  if (wanted && !/^[0-9a-f-]{36}$/i.test(wanted)) {
+    const agents = await api('/api/agents');
+    const matches = agents.filter(a => (a.name || '').toLowerCase() === wanted.toLowerCase());
+    if (!matches.length) die(`No agent called "${wanted}". Try \`8legs list\`.`);
+    if (matches.length > 1) die(`More than one agent is called "${wanted}". Use its id:\n` +
+      matches.map(a => `  ${a.id}`).join('\n'));
+    agentId = matches[0].id;
+  }
+
+  const pulled = await api(`/api/agents/${agentId}/files`);
+  const root = existing ? existing.root
+    : path.resolve(flags.dir || slug(pulled.files) || `agent-${agentId.slice(0, 8)}`);
+
+  if (existing) {
+    const local = changes(root, existing.lock);
+    const dirty = [...local.added, ...local.modified, ...local.deleted];
+    if (dirty.length && !flags.force) {
+      die(`You have local changes that a pull would overwrite:\n` +
+          dirty.map(p => `  ${p}`).join('\n') + `\n\nPush them first, or pull with --force.`);
+    }
+  } else if (fs.existsSync(root) && fs.readdirSync(root).length) {
+    die(`${root} already exists and is not empty. Use --dir to choose another folder.`);
+  }
+
+  writeTree(root, pulled.files);
+  writeLock(root, { agentId, branch: pulled.branch, version: pulled.version,
+                    host: session().host, files: pulled.files });
+  const count = Object.keys(pulled.files).length;
+  console.log(C.green('✓ ') + `Pulled ${count} files into ${C.bold(path.relative(process.cwd(), root) || '.')}`);
+  console.log(C.dim(`  ${pulled.branch} · ${pulled.version}`));
+};
+
+/** The agent's own folder name, taken from the config it just sent. */
+function slug(files) {
+  try { return JSON.parse(files['config.json']).profile.name || null; } catch { return null; }
+}
+
+commands.status = async () => {
+  const { root, lock } = requireRoot();
+  const { added, modified, deleted } = changes(root, lock);
+  console.log(`${C.bold(lock.branch || 'main')}  ${C.dim(lock.agentId)}`);
+
+  const remote = await api(`/api/agents/${lock.agentId}/files`).catch(() => null);
+  if (remote && remote.version !== lock.version) {
+    console.log(C.yellow('  ! ') + 'The agent changed on the platform since you pulled.');
+    console.log(C.dim('    Run `8legs pull` to take those changes first.'));
+  }
+
+  if (!added.length && !modified.length && !deleted.length) return console.log(C.dim('  nothing changed locally'));
+  for (const p of modified) console.log(`  ${C.yellow('M')} ${p}`);
+  for (const p of added) console.log(`  ${C.green('A')} ${p}`);
+  for (const p of deleted) console.log(`  ${C.red('D')} ${p}`);
+};
+
+commands.diff = async () => {
+  const { root, lock } = requireRoot();
+  const pulled = await api(`/api/agents/${lock.agentId}/files`);
+  const { added, modified, deleted, files } = changes(root, lock);
+  const only = args[1];
+
+  for (const p of [...modified, ...added, ...deleted]) {
+    if (only && p !== only) continue;
+    console.log(C.bold(`\n── ${p}`));
+    const before = (pulled.files[p] || '').split('\n');
+    const after = (files[p] || '').split('\n');
+    for (const line of lineDiff(before, after)) {
+      console.log(line.startsWith('+') ? C.green(line) : line.startsWith('-') ? C.red(line) : C.dim(line));
+    }
+  }
+  if (!modified.length && !added.length && !deleted.length) console.log(C.dim('nothing changed locally'));
+};
+
+/** A plain longest-common-subsequence diff, with three lines of context. */
+function lineDiff(a, b) {
+  const n = a.length, m = b.length;
+  const lcs = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--)
+      lcs[i][j] = a[i] === b[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+
+  const rows = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { rows.push(['  ', a[i]]); i++; j++; }
+    else if (lcs[i + 1][j] >= lcs[i][j + 1]) { rows.push(['- ', a[i++]]); }
+    else { rows.push(['+ ', b[j++]]); }
+  }
+  while (i < n) rows.push(['- ', a[i++]]);
+  while (j < m) rows.push(['+ ', b[j++]]);
+
+  const keep = new Set();
+  rows.forEach((r, idx) => { if (r[0] !== '  ') for (let k = idx - 3; k <= idx + 3; k++) keep.add(k); });
+  const out = [];
+  let skipped = 0;
+  rows.forEach((r, idx) => {
+    if (!keep.has(idx)) { skipped++; return; }
+    if (skipped) { out.push(`  … ${skipped} unchanged line(s)`); skipped = 0; }
+    out.push(r[0] + r[1]);
+  });
+  return out;
+}
+
+commands.validate = async () => {
+  const { root, lock } = requireRoot();
+  const { files } = changes(root, lock);
+  const problems = validateTree(files);
+  if (!problems.length) return console.log(C.green('✓ ') + 'The agent folder looks valid.');
+  for (const p of problems) console.log(C.red('  ✗ ') + p);
+  process.exit(1);
+};
+
+/** The checks the server will run, run here first so the answer is instant. */
+export function validateTree(files) {
+  const problems = [];
+  const parse = (p) => {
+    if (files[p] === undefined) { problems.push(`${p} is missing`); return null; }
+    try { return JSON.parse(files[p]); } catch (e) { problems.push(`${p}: ${e.message}`); return null; }
+  };
+  const config = parse('config.json');
+  if (config && !config.profile?.id) problems.push('config.json: profile.id is required');
+  if (files['prompt.md'] === undefined) problems.push('prompt.md is missing');
+
+  for (const p of Object.keys(files)) {
+    if (p.startsWith('skills/') && p.endsWith('/skill.json')) {
+      const dir = p.slice(0, -'/skill.json'.length);
+      const sk = parse(p);
+      if (!sk) continue;
+      if (!sk.id) problems.push(`${p}: id is required`);
+      const prompt = `${dir}/${sk.prompts?.skill || 'prompts/skill.md'}`;
+      if (files[prompt] === undefined) problems.push(`${prompt} is missing (referenced by ${p})`);
+    }
+    if (p.startsWith('tools/') && p.endsWith('/tool.json')) {
+      const dir = p.slice(0, -'/tool.json'.length);
+      const tl = parse(p);
+      if (!tl) continue;
+      if (!tl.id) problems.push(`${p}: id is required`);
+      if (files[`${dir}/run.py`] === undefined) problems.push(`${dir}/run.py is missing`);
+    }
+  }
+  return problems;
+}
+
+commands.push = async () => {
+  const { root, lock } = requireRoot();
+  const { added, modified, deleted, files } = changes(root, lock);
+  if (!added.length && !modified.length && !deleted.length) return console.log('Nothing to push.');
+
+  const problems = validateTree(files);
+  if (problems.length) {
+    console.log(C.red('Refusing to push — the folder is not valid:'));
+    for (const p of problems) console.log(C.red('  ✗ ') + p);
+    process.exit(1);
+  }
+
+  let result;
+  try {
+    result = await api(`/api/agents/${lock.agentId}/files`,
+                       { method: 'PUT', body: { baseVersion: lock.version, files } });
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 409) {
+      die('The agent changed on the platform since you pulled.\n' +
+          '  Run `8legs pull` to take those changes, redo your edit, and push again.');
+    }
+    if (e instanceof ApiError && e.status === 422) {
+      console.log(C.red('The platform rejected these files:'));
+      for (const p of e.body.errors || [e.message]) console.log(C.red('  ✗ ') + p);
+      process.exit(1);
+    }
+    throw e;
+  }
+
+  writeLock(root, { agentId: lock.agentId, branch: result.branch, version: result.version,
+                    host: lock.host, files });
+  const n = added.length + modified.length + deleted.length;
+  console.log(C.green('✓ ') + `Pushed ${n} change(s) to ${C.bold(result.branch)}`);
+  console.log(C.dim(`  ${result.version}`));
+};
+
+commands.open = async () => {
+  const { lock } = requireRoot();
+  const url = `${lock.host || DEFAULT_HOST}/#agent/${lock.agentId}`;
+  const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+  const { spawn } = await import('child_process');
+  spawn(opener, [url], { stdio: 'ignore', detached: true }).unref();
+  console.log(url);
+};
+
+/* ─────────────────── dispatch ─────────────────── */
+
+const HELP = `
+${C.bold('8legs')} — edit an agent in your own editor, then push it
+
+  ${C.bold('8legs login')}              store a personal access token
+  ${C.bold('8legs logout')}             forget it
+  ${C.bold('8legs list')}               your agents, with their ids
+
+  ${C.bold('8legs pull <agent>')}       download an agent into a folder
+  ${C.bold('8legs pull')}               refresh the folder you are in
+  ${C.bold('8legs status')}             what changed, here and on the platform
+  ${C.bold('8legs diff [file]')}        the changes themselves
+  ${C.bold('8legs validate')}           check the folder before pushing
+  ${C.bold('8legs push')}               send the changes
+  ${C.bold('8legs open')}               open this agent in the browser
+
+  ${C.dim('--host <url>')}       talk to a different installation
+  ${C.dim('--dir <path>')}       pull into a specific folder
+  ${C.dim('--force')}            let pull overwrite local changes
+`;
+
+const name = args[0];
+if (!name || name === 'help' || flags.help) { console.log(HELP); process.exit(0); }
+if (!commands[name]) { console.error(`Unknown command: ${name}`); console.log(HELP); process.exit(1); }
+
+commands[name]().catch(e => {
+  if (e.friendly || e instanceof ApiError) die(e.message);
+  die(e.stack || e.message);
+});

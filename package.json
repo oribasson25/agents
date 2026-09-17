@@ -11,6 +11,7 @@
     "migrate": "node migrations/run.mjs",
     "probe:roundtrip": "node probes/roundtrip-probe.mjs",
     "probe:files": "node --import ./probes/stub-db.mjs probes/files-api-probe.mjs",
-    "probe": "npm run probe:roundtrip && npm run probe:files"
+    "probe": "npm run probe:roundtrip && npm run probe:files && npm run probe:cli",
+    "probe:cli": "node probes/cli-probe.mjs"
   }
 }
