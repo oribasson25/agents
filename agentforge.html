@@ -7373,6 +7373,30 @@ npm run migrate            # הרצה בפועל`}</Block>
 
   /* ─────────────────── APP ─────────────────── */
   /* ─────────────────── SETTINGS PANEL ─────────────────── */
+  /** A command, in a box, with a button that copies it. */
+  function CopyableCommand({ command, note }) {
+    const [copied, setCopied] = useState(false);
+    return (
+      <div>
+        <div dir="ltr" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <code style={{ flex: 1, fontFamily: 'monospace', fontSize: 12, background: 'var(--bg-app)',
+                         border: '1px solid var(--border)', borderRadius: 'var(--r-sm)',
+                         padding: '8px 10px', overflowX: 'auto', whiteSpace: 'nowrap' }}>{command}</code>
+          <button onClick={() => navigator.clipboard.writeText(command).then(() => {
+                    setCopied(true); setTimeout(() => setCopied(false), 2000);
+                  })}
+            style={{ padding: '8px 14px', borderRadius: 'var(--r-sm)', cursor: 'pointer', flexShrink: 0,
+                     background: copied ? 'var(--success)' : 'var(--bg-hover)',
+                     border: '1px solid var(--border)',
+                     color: copied ? '#0a0a0a' : 'var(--text-1)', fontSize: 12, fontWeight: 700 }}>
+            {copied ? '✓' : 'העתק'}
+          </button>
+        </div>
+        {note && <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 6 }}>{note}</div>}
+      </div>
+    );
+  }
+
   /**
    * Personal access tokens — what the CLI uses instead of a password.
    *
@@ -7385,7 +7409,6 @@ npm run migrate            # הרצה בפועל`}</Block>
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [fresh, setFresh] = useState(null);
-    const [copied, setCopied] = useState(false);
     const [error, setError] = useState(null);
 
     async function load() {
@@ -7401,7 +7424,6 @@ npm run migrate            # הרצה בפועל`}</Block>
       try {
         const created = await apiCreateToken('CLI');
         setFresh(created.token);
-        setCopied(false);
         await load();
       } catch (e) { setError(e.message); }
       finally { setBusy(false); }
@@ -7412,13 +7434,6 @@ npm run migrate            # הרצה בפועל`}</Block>
       try { await apiRevokeToken(id); await load(); }
       catch (e) { setError(e.message); }
       finally { setBusy(false); }
-    }
-
-    function copyFresh() {
-      navigator.clipboard.writeText(fresh).then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      });
     }
 
     return (
@@ -7443,26 +7458,22 @@ npm run migrate            # הרצה בפועל`}</Block>
           </button>
         </div>
 
+        <div style={{ borderTop: '1px solid var(--border)', padding: '14px 20px',
+                      display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)' }}>התקנה</div>
+          <CopyableCommand command="npm i -g @8legs/cli"
+            note="ואז 8legs login מכל תיקייה. דורש Node 18 ומעלה." />
+          <CopyableCommand command="npx @8legs/cli login"
+            note="בלי להתקין כלום — npx מוריד אותו בכל הרצה." />
+        </div>
+
         {fresh && (
           <div style={{ borderTop: '1px solid var(--border)', padding: '14px 20px',
                         background: 'rgba(250,204,21,0.07)' }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--warning)', marginBottom: 8 }}>
               העתק עכשיו — הטוקן לא יוצג שוב
             </div>
-            <div dir="ltr" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <code style={{ flex: 1, fontFamily: 'monospace', fontSize: 12, background: 'var(--bg-app)',
-                             border: '1px solid var(--border)', borderRadius: 'var(--r-sm)',
-                             padding: '8px 10px', overflowX: 'auto', whiteSpace: 'nowrap' }}>{fresh}</code>
-              <button onClick={copyFresh}
-                style={{ padding: '8px 14px', borderRadius: 'var(--r-sm)', cursor: 'pointer', flexShrink: 0,
-                         background: copied ? 'var(--success)' : 'var(--bg-hover)',
-                         color: copied ? '#0a0a0a' : 'var(--text-1)', fontSize: 12, fontWeight: 700 }}>
-                {copied ? '✓ הועתק' : 'העתק'}
-              </button>
-            </div>
-            <div dir="ltr" style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10, fontFamily: 'monospace' }}>
-              npx @8legs/cli login
-            </div>
+            <CopyableCommand command={fresh} note="הרץ 8legs login והדבק אותו שם." />
           </div>
         )}
 

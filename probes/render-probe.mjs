@@ -15,7 +15,7 @@ const src = fs.readFileSync(new URL('../agentforge.html', import.meta.url).pathn
 const body = src.match(/<script type="text\/babel"[^>]*>([\s\S]*?)<\/script>/)[1];
 
 /* Hand the probe the components it wants to render. */
-const exposed = ['TokensSection', 'PullCommandButton', 'SettingsPanel', 'AgentEditor', 'BranchBar', 'MergePanel', 'MobileDraftBar', 'MobileAgentEditor'];
+const exposed = ['TokensSection', 'PullCommandButton', 'SettingsPanel', 'AgentEditor', 'BranchBar', 'MergePanel', 'MobileDraftBar', 'MobileAgentEditor', 'CopyableCommand'];
 const code = babel.transform(
   body + `\n;globalThis.__probe = { ${exposed.map(n => `${n}: typeof ${n} === 'function' ? ${n} : null`).join(', ')} };`,
   { presets: ['react'] }).code;
@@ -57,6 +57,15 @@ for (const name of exposed) if (!probe[name]) { console.log(`✗ ${name} is not 
 const styles = { sectionStyle: {}, sectionHeader: {}, rowStyle: {}, iconBox: {} };
 const tokens = render('TokensSection', React.createElement(probe.TokensSection, styles));
 if (tokens && !tokens.includes('צור טוקן')) { console.log('✗ TokensSection has no create button'); failed++; }
+for (const cmd of ['npm i -g @8legs/cli', 'npx @8legs/cli login']) {
+  if (tokens && !tokens.includes(cmd)) { console.log(`✗ Settings does not show \`${cmd}\``); failed++; }
+}
+if (tokens && tokens.includes('npm i -g @8legs/cli')) console.log('✓ Settings shows both install commands');
+
+const cmdBox = render('CopyableCommand', React.createElement(probe.CopyableCommand, {
+  command: 'npm i -g @8legs/cli', note: 'a note',
+}));
+if (cmdBox && !cmdBox.includes('העתק')) { console.log('✗ CopyableCommand has no copy button'); failed++; }
 
 const pull = render('PullCommandButton',
   React.createElement(probe.PullCommandButton, { agentId: '804fe690-c8b6-4e3a-bb8f-1305bd1721d7' }));
