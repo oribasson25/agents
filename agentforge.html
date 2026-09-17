@@ -406,7 +406,11 @@
 
   async function apiList() {
     const agents = await apiFetch('/api/agents').then(r => r.json());
-    return Array.isArray(agents) ? agents.map(stripUiFields) : agents;
+    /* _branch says whether this is the live agent or an unpublished draft, so
+       it survives the UI-field strip that _isNew is the reason for. */
+    return Array.isArray(agents)
+      ? agents.map(a => ({ ...stripUiFields(a), _branch: a._branch }))
+      : agents;
   }
   async function apiCreate(agent) {
     const r = await apiFetch('/api/agents', { method: 'POST', body: JSON.stringify(stripUiFields(agent)) });
@@ -430,6 +434,35 @@
   }
   async function apiDelete(id) {
     return apiFetch(`/api/agents/${id}`, { method: 'DELETE' });
+  }
+
+  async function apiBranches(agentId, diff) {
+    const q = diff ? `?diff=${encodeURIComponent(diff)}` : '';
+    const r = await apiFetch(`/api/agents/${agentId}/branches${q}`);
+    if (!r.ok) throw new Error(`Could not load branches (${r.status})`);
+    return r.json();
+  }
+  async function apiBranchAction(agentId, body, method = 'POST') {
+    const r = await apiFetch(`/api/agents/${agentId}/branches`, { method, body: JSON.stringify(body) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `That did not work (${r.status})`);
+    return d;
+  }
+  async function apiDeleteBranch(agentId, branch) {
+    const r = await apiFetch(`/api/agents/${agentId}/branches?branch=${encodeURIComponent(branch)}`, { method: 'DELETE' });
+    if (!r.ok) throw new Error(`Could not discard it (${r.status})`);
+  }
+  async function apiAgentOnBranch(agentId, branch) {
+    const r = await apiFetch(`/api/agents/${agentId}?branch=${encodeURIComponent(branch)}`);
+    if (!r.ok) throw new Error(`Could not load that branch (${r.status})`);
+    return r.json();
+  }
+  async function apiSaveOnBranch(agent, branch) {
+    const r = await apiFetch(`/api/agents/${agent.id}?branch=${encodeURIComponent(branch)}`,
+      { method: 'PUT', body: JSON.stringify(stripUiFields(agent)) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `Save failed (${r.status})`);
+    return d;
   }
 
   async function apiListTokens() {
@@ -4103,9 +4136,296 @@
     );
   }
 
-  function AgentEditor({ agent, onUpdate, onBack, initialTab, onTest }) {
+  /**
+   * Which version of the agent you are looking at, and what you can do about it.
+   *
+   * Editing never touches the live agent any more: it lands on a draft, and
+   * this bar is the only place that says so and the only way to publish. It
+   * also switches between experiment branches and shows what share of real
+   * conversations each one is taking.
+   */
+  function BranchBar({ agent, branch, onSwitch, onChanged }) {
+    const [branches, setBranches] = useState(null);
+    const [open, setOpen] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [merging, setMerging] = useState(null);
+    const [error, setError] = useState(null);
+
+    const current = branch || agent._branch || 'main';
+    const isDraft = current === 'draft';
+    const onMain = current === 'main';
+
+    const load = useCallback(async () => {
+      try { setBranches((await apiBranches(agent.id)).branches); }
+      catch (e) { setError(e.message); }
+    }, [agent.id]);
+    useEffect(() => { load(); }, [load, agent._branch]);
+
+    async function act(fn, then) {
+      setBusy(true); setError(null);
+      try { await fn(); await load(); if (then) then(); }
+      catch (e) { setError(e.message); }
+      finally { setBusy(false); }
+    }
+
+    const publish = () => act(
+      () => apiBranchAction(agent.id, { action: 'publish' }),
+      () => onChanged && onChanged());
+    const discard = () => {
+      if (!confirm('לבטל את הטיוטה ולחזור לגרסה החיה? השינויים שלא פורסמו יימחקו.')) return;
+      act(() => apiDeleteBranch(agent.id, 'draft'), () => onChanged && onChanged());
+    };
+    const newBranch = () => {
+      const name = prompt('שם הבראנץ׳ (למשל warmer-tone):');
+      if (!name) return;
+      act(() => apiBranchAction(agent.id, { name, from: onMain || isDraft ? 'main' : current }),
+          () => onSwitch(name));
+    };
+    const setWeight = (name, weight) =>
+      act(() => apiBranchAction(agent.id, { branch: name, weight }, 'PUT'));
+    const stopAll = () => act(() => apiBranchAction(agent.id, { action: 'stop' }, 'PUT'));
+
+    const pill = (bg, color) => ({
+      display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 11px',
+      borderRadius: 999, fontSize: 12, fontWeight: 700, background: bg, color,
+    });
+
+    return (
+      <div style={{ marginBottom: 14 }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+          padding: '9px 14px', borderRadius: 'var(--r-md)',
+          border: `1px solid ${isDraft ? 'rgba(250,204,21,0.35)' : 'var(--border)'}`,
+          background: isDraft ? 'rgba(250,204,21,0.08)' : 'var(--bg-panel)',
+        }}>
+          <button onClick={() => setOpen(o => !o)} title="החלף בראנץ׳"
+            style={{ ...pill('var(--bg-hover)', 'var(--text-1)'), border: '1px solid var(--border)', cursor: 'pointer' }}>
+            <span dir="ltr" style={{ fontFamily: 'monospace' }}>{current}</span>
+            <span style={{ fontSize: 9, opacity: 0.7 }}>▼</span>
+          </button>
+
+          {isDraft && (
+            <>
+              <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>
+                שינויים שלא פורסמו. הסוכן החי עדיין עונה מהגרסה הקודמת.
+              </span>
+              <div style={{ marginInlineStart: 'auto', display: 'flex', gap: 8 }}>
+                <button onClick={discard} disabled={busy}
+                  style={{ padding: '6px 14px', borderRadius: 'var(--r-sm)', cursor: 'pointer',
+                           background: 'transparent', border: '1px solid var(--border)',
+                           color: 'var(--text-2)', fontSize: 12.5, fontWeight: 600 }}>בטל טיוטה</button>
+                <button onClick={publish} disabled={busy}
+                  style={{ padding: '6px 16px', borderRadius: 'var(--r-sm)', cursor: 'pointer',
+                           background: 'var(--primary)', color: '#0a0a0a', fontSize: 12.5, fontWeight: 700 }}>
+                  {busy ? '…' : 'פרסם'}
+                </button>
+              </div>
+            </>
+          )}
+
+          {onMain && <span style={{ ...pill('rgba(34,197,94,0.12)', 'var(--success)') }}>חי</span>}
+
+          {!isDraft && !onMain && (
+            <div style={{ marginInlineStart: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button onClick={() => setMerging(current)} disabled={busy}
+                style={{ padding: '6px 16px', borderRadius: 'var(--r-sm)', cursor: 'pointer',
+                         background: 'var(--primary)', color: '#0a0a0a', fontSize: 12.5, fontWeight: 700 }}>
+                מזג ל-main
+              </button>
+            </div>
+          )}
+        </div>
+
+        {open && branches && (
+          <div style={{ marginTop: 8, border: '1px solid var(--border)', borderRadius: 'var(--r-md)',
+                        background: 'var(--bg-card)', overflow: 'hidden' }}>
+            {branches.map(b => (
+              <div key={b.name} style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px',
+                borderBottom: '1px solid var(--border)',
+                background: b.name === current ? 'var(--bg-hover)' : 'transparent',
+              }}>
+                <button onClick={() => { onSwitch(b.name); setOpen(false); }}
+                  style={{ flex: 1, textAlign: 'start', background: 'none', border: 'none', cursor: 'pointer',
+                           color: 'var(--text-1)', fontSize: 13, fontWeight: 600 }}>
+                  <span dir="ltr" style={{ fontFamily: 'monospace' }}>{b.name}</span>
+                  {b.kind === 'draft' && <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>  טיוטה</span>}
+                  {b.live && <span style={{ color: 'var(--success)', fontWeight: 500 }}>  חי</span>}
+                </button>
+
+                {/* A draft is a place to work, never something customers reach. */}
+                {b.kind !== 'draft' && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
+                    <input type="number" min="0" max="100" defaultValue={b.traffic_weight}
+                      disabled={b.live || busy}
+                      onBlur={e => { const v = Number(e.target.value);
+                                     if (v !== b.traffic_weight) setWeight(b.name, v); }}
+                      style={{ width: 58, fontSize: 12, padding: '3px 6px' }} />
+                    <span>% מהשיחות</span>
+                  </label>
+                )}
+              </div>
+            ))}
+            <div style={{ display: 'flex', gap: 8, padding: '9px 14px' }}>
+              <button onClick={newBranch} disabled={busy}
+                style={{ padding: '6px 14px', borderRadius: 'var(--r-sm)', cursor: 'pointer',
+                         background: 'var(--bg-hover)', border: '1px solid var(--border)',
+                         color: 'var(--text-1)', fontSize: 12.5, fontWeight: 600 }}>+ בראנץ׳ חדש</button>
+              <button onClick={stopAll} disabled={busy}
+                title="כל השיחות חוזרות ל-main. שיחות פעילות מסיימות היכן שהן."
+                style={{ padding: '6px 14px', borderRadius: 'var(--r-sm)', cursor: 'pointer',
+                         background: 'transparent', border: '1px solid var(--border)',
+                         color: 'var(--text-2)', fontSize: 12.5, fontWeight: 600 }}>עצור ניסויים</button>
+            </div>
+          </div>
+        )}
+
+        {error && <div style={{ marginTop: 8, fontSize: 12, color: 'var(--danger)' }}>{error}</div>}
+
+        {merging && (
+          <MergePanel agentId={agent.id} branch={merging}
+            onClose={() => setMerging(null)}
+            onMerged={() => { setMerging(null); onSwitch('main'); onChanged && onChanged(); }} />
+        )}
+      </div>
+    );
+  }
+
+  /** What a merge would change, field by field, before it changes anything. */
+  function MergePanel({ agentId, branch, onClose, onMerged }) {
+    const [diff, setDiff] = useState(null);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+      apiBranches(agentId, branch).then(r => setDiff(r.diff)).catch(e => setError(e.message));
+    }, [agentId, branch]);
+
+    async function merge() {
+      setBusy(true);
+      try { await apiBranchAction(agentId, { action: 'merge', branch }); onMerged(); }
+      catch (e) { setError(e.message); setBusy(false); }
+    }
+
+    const nothing = diff && !diff.fields.length && !diff.skills.length && !diff.tools.length;
+    const short = (v) => {
+      const text = typeof v === 'string' ? v : JSON.stringify(v);
+      return !text ? '(ריק)' : text.length > 160 ? text.slice(0, 160) + '…' : text;
+    };
+
+    return (
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
+        <div onClick={e => e.stopPropagation()} style={{
+          width: 'min(720px, 92vw)', maxHeight: '82vh', overflowY: 'auto',
+          background: 'var(--bg-card)', border: '1px solid var(--border)',
+          borderRadius: 'var(--r-lg)', padding: 22,
+        }}>
+          <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>
+            מיזוג <span dir="ltr" style={{ fontFamily: 'monospace' }}>{branch}</span> ל-main
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 16 }}>
+            אחרי המיזוג הסוכן החי עונה מהגרסה הזאת. מספר ה-WhatsApp והמפתח נשארים כפי שהם ב-main.
+          </div>
+
+          {error && <div style={{ fontSize: 12.5, color: 'var(--danger)', marginBottom: 12 }}>{error}</div>}
+          {!diff && !error && <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>טוען…</div>}
+          {nothing && <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>אין הבדלים בין הבראנץ׳ ל-main.</div>}
+
+          {diff && diff.fields.map(f => (
+            <div key={f.key} style={{ marginBottom: 14 }}>
+              <div dir="ltr" style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5 }}>{f.key}</div>
+              <div style={{ fontSize: 12.5, background: 'rgba(239,68,68,0.08)', padding: '7px 10px',
+                            borderRadius: 'var(--r-sm)', marginBottom: 4, whiteSpace: 'pre-wrap' }}>{short(f.main)}</div>
+              <div style={{ fontSize: 12.5, background: 'rgba(34,197,94,0.10)', padding: '7px 10px',
+                            borderRadius: 'var(--r-sm)', whiteSpace: 'pre-wrap' }}>{short(f.branch)}</div>
+            </div>
+          ))}
+
+          {diff && [['סקילים', diff.skills], ['כלים', diff.tools]].map(([label, items]) => items.length > 0 && (
+            <div key={label} style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5 }}>{label}</div>
+              {items.map(it => (
+                <div key={it.id} style={{ fontSize: 12.5, padding: '5px 0' }}>
+                  <span style={{ color: it.change === 'added' ? 'var(--success)'
+                                       : it.change === 'removed' ? 'var(--danger)' : 'var(--warning)',
+                                 fontWeight: 700, marginInlineEnd: 8 }}>
+                    {it.change === 'added' ? 'נוסף' : it.change === 'removed' ? 'נמחק' : 'שונה'}
+                  </span>
+                  {it.name || it.id}
+                </div>
+              ))}
+            </div>
+          ))}
+
+          <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+            <button onClick={merge} disabled={busy || !diff || nothing}
+              style={{ padding: '9px 20px', borderRadius: 'var(--r-md)', cursor: 'pointer',
+                       background: 'var(--primary)', color: '#0a0a0a', fontWeight: 700, fontSize: 13,
+                       opacity: busy || nothing ? 0.5 : 1 }}>
+              {busy ? 'ממזג…' : 'מזג והפעל'}
+            </button>
+            <button onClick={onClose}
+              style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', cursor: 'pointer',
+                       background: 'transparent', border: '1px solid var(--border)',
+                       color: 'var(--text-2)', fontWeight: 600, fontSize: 13 }}>ביטול</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function AgentEditor({ agent: fromApp, onUpdate, onBack, initialTab, onTest, onReload }) {
     const [tab, setTab] = useState(initialTab || 'configuration');
     const TABS = ['configuration','skills','tools','knowledge','manual tests','export','whatsapp'];
+
+    /**
+     * Which branch this editor is on.
+     *
+     * null means the one the app already holds — main, or the draft the server
+     * hands back once there is one. Choosing anything else loads that branch
+     * here and keeps its edits here, so the app's own copy is never quietly
+     * replaced by a version that is not live.
+     */
+    const [picked, setPicked] = useState(null);
+    const [loaded, setLoaded] = useState(null);
+    const [loadError, setLoadError] = useState(null);
+    const agent = picked ? loaded : fromApp;
+
+    useEffect(() => {
+      if (!picked) { setLoaded(null); return; }
+      let stale = false;
+      setLoadError(null);
+      apiAgentOnBranch(fromApp.id, picked)
+        .then(a => { if (!stale) setLoaded(a); })
+        .catch(e => { if (!stale) { setLoadError(e.message); setPicked(null); } });
+      return () => { stale = true; };
+    }, [picked, fromApp.id]);
+
+    const saveOnBranch = useCallback(async (next) => {
+      try { await apiSaveOnBranch(next, picked); }
+      catch (e) { setLoadError(e.message); }
+    }, [picked]);
+    const saveOnBranchDebounced = useDebounce(saveOnBranch, 600);
+
+    const update = useCallback((next) => {
+      if (!picked) return onUpdate(next);
+      setLoaded(next);
+      saveOnBranchDebounced(next);
+    }, [picked, onUpdate, saveOnBranchDebounced]);
+
+    /* Picking the branch the app already holds just means "stop overriding". */
+    function switchTo(name) {
+      setPicked(name === (fromApp._branch || 'main') ? null : name);
+    }
+
+    if (picked && !loaded) {
+      return (
+        <div style={{ padding: 40, color: 'var(--text-muted)', fontSize: 14 }}>
+          טוען את <span dir="ltr" style={{ fontFamily: 'monospace' }}>{picked}</span>…
+        </div>
+      );
+    }
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -4141,6 +4461,13 @@
             </button>
           )}
         </div>
+
+        <BranchBar agent={agent} branch={picked} onSwitch={switchTo}
+                   onChanged={() => { setPicked(null); onReload && onReload(); }} />
+        {loadError && (
+          <div style={{ marginBottom: 12, fontSize: 12.5, color: 'var(--danger)' }}>{loadError}</div>
+        )}
+
         {/* Tab bar */}
         <div style={{ display: 'flex', gap: 2, marginBottom: 22, background: 'var(--bg-panel)', padding: 4, borderRadius: 'var(--r-md)', width: 'fit-content', border: '1px solid var(--border)' }}>
           {TABS.map(t => (
@@ -4159,13 +4486,13 @@
         </div>
         {/* Content */}
         <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4 }}>
-          {tab === 'configuration' && <ConfigurationTab agent={agent} onUpdate={onUpdate} />}
-          {tab === 'skills' && <SkillsTab agent={agent} onUpdate={onUpdate} />}
-          {tab === 'tools' && <ToolsTab agent={agent} onUpdate={onUpdate} />}
+          {tab === 'configuration' && <ConfigurationTab agent={agent} onUpdate={update} />}
+          {tab === 'skills' && <SkillsTab agent={agent} onUpdate={update} />}
+          {tab === 'tools' && <ToolsTab agent={agent} onUpdate={update} />}
           {tab === 'knowledge' && <KnowledgeTab agent={agent} />}
           {tab === 'export' && <ExportTab agent={agent} />}
           {tab === 'manual tests' && <ManualTestsTab agent={agent} onTest={onTest} />}
-          {tab === 'whatsapp' && <WhatsAppTab agent={agent} onUpdate={onUpdate} />}
+          {tab === 'whatsapp' && <WhatsAppTab agent={agent} onUpdate={update} />}
         </div>
       </div>
     );
@@ -7829,7 +8156,47 @@ npm run migrate            # הרצה בפועל`}</Block>
    * The agent editor on a phone: back, name and Test in the bar; the tabs as a
    * strip you can swipe; each tab stacked in one column.
    */
-  function MobileAgentEditor({ agent, onUpdate, onBack, onTest, initialTab }) {
+  /**
+   * The phone's half of the draft.
+   *
+   * Editing on a phone writes to the draft exactly as it does on a desktop, so
+   * without this there would be no way to make an edit live from a phone. It
+   * carries publish and discard only — choosing branches and splitting traffic
+   * are desktop work.
+   */
+  function MobileDraftBar({ agent, onChanged }) {
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    if ((agent._branch || 'main') !== 'draft') return null;
+
+    async function act(fn) {
+      setBusy(true); setError(null);
+      try { await fn(); onChanged && onChanged(); }
+      catch (e) { setError(e.message); }
+      finally { setBusy(false); }
+    }
+
+    return (
+      <div style={{ flexShrink: 0, padding: '10px 12px', borderBottom: '1px solid var(--border)',
+                    background: 'rgba(250,204,21,0.08)' }}>
+        <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 8 }}>
+          שינויים שלא פורסמו. הסוכן החי עונה מהגרסה הקודמת.
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => act(() => apiBranchAction(agent.id, { action: 'publish' }))} disabled={busy}
+            style={{ flex: 1, height: 38, borderRadius: 'var(--r-md)', background: 'var(--primary)',
+                     color: '#0a0a0a', fontWeight: 700, fontSize: 13 }}>{busy ? '…' : 'פרסם'}</button>
+          <button onClick={() => { if (confirm('לבטל את הטיוטה?')) act(() => apiDeleteBranch(agent.id, 'draft')); }}
+            disabled={busy}
+            style={{ height: 38, padding: '0 16px', borderRadius: 'var(--r-md)', background: 'transparent',
+                     border: '1px solid var(--border)', color: 'var(--text-2)', fontWeight: 600, fontSize: 13 }}>בטל</button>
+        </div>
+        {error && <div style={{ marginTop: 8, fontSize: 12, color: 'var(--danger)' }}>{error}</div>}
+      </div>
+    );
+  }
+
+  function MobileAgentEditor({ agent, onUpdate, onBack, onTest, initialTab, onReload }) {
     const [tab, setTab] = useState(initialTab || 'configuration');
     const TABS = [
       ['configuration', 'Configuration'], ['skills', 'Skills'], ['tools', 'Tools'], ['knowledge', 'Knowledge'],
@@ -7844,6 +8211,7 @@ npm run migrate            # הרצה בפועל`}</Block>
               {MobileIcons.play} Test
             </button>
           )} />
+        <MobileDraftBar agent={agent} onChanged={onReload} />
         <div className="m-scroll-x" style={{ display: 'flex', gap: 2, padding: '10px 12px', overflowX: 'auto', flexShrink: 0, borderBottom: '1px solid var(--border)' }}>
           {TABS.map(([id, label]) => (
             <button key={id} onClick={() => setTab(id)}
@@ -7869,7 +8237,7 @@ npm run migrate            # הרצה בפועל`}</Block>
   function MobileApp({
     state, dispatch, nav, setNav, user, theme, onToggleTheme, onLogout, settings, onSaveSettings,
     onCreate, onUpdate, onDelete, onDuplicate, editingAgent, chatAgent, editorTab, setEditorTab,
-    adminSelectedUser, setAdminSelectedUser,
+    adminSelectedUser, setAdminSelectedUser, onReload,
   }) {
     const [assistantOpen, setAssistantOpen] = useState(false);
     const [seed, setSeed] = useState(null);
@@ -7897,6 +8265,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     if (inEditor) {
       screen = (
         <MobileAgentEditor agent={editingAgent} initialTab={editorTab} onUpdate={onUpdate}
+          onReload={onReload}
           onTest={() => dispatch({ type: 'OPEN_CHAT', id: editingAgent.id })}
           onBack={() => { setEditorTab(null); dispatch({ type: 'SET_VIEW', view: 'list' }); }} />
       );
@@ -8017,15 +8386,15 @@ npm run migrate            # הרצה בפועל`}</Block>
       return saved;
     }
 
-    // Load agents on mount
-    useEffect(() => {
-      apiList().then(agents => {
-        dispatch({ type: 'HYDRATE', agents });
-        setLoading(false);
-      }).catch(() => {
-        setLoading(false);
-      });
-    }, []);
+    /* Re-reads the agents from the server. Used on mount, and again whenever a
+       publish or a discarded draft has changed which version is the live one. */
+    const hydrate = useCallback(() => (
+      apiList()
+        .then(agents => { dispatch({ type: 'HYDRATE', agents }); setLoading(false); })
+        .catch(() => setLoading(false))
+    ), []);
+
+    useEffect(() => { hydrate(); }, [hydrate]);
 
     // Returning from the Gmail OAuth flow: reopen the agent whose mailbox was
     // just connected, on the tab the button lives on.
@@ -8122,6 +8491,7 @@ npm run migrate            # הרצה בפועל`}</Block>
         editingAgent={editingAgent} chatAgent={chatAgent}
         editorTab={editorTab} setEditorTab={setEditorTab}
         adminSelectedUser={adminSelectedUser} setAdminSelectedUser={setAdminSelectedUser}
+        onReload={hydrate}
       />
     );
 
@@ -8171,6 +8541,7 @@ npm run migrate            # הרצה בפועל`}</Block>
               agent={editingAgent}
               initialTab={editorTab}
               onUpdate={handleUpdate}
+              onReload={hydrate}
               onTest={() => dispatch({ type: 'OPEN_CHAT', id: editingAgent.id })}
               onBack={() => { setEditorTab(null); dispatch({ type: 'SET_VIEW', view: 'list' }); }}
             />

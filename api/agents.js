@@ -7,12 +7,18 @@ export default async function handler(req, res) {
   if (!user) return;
 
   if (req.method === 'GET') {
+    /* An agent with an open draft is shown as its draft, because that is what
+       the person editing last left behind — main is what customers see, and
+       returning main here would make every unpublished edit look lost. */
     const rows = await sql`
-      select data from agents
-      where user_id = ${user.userId}
-      order by created_at desc
+      select a.data,
+             (select b.data from agent_branches b
+               where b.agent_id = a.id and b.kind = 'draft' and b.merged_at is null) as draft
+      from agents a
+      where a.user_id = ${user.userId}
+      order by a.created_at desc
     `;
-    return res.json(rows.map(r => r.data));
+    return res.json(rows.map(r => (r.draft ? { ...r.draft, _branch: 'draft' } : { ...r.data, _branch: 'main' })));
   }
 
   if (req.method === 'POST') {

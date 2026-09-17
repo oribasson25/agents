@@ -1,0 +1,105 @@
+/**
+ * Actually renders the new pieces of agentforge.html. A component that throws
+ * on its first render takes the whole tree down, and the file has no build
+ * step to catch it — so the only honest check is to run it.
+ */
+import fs from 'fs';
+import vm from 'vm';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const babel = require('@babel/standalone');
+const React = require('react');
+const ReactDOMServer = require('react-dom/server');
+
+const src = fs.readFileSync(new URL('../agentforge.html', import.meta.url).pathname, 'utf8');
+const body = src.match(/<script type="text\/babel"[^>]*>([\s\S]*?)<\/script>/)[1];
+
+/* Hand the probe the components it wants to render. */
+const exposed = ['TokensSection', 'PullCommandButton', 'SettingsPanel', 'AgentEditor', 'BranchBar', 'MergePanel', 'MobileDraftBar', 'MobileAgentEditor'];
+const code = babel.transform(
+  body + `\n;globalThis.__probe = { ${exposed.map(n => `${n}: typeof ${n} === 'function' ? ${n} : null`).join(', ')} };`,
+  { presets: ['react'] }).code;
+
+const store = () => ({ getItem: () => null, setItem() {}, removeItem() {} });
+const calls = [];
+const sandbox = {
+  React, ReactDOM: { createRoot: () => ({ render() {} }) }, console,
+  window: { location: { origin: 'https://www.8legs.world', hash: '' },
+            matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+            addEventListener() {}, removeEventListener() {}, dispatchEvent() {} },
+  document: { getElementById: () => ({}), documentElement: { setAttribute() {}, style: {} },
+              addEventListener() {}, removeEventListener() {}, createElement: () => ({ style: {} }) },
+  localStorage: store(), sessionStorage: store(),
+  navigator: { clipboard: { writeText: () => Promise.resolve() } },
+  fetch: (url, opts) => { calls.push(`${opts?.method || 'GET'} ${url}`);
+                          return Promise.resolve({ ok: true, status: 200, json: async () => [] }); },
+  setTimeout, clearTimeout, setInterval, clearInterval, crypto: globalThis.crypto, Date, Math, JSON,
+  URLSearchParams, URL, TextEncoder, TextDecoder, Intl,
+};
+sandbox.globalThis = sandbox;
+sandbox.window.localStorage = sandbox.localStorage;
+sandbox.window.sessionStorage = sandbox.sessionStorage;
+vm.createContext(sandbox);
+vm.runInContext(code, sandbox, { filename: 'agentforge.html' });
+
+const probe = sandbox.__probe;
+let failed = 0;
+const render = (label, element) => {
+  try {
+    const html = ReactDOMServer.renderToString(element);
+    console.log(`✓ ${label} renders (${html.length} chars)`);
+    return html;
+  } catch (e) { console.log(`✗ ${label}: ${e.message}`); failed++; return ''; }
+};
+
+for (const name of exposed) if (!probe[name]) { console.log(`✗ ${name} is not defined`); failed++; }
+
+const styles = { sectionStyle: {}, sectionHeader: {}, rowStyle: {}, iconBox: {} };
+const tokens = render('TokensSection', React.createElement(probe.TokensSection, styles));
+if (tokens && !tokens.includes('צור טוקן')) { console.log('✗ TokensSection has no create button'); failed++; }
+
+const pull = render('PullCommandButton',
+  React.createElement(probe.PullCommandButton, { agentId: '804fe690-c8b6-4e3a-bb8f-1305bd1721d7' }));
+if (pull && !pull.includes('8legs pull')) { console.log('✗ PullCommandButton does not show the command'); failed++; }
+
+const settings = render('SettingsPanel (with the new section)', React.createElement(probe.SettingsPanel, {
+  theme: 'dark', onToggleTheme() {}, user: { email: 'a@b.c' }, onLogout() {},
+  settings: { provider: 'claude', apiKey: '', model: 'claude-sonnet-4-5' }, onSaveSettings: async () => {},
+}));
+if (settings && !settings.includes('Personal access tokens')) {
+  console.log('✗ SettingsPanel does not include the tokens section'); failed++;
+}
+
+const editor = render('AgentEditor header', React.createElement(probe.AgentEditor, {
+  agent: { id: 'a-1', name: 'ביטוח רכב', avatar: '🚗', skills: [], tools: [], basePrompt: '' },
+  onUpdate() {}, onBack() {}, onTest() {},
+}));
+if (editor && !editor.includes('8legs pull')) { console.log('✗ the editor header has no pull button'); failed++; }
+
+const bar = render('BranchBar on a draft', React.createElement(probe.BranchBar, {
+  agent: { id: 'a-1', _branch: 'draft' }, branch: null, onSwitch() {}, onChanged() {},
+}));
+if (bar && !bar.includes('פרסם')) { console.log('✗ the draft bar has no publish button'); failed++; }
+if (bar && !bar.includes('הסוכן החי')) { console.log('✗ the draft bar does not say the live agent is unchanged'); failed++; }
+
+const live = render('BranchBar on main', React.createElement(probe.BranchBar, {
+  agent: { id: 'a-1', _branch: 'main' }, branch: null, onSwitch() {}, onChanged() {},
+}));
+if (live && live.includes('פרסם')) { console.log('✗ main should not offer publish'); failed++; }
+
+const mDraft = render('MobileDraftBar on a draft', React.createElement(probe.MobileDraftBar, {
+  agent: { id: 'a-1', _branch: 'draft' }, onChanged() {},
+}));
+if (mDraft && !mDraft.includes('פרסם')) { console.log('✗ the phone draft bar cannot publish'); failed++; }
+const mLive = ReactDOMServer.renderToString(React.createElement(probe.MobileDraftBar, {
+  agent: { id: 'a-1', _branch: 'main' }, onChanged() {},
+}));
+if (mLive !== '') { console.log('✗ the phone draft bar shows on main'); failed++; }
+else console.log('✓ the phone draft bar stays hidden on main');
+
+render('MergePanel', React.createElement(probe.MergePanel, {
+  agentId: 'a-1', branch: 'warmer-tone', onClose() {}, onMerged() {},
+}));
+
+console.log(`\n${failed ? `${failed} FAILURE(S)` : 'all green'}`);
+process.exit(failed ? 1 : 0);

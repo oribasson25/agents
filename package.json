@@ -13,6 +13,8 @@
     "probe:files": "node --import ./probes/stub-db.mjs probes/files-api-probe.mjs",
     "probe": "npm run probe:roundtrip && npm run probe:files && npm run probe:branches && npm run probe:cli",
     "probe:cli": "node probes/cli-probe.mjs",
-    "probe:branches": "node --import ./probes/stub-db.mjs probes/branches-probe.mjs"
+    "probe:branches": "node --import ./probes/stub-db.mjs probes/branches-probe.mjs",
+    "probe:jsx": "node probes/check-jsx.mjs",
+    "probe:render": "node probes/render-probe.mjs"
   }
 }
