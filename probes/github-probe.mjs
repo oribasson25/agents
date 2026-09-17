@@ -157,5 +157,35 @@ reset();
 r = await deliver({ ...push('sha-6'), repository: { name: 'someone-elses', owner: { login: 'x', name: 'x' } } });
 check('an unlinked repository is refused', r.statusCode === 404);
 
+/* ── a repository made before the webhook secret existed ────────────────── */
+{
+  let repoRow = { owner: '8legs-agents', repo: 'car-insurance-a1', webhook_id: null };
+  const hookCalls = [];
+  const prevDb = globalThis.__db, prevFetch = globalThis.fetch;
+  globalThis.__db = (text, p) => {
+    const t = text.replace(/\s+/g, ' ').trim();
+    if (t.startsWith('select owner, repo, webhook_id from agent_repos')) return [repoRow];
+    if (t.startsWith('update agent_repos set webhook_id')) { repoRow.webhook_id = p[0]; return []; }
+    return prevDb(text, p);
+  };
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    const ok = (b) => ({ ok: true, status: 200, text: async () => JSON.stringify(b) });
+    if (/\/repos\/[^/]+\/[^/]+\/hooks$/.test(u) && (!opts.method || opts.method === 'GET')) return ok([]);
+    if (/\/hooks$/.test(u) && opts.method === 'POST') { hookCalls.push(JSON.parse(opts.body)); return ok({ id: 4242 }); }
+    if (/\/repos\/[^/]+\/[^/?]+$/.test(u)) return ok({ html_url: 'https://github.com/x/y', pushed_at: '2026-01-01' });
+    return prevFetch(url, opts);
+  };
+
+  const link = await GH.ensureAgentRepo({ agent: AGENT, files: {}, appUrl: 'https://www.8legs.world' });
+  check('a repo with no hook gets one on a later pull', repoRow.webhook_id === 4242, JSON.stringify(repoRow));
+  check('and the hook points at this platform',
+        hookCalls[0]?.config?.url === 'https://www.8legs.world/api/github/webhook', JSON.stringify(hookCalls[0]));
+  check('and the pull still returns the clone url', /car-insurance-a1\.git$/.test(link?.cloneUrl || ''), link?.cloneUrl);
+
+  globalThis.__db = prevDb;
+  globalThis.fetch = prevFetch;
+}
+
 console.log(`\n${failed ? `${failed} FAILURE(S)` : 'all green'}`);
 process.exit(failed ? 1 : 0);

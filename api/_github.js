@@ -180,8 +180,20 @@ export async function ensureAgentRepo({ agent, files, appUrl }) {
   if (!githubConfigured()) return null;
   const { sql } = await import('./_db.js');
   try {
-    const [existing] = await sql`select owner, repo from agent_repos where agent_id = ${agent.id}`;
-    if (existing) return { ...existing, cloneUrl: `https://github.com/${existing.owner}/${existing.repo}.git` };
+    const [existing] = await sql`select owner, repo, webhook_id from agent_repos where agent_id = ${agent.id}`;
+    if (existing) {
+      /* A repository made before GITHUB_WEBHOOK_SECRET was configured has no
+         hook, and without one a `git push` reaches nothing. Returning early
+         would leave it that way for good, so a later pull installs it. */
+      if (!existing.webhook_id && process.env.GITHUB_WEBHOOK_SECRET && appUrl) {
+        const fixed = await ensureRepo({ agent, appUrl, webhookSecret: process.env.GITHUB_WEBHOOK_SECRET });
+        if (fixed.webhookId) {
+          await sql`update agent_repos set webhook_id = ${fixed.webhookId} where agent_id = ${agent.id}`;
+        }
+      }
+      return { owner: existing.owner, repo: existing.repo,
+               cloneUrl: `https://github.com/${existing.owner}/${existing.repo}.git` };
+    }
 
     const made = await ensureRepo({ agent, appUrl, webhookSecret: process.env.GITHUB_WEBHOOK_SECRET });
     const { sha } = await pushTree({
