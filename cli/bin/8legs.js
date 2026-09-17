@@ -28,17 +28,34 @@ for (let i = 0; i < argv.length; i++) {
 
 const die = (msg) => { console.error(C.red('✗ ') + msg); process.exit(1); };
 
+/**
+ * Asks a question, optionally without echoing the answer.
+ *
+ * The muting goes through readline's own output hook. An earlier version
+ * cleared and redrew the line on every `data` event instead, which printed the
+ * prompt twice and made a paste impossible to read back.
+ */
 function ask(question, { hidden = false } = {}) {
+  /* Piped input: read the line, do not try to be interactive about it. */
+  if (!process.stdin.isTTY) {
+    return new Promise(resolve => {
+      let buf = '';
+      process.stdin.setEncoding('utf8');
+      process.stdin.on('data', c => { buf += c; });
+      process.stdin.on('end', () => resolve(buf.split('\n')[0].trim()));
+    });
+  }
   return new Promise(resolve => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-    if (hidden) {
-      /* Keep the token off the screen and out of the shell's scrollback. */
-      const onData = () => { readline.clearLine(process.stdout, 0); readline.cursorTo(process.stdout, 0);
-                             process.stdout.write(question); };
-      process.stdin.on('data', onData);
-      rl.question(question, answer => { process.stdin.off('data', onData); process.stdout.write('\n');
-                                        rl.close(); resolve(answer.trim()); });
-    } else rl.question(question, answer => { rl.close(); resolve(answer.trim()); });
+    rl.question(question, answer => {
+      rl.muted = false;
+      if (hidden) process.stdout.write('\n');
+      rl.close();
+      resolve(answer.trim());
+    });
+    /* Set after question() so the prompt itself still prints. */
+    rl.muted = hidden;
+    rl._writeToOutput = (str) => { if (!rl.muted) rl.output.write(str); };
   });
 }
 
@@ -55,15 +72,27 @@ const commands = {};
 
 commands.login = async () => {
   const host = flags.host || DEFAULT_HOST;
-  console.log(`Create a token at ${C.cyan(`${host}/#settings`)} → Personal access tokens.\n`);
-  const token = await ask('Paste your token: ', { hidden: true });
+  let token = typeof flags.token === 'string' ? flags.token.trim() : '';
+  if (!token) {
+    console.log(`Create a token at ${C.cyan(`${host}/#settings`)} → Personal access tokens.\n`);
+    token = await ask('Paste your token: ', { hidden: true });
+  }
   if (!token) die('No token given.');
-  const me = await api('/api/agents', { token, host }).catch(e => {
-    if (e.status === 401) die('That token was not accepted.');
+  if (!token.startsWith('8legs_pat_')) {
+    die('That does not look like a personal access token — they start with `8legs_pat_`.\n' +
+        `  Create one at ${host}/#settings → Personal access tokens.`);
+  }
+
+  const agents = await api('/api/agents', { token, host }).catch(e => {
+    if (e.status === 401) {
+      die('That token was not accepted.\n' +
+          '  It may have been revoked, or copied incompletely — it is only shown once,\n' +
+          `  so if in doubt create a fresh one at ${host}/#settings`);
+    }
     throw e;
   });
   writeConfig({ ...readConfig(), token, host });
-  console.log(C.green('✓ ') + `Logged in to ${host}. ${me.length} agent(s) available.`);
+  console.log(C.green('✓ ') + `Logged in to ${host}. ${agents.length} agent(s) available.`);
   console.log(C.dim(`  Stored in ${configPath}`));
 };
 
@@ -429,6 +458,7 @@ ${C.bold('8legs')} — edit an agent in your own editor, then push it
   ${C.bold('8legs traffic --stop')}     all conversations back to main
 
   ${C.dim('--host <url>')}       talk to a different installation
+  ${C.dim('--token <token>')}    log in without being prompted
   ${C.dim('--dir <path>')}       pull into a specific folder
   ${C.dim('--branch <name>')}    pull a branch instead of main
   ${C.dim('--force')}            let pull or checkout overwrite local changes

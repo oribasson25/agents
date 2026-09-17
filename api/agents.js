@@ -1,9 +1,11 @@
 import { sql } from './_db.js';
-import { checkAuth } from './_auth.js';
+import { checkAuthOrToken } from './_auth.js';
 import { findPhoneNumberConflict, PHONE_CONFLICT_MESSAGE } from './_whatsappClaim.js';
 
 export default async function handler(req, res) {
-  const user = checkAuth(req, res);
+  /* The CLI lists agents here to find an id, and `8legs login` calls it to
+     check the token it was just given — so this has to take one. */
+  const user = await checkAuthOrToken(req, res);
   if (!user) return;
 
   if (req.method === 'GET') {
