@@ -99,7 +99,8 @@ commands.pull = async () => {
     agentId = matches[0].id;
   }
 
-  const pulled = await api(`/api/agents/${agentId}/files`);
+  const branch = flags.branch || (existing ? existing.lock.branch : null);
+  const pulled = await api(`/api/agents/${agentId}/files${branch ? `?branch=${encodeURIComponent(branch)}` : ''}`);
   const root = existing ? existing.root
     : path.resolve(flags.dir || slug(pulled.files) || `agent-${agentId.slice(0, 8)}`);
 
@@ -132,7 +133,8 @@ commands.status = async () => {
   const { added, modified, deleted } = changes(root, lock);
   console.log(`${C.bold(lock.branch || 'main')}  ${C.dim(lock.agentId)}`);
 
-  const remote = await api(`/api/agents/${lock.agentId}/files`).catch(() => null);
+  const remote = await api(
+    `/api/agents/${lock.agentId}/files?branch=${encodeURIComponent(lock.branch || 'main')}`).catch(() => null);
   if (remote && remote.version !== lock.version) {
     console.log(C.yellow('  ! ') + 'The agent changed on the platform since you pulled.');
     console.log(C.dim('    Run `8legs pull` to take those changes first.'));
@@ -146,7 +148,8 @@ commands.status = async () => {
 
 commands.diff = async () => {
   const { root, lock } = requireRoot();
-  const pulled = await api(`/api/agents/${lock.agentId}/files`);
+  const pulled = await api(
+    `/api/agents/${lock.agentId}/files?branch=${encodeURIComponent(lock.branch || 'main')}`);
   const { added, modified, deleted, files } = changes(root, lock);
   const only = args[1];
 
@@ -246,7 +249,7 @@ commands.push = async () => {
 
   let result;
   try {
-    result = await api(`/api/agents/${lock.agentId}/files`,
+    result = await api(`/api/agents/${lock.agentId}/files?branch=${encodeURIComponent(lock.branch || 'main')}`,
                        { method: 'PUT', body: { baseVersion: lock.version, files } });
   } catch (e) {
     if (e instanceof ApiError && e.status === 409) {
@@ -266,6 +269,95 @@ commands.push = async () => {
   const n = added.length + modified.length + deleted.length;
   console.log(C.green('✓ ') + `Pushed ${n} change(s) to ${C.bold(result.branch)}`);
   console.log(C.dim(`  ${result.version}`));
+};
+
+commands.branches = async () => {
+  const { lock } = requireRoot();
+  const { branches } = await api(`/api/agents/${lock.agentId}/branches`);
+  const width = Math.max(...branches.map(b => b.name.length));
+  for (const b of branches) {
+    const here = b.name === (lock.branch || 'main') ? C.cyan(' ←') : '';
+    const share = b.traffic_weight ? C.dim(`  ${b.traffic_weight}% of conversations`) : '';
+    const kind = b.kind === 'draft' ? C.dim('  (the interface\'s draft)') : b.live ? C.dim('  (live)') : '';
+    console.log(`  ${b.name.padEnd(width)}${kind}${share}${here}`);
+  }
+};
+
+commands.branch = async () => {
+  const { root, lock } = requireRoot();
+  const name = args[1];
+  if (!name) die('Give the branch a name: `8legs branch warmer-tone`');
+
+  const local = changes(root, lock);
+  if ([...local.added, ...local.modified, ...local.deleted].length) {
+    die('You have uncommitted local changes. Push them, or undo them, before opening a branch.');
+  }
+  const made = await api(`/api/agents/${lock.agentId}/branches`,
+                         { method: 'POST', body: { name, from: lock.branch || 'main' } });
+  console.log(C.green('✓ ') + `Opened ${C.bold(made.name)} from ${made.from}`);
+  await checkout(root, lock, made.name);
+};
+
+commands.checkout = async () => {
+  const { root, lock } = requireRoot();
+  const name = args[1];
+  if (!name) die('Which branch? Try `8legs branches`.');
+  const local = changes(root, lock);
+  const dirty = [...local.added, ...local.modified, ...local.deleted];
+  if (dirty.length && !flags.force) {
+    die('Switching would overwrite local changes:\n' + dirty.map(p => `  ${p}`).join('\n') +
+        '\n\nPush them first, or switch with --force.');
+  }
+  await checkout(root, lock, name);
+};
+
+/** Replaces the folder's contents with another branch's. */
+async function checkout(root, lock, name) {
+  let pulled;
+  try {
+    pulled = await api(`/api/agents/${lock.agentId}/files?branch=${encodeURIComponent(name)}`);
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) die(`No branch called "${name}". Try \`8legs branches\`.`);
+    throw e;
+  }
+  /* Files the other branch does not have would otherwise linger and be read
+     as local additions the moment you ran status. */
+  for (const rel of Object.keys(lock.files || {})) {
+    if (!(rel in pulled.files)) { try { fs.unlinkSync(path.join(root, rel)); } catch {} }
+  }
+  writeTree(root, pulled.files);
+  writeLock(root, { agentId: lock.agentId, branch: pulled.branch, version: pulled.version,
+                    host: lock.host, files: pulled.files });
+  console.log(C.green('✓ ') + `Now on ${C.bold(pulled.branch)}`);
+}
+
+commands.merge = async () => {
+  const { lock } = requireRoot();
+  const name = args[1] || lock.branch;
+  if (!name || name === 'main') die('Name the branch to merge into main.');
+  const merged = await api(`/api/agents/${lock.agentId}/branches`,
+                           { method: 'POST', body: { action: 'merge', branch: name } });
+  console.log(C.green('✓ ') + `Merged ${C.bold(merged.branch)} into main — it is live now.`);
+  console.log(C.dim('  Run `8legs checkout main` to follow it.'));
+};
+
+commands.traffic = async () => {
+  const { lock } = requireRoot();
+  if (flags.stop) {
+    const stopped = await api(`/api/agents/${lock.agentId}/branches`,
+                              { method: 'PUT', body: { action: 'stop' } });
+    console.log(C.green('✓ ') + (stopped.stopped.length
+      ? `All conversations back to main (was: ${stopped.stopped.join(', ')}).`
+      : 'Nothing was taking traffic.'));
+    if (stopped.released) console.log(C.dim(`  ${stopped.released} quiet conversation(s) released.`));
+    return;
+  }
+  const name = args[1] || lock.branch;
+  const weight = args[2];
+  if (weight === undefined) die('How much? `8legs traffic warmer-tone 20`, or `8legs traffic --stop`.');
+  const set = await api(`/api/agents/${lock.agentId}/branches`,
+                        { method: 'PUT', body: { branch: name, weight: Number(weight) } });
+  console.log(C.green('✓ ') + `${set.branch} takes ${set.traffic_weight}% of conversations, main takes ${set.main}%.`);
 };
 
 commands.open = async () => {
@@ -294,9 +386,17 @@ ${C.bold('8legs')} — edit an agent in your own editor, then push it
   ${C.bold('8legs push')}               send the changes
   ${C.bold('8legs open')}               open this agent in the browser
 
+  ${C.bold('8legs branches')}           the branches, and their share of conversations
+  ${C.bold('8legs branch <name>')}      open one and switch to it
+  ${C.bold('8legs checkout <name>')}    switch to another one
+  ${C.bold('8legs merge [name]')}       apply it to main
+  ${C.bold('8legs traffic <name> <%>')} send a share of conversations to it
+  ${C.bold('8legs traffic --stop')}     all conversations back to main
+
   ${C.dim('--host <url>')}       talk to a different installation
   ${C.dim('--dir <path>')}       pull into a specific folder
-  ${C.dim('--force')}            let pull overwrite local changes
+  ${C.dim('--branch <name>')}    pull a branch instead of main
+  ${C.dim('--force')}            let pull or checkout overwrite local changes
 `;
 
 const name = args[0];

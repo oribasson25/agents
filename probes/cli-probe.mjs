@@ -119,6 +119,45 @@ const retry = run(['push']);
 check('the redone push lands', retry.ok && (await current()).basePrompt.includes('Always confirm the plate'), retry.out);
 check('and the UI edit is still there', (await current()).openingMessage === 'Changed in the UI');
 
+/* ── branches ─────────────────────────────────────────────────────────── */
+const opened = run(['branch', 'warmer-tone']);
+check('branch opens one and switches to it',
+      opened.ok && opened.out.includes('Now on warmer-tone'), opened.out);
+check('the lock followed the switch',
+      JSON.parse(fs.readFileSync(path.join(ROOT, '.8legs/lock.json'), 'utf8')).branch === 'warmer-tone');
+check('branches marks where you are', run(['branches']).out.includes('warmer-tone'));
+
+/* An edit on the branch must not touch the live agent. */
+const liveBefore = (await current()).basePrompt;
+fs.writeFileSync(promptPath, fs.readFileSync(promptPath, 'utf8').replace('## Role', '## Role (warmer)'));
+const branchPush = run(['push']);
+check('a push on a branch succeeds', branchPush.ok && branchPush.out.includes('warmer-tone'), branchPush.out);
+check('and leaves the live agent alone', (await current()).basePrompt === liveBefore);
+
+/* Switching back gives main's content, not the branch's. */
+const backToMain = run(['checkout', 'main']);
+check('checkout main comes back', backToMain.ok && backToMain.out.includes('Now on main'), backToMain.out);
+check('main still has its own prompt',
+      !fs.readFileSync(promptPath, 'utf8').includes('(warmer)'));
+
+/* Traffic. */
+const split = run(['traffic', 'warmer-tone', '20']);
+check('traffic splits the conversations', split.ok && split.out.includes('20%'), split.out);
+const tooMuch = run(['traffic', 'warmer-tone', '140'], ROOT, true);
+check('an impossible share is refused', !tooMuch.ok, tooMuch.out);
+const stop = run(['traffic', '--stop']);
+check('stop brings everything back to main', stop.ok && stop.out.includes('back to main'), stop.out);
+
+/* Merge. */
+const merged = run(['merge', 'warmer-tone']);
+check('merge applies the branch', merged.ok, merged.out);
+check('the live agent has the branch prompt now', (await current()).basePrompt.includes('(warmer)'));
+check('a merged branch is gone from the list', !run(['branches']).out.includes('warmer-tone'));
+
+/* Checking out a missing branch must say so, not crash. */
+const missing = run(['checkout', 'no-such-branch'], ROOT, true);
+check('an unknown branch is a clear message', !missing.ok && missing.out.includes('No branch called'), missing.out);
+
 console.log(`\n${failed ? `${failed} FAILURE(S)` : 'all green'}`);
 proc.kill();
 process.exit(failed ? 1 : 0);
