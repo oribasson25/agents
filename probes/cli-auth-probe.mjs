@@ -66,5 +66,25 @@ for (const route of [...called].sort()) {
   if (!ok) failed++;
 }
 
+/* ── the documented command list has to match the real one ──────────────── */
+const cliSource = fs.readFileSync(path.join(ROOT, 'cli/bin/8legs.js'), 'utf8');
+const real = [...cliSource.matchAll(/^commands\.([a-z]+)\s*=/gm)].map(m => m[1]);
+const docs = fs.readFileSync(path.join(ROOT, 'agentforge.html'), 'utf8');
+const cliDocs = docs.slice(docs.indexOf('      cli: ('), docs.indexOf('      widget: ('));
+
+console.log(`\nthe CLI has ${real.length} command(s)`);
+const undocumented = real.filter(c => !new RegExp(`'${c}[ <\\[']`).test(cliDocs) && !cliDocs.includes(`'${c}'`));
+const unlisted = real.filter(c => !new RegExp(`8legs ${c}\\b`).test(cliSource));
+
+if (undocumented.length) {
+  console.log(`✗ not in the platform's command table: ${undocumented.join(', ')}`);
+  failed++;
+} else console.log('✓ every command is in the platform\'s command table');
+
+if (unlisted.length) {
+  console.log(`✗ not in \`8legs --help\`: ${unlisted.join(', ')}`);
+  failed++;
+} else console.log('✓ every command is in `8legs --help`');
+
 console.log(`\n${failed ? `${failed} FAILURE(S)` : 'all green'}`);
 process.exit(failed ? 1 : 0);

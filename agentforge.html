@@ -4575,8 +4575,10 @@
   }
 
   /* ─────────────────── DOCS VIEW ─────────────────── */
-  function DocsView({ stacked }) {
-    const [active, setActive] = useState('intro');
+  function DocsView({ stacked, initialSection }) {
+    /* initialSection lets something else point at a page — the CLI section
+       from Settings, for instance — instead of always opening on the intro. */
+    const [active, setActive] = useState(initialSection || 'intro');
 
     const sections = [
       { id: 'intro',        label: 'מה זה 8Legs.ai' },
@@ -4589,6 +4591,7 @@
       { id: 'assistant',    label: '✨ אסיסטנט הבנייה' },
       { id: 'knowledge',    label: 'Knowledge (RAG)' },
       { id: 'test',         label: 'בדיקה ו-Manual tests' },
+      { id: 'cli',          label: '⌨ עריכה מ-IDE (CLI)' },
       { id: 'widget',       label: 'הטמעה באתר' },
       { id: 'whatsapp',     label: 'ערוץ WhatsApp' },
       { id: 'interactions', label: 'Interactions' },
@@ -4953,6 +4956,107 @@ def run(**kwargs):
           <P>הן <strong>לא</strong> מופיעות ב-<strong>Interactions</strong>, ובכוונה: שם יושבות שיחות של משתמשי קצה אמיתיים דרך הווידג'ט או WhatsApp, ואלה השיחות שלך עם הסוכן שלך.</P>
           <P><strong>כל האסיסטנטים קוראים אותן.</strong> האסיסטנטים של הכלים, הסקילים והבייס-פרומט מקבלים את ההרצות האחרונות כחלק מהקונטקסט, ואסיסטנט המערכת יכול לבקש אותן בעצמו דרך <Code>get_test_conversations</Code>. לכן אפשר לומר לאסיסטנט "הסוכן ענה לא נכון, תתקן" בלי להעתיק לו את השיחה.</P>
           <Warn>כל שיחה מתחילה מאפס — הסוכן לא זוכר שיחות קודמות. מה שצריך שיהיה זמין תמיד צריך להיות בפרומפט או בבסיס הידע.</Warn>
+        </div>
+      ),
+
+      /* ─────────────── CLI ─────────────── */
+      cli: (
+        <div dir="rtl">
+          <H2>עריכה מ-IDE</H2>
+          <P>אותו סוכן שאתה עורך בממשק אפשר למשוך לתיקייה, לערוך בעורך שלך, ולדחוף בחזרה. לכל סוכן יש גם ריפו פרטי ב-GitHub, ו-<Code>git push</Code> אליו מופעל בדיוק כמו <Code>8legs push</Code>.</P>
+
+          <H3>התקנה</H3>
+          <Block>{`npm i -g @8legs/cli     # ואז 8legs <פקודה> מכל תיקייה
+npx @8legs/cli <פקודה>   # בלי להתקין כלום`}</Block>
+          <P>דורש Node 18 ומעלה. אין לחבילה שום תלות חיצונית.</P>
+
+          <H3>התחברות</H3>
+          <P>צור טוקן ב-<strong>Settings → Personal access tokens</strong>. הוא מוצג פעם אחת בלבד — בשרת נשמר רק ה-hash שלו.</P>
+          <Block>{`8legs login
+8legs list`}</Block>
+
+          <H3>כל הפקודות</H3>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 16 }}>
+            <tbody>
+              {[
+                ['login', 'שומר טוקן. --token <t> מדלג על ההדבקה'],
+                ['logout', 'מוחק את הטוקן השמור'],
+                ['whoami', 'לאיזו התקנה אתה מחובר, וכמה סוכנים יש'],
+                ['list', 'הסוכנים שלך, עם ה-id של כל אחד'],
+                ['pull <סוכן>', 'מוריד סוכן לתיקייה. לפי id או לפי שם'],
+                ['pull', 'מרענן את התיקייה שאתה בתוכה'],
+                ['status', 'מה שונה מקומית, ואם הסוכן זז בפלטפורמה'],
+                ['diff [קובץ]', 'השינויים עצמם, שורה-שורה'],
+                ['validate', 'בודק את התיקייה לפני דחיפה'],
+                ['push', 'שולח את השינויים'],
+                ['open', 'פותח את הסוכן בדפדפן'],
+                ['git', 'מכוון את ה-origin של התיקייה לריפו של הסוכן'],
+                ['branches', 'הבראנצ׳ים, ואחוז השיחות של כל אחד'],
+                ['branch <שם>', 'פותח בראנץ׳ ומעביר אליו את התיקייה'],
+                ['checkout <שם>', 'מחליף את התיקייה לבראנץ׳ אחר'],
+                ['merge [שם]', 'מחיל את הבראנץ׳ על main — כלומר מפעיל אותו'],
+                ['traffic <שם> <%>', 'שולח אחוז מהשיחות האמיתיות לבראנץ׳'],
+                ['traffic --stop', 'כל השיחות חוזרות ל-main'],
+              ].map(([cmd, what]) => (
+                <tr key={cmd} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td dir="ltr" style={{ padding: '7px 10px 7px 0', fontFamily: 'monospace', color: 'var(--teal)',
+                                         whiteSpace: 'nowrap', verticalAlign: 'top', textAlign: 'left' }}>{cmd}</td>
+                  <td style={{ padding: '7px 0 7px 14px', color: 'var(--text-2)', lineHeight: 1.6 }}>{what}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <H3>דגלים</H3>
+          <UL>
+            <li><Code>--branch &lt;שם&gt;</Code> — למשוך בראנץ׳ במקום main</li>
+            <li><Code>--dir &lt;נתיב&gt;</Code> — לאיזו תיקייה למשוך</li>
+            <li><Code>--force</Code> — מרשה ל-pull או ל-checkout לדרוס שינויים מקומיים</li>
+            <li><Code>--host &lt;url&gt;</Code> — התקנה אחרת של הפלטפורמה</li>
+            <li><Code>--token &lt;טוקן&gt;</Code> — התחברות בלי prompt</li>
+          </UL>
+
+          <H3>מבנה התיקייה</H3>
+          <Block>{`config.json              זהות, ערוצים, מיסוך מידע
+prompt.md                הפרומפט הבסיסי
+skills/<שם>/skill.json   למה הסקיל, ואילו כלים שלו
+skills/<שם>/prompts/skill.md   ההוראות שלו
+tools/<שם>/tool.json     פרמטרים, חבילות, שמות משתני סביבה
+tools/<שם>/run.py        הקוד
+AGENTS.md                איך לערוך את הסוכן — בשביל Claude Code
+.8legs/lock.json         id, בראנץ׳, גרסה`}</Block>
+
+          <Warn>אל תשנה <Code>id</Code> באף קובץ. זה איך שהפלטפורמה מזהה את הדבר שכבר קיים אצלה — שינוי שלו מוחק סקיל ויוצר אחר במקומו.</Warn>
+
+          <H3>מה לא נמצא בתיקייה</H3>
+          <UL>
+            <li><strong>סודות.</strong> מפתח ה-API, טוקני WhatsApp וערכי משתני הסביבה של כלים נשארים בפלטפורמה. <Code>config.json</Code> מפנה אליהם בצורת <Code>{'{{global.NAME}}'}</Code>; אל תחליף הפניה בערך אמיתי, push מתעלם ממנו.</li>
+            <li><strong>מסמכי ידע.</strong> יש להם מחזור חיים משלהם — העלאה, פיצול לקטעים, אינדוקס — וקרול של מאות עמודים לא אמור להיות קומיט.</li>
+          </UL>
+
+          <H3>עבודה עם git</H3>
+          <Block>{`8legs pull <id>
+8legs git                # מכוון את origin לריפו של הסוכן
+# ערוך, ואז
+git add -A && git commit -m "…" && git push`}</Block>
+          <P>הריפו נוצר ב-pull הראשון. קומיט שעובר ולידציה מסומן ✓ ב-GitHub והופך לחי; קומיט שנופל מסומן ✗ עם הסיבה, <strong>והסוכן החי לא זז</strong>. git כבר קיבל את הדחיפה, אז אי אפשר לדחות אותה — רק לא להפעיל אותה.</P>
+
+          <H3>בראנצ׳ים וניתוב שיחות</H3>
+          <Block>{`8legs branch warmer-tone      # פותח בראנץ׳ ועובר אליו
+# ערוך ודחוף — main לא זז
+8legs traffic warmer-tone 20  # 20% מהשיחות האמיתיות אליו
+8legs branches                # לראות את החלוקה
+8legs merge warmer-tone       # להפעיל אותו על כולם
+8legs traffic --stop          # או להחזיר הכל ל-main`}</Block>
+          <P>הבראנץ׳ של שיחה מוגרל פעם אחת, בהודעה הראשונה, ונשמר עליה. אף אחד לא רואה את הסוכן מתחלף באמצע שיחה.</P>
+
+          <H3>כשדחיפה נדחית</H3>
+          <UL>
+            <li><strong>"The agent changed on the platform"</strong> — מישהו ערך בממשק. <Code>8legs pull</Code> לוקח את הגרסה שלו, ואז תחזור על העריכה ותדחוף שוב. שום דבר לא נכתב.</li>
+            <li><strong>קובץ שלא נפרס</strong> — גם כאן שום דבר לא נכתב. דחיפה היא הכל-או-כלום: JSON שבור לא יכול להשאיר סוכן חי מעודכן בחצי.</li>
+          </UL>
+
+          <Tip>עריכה בממשק נכנסת ל<strong>טיוטה</strong>, לא לסוכן החי — הפס בראש עורך הסוכן הוא מה שמפרסם אותה. ב-CLI הטיוטה היא בראנץ׳ בשם <Code>draft</Code>.</Tip>
         </div>
       ),
 

@@ -439,6 +439,7 @@ ${C.bold('8legs')} — edit an agent in your own editor, then push it
 
   ${C.bold('8legs login')}              store a personal access token
   ${C.bold('8legs logout')}             forget it
+  ${C.bold('8legs whoami')}             which installation you are logged in to
   ${C.bold('8legs list')}               your agents, with their ids
 
   ${C.bold('8legs pull <agent>')}       download an agent into a folder

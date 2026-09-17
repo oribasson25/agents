@@ -15,7 +15,7 @@ const src = fs.readFileSync(new URL('../agentforge.html', import.meta.url).pathn
 const body = src.match(/<script type="text\/babel"[^>]*>([\s\S]*?)<\/script>/)[1];
 
 /* Hand the probe the components it wants to render. */
-const exposed = ['TokensSection', 'PullCommandButton', 'SettingsPanel', 'AgentEditor', 'BranchBar', 'MergePanel', 'MobileDraftBar', 'MobileAgentEditor', 'CopyableCommand'];
+const exposed = ['TokensSection', 'PullCommandButton', 'SettingsPanel', 'AgentEditor', 'BranchBar', 'MergePanel', 'MobileDraftBar', 'MobileAgentEditor', 'CopyableCommand', 'DocsView'];
 const code = babel.transform(
   body + `\n;globalThis.__probe = { ${exposed.map(n => `${n}: typeof ${n} === 'function' ? ${n} : null`).join(', ')} };`,
   { presets: ['react'] }).code;
@@ -105,6 +105,14 @@ const mLive = ReactDOMServer.renderToString(React.createElement(probe.MobileDraf
 }));
 if (mLive !== '') { console.log('✗ the phone draft bar shows on main'); failed++; }
 else console.log('✓ the phone draft bar stays hidden on main');
+
+const docs = render('DocsView on the CLI section',
+  React.createElement(probe.DocsView, { initialSection: 'cli' }));
+for (const needle of ['npm i -g @8legs/cli', '8legs traffic', 'config.json', '{{global.NAME}}']) {
+  if (docs && !docs.includes(needle)) { console.log(`✗ the CLI page is missing: ${needle}`); failed++; }
+}
+if (docs && docs.includes('npm i -g @8legs/cli')) console.log('✓ the CLI page has the install command and the reference');
+render('DocsView default page', React.createElement(probe.DocsView, {}));
 
 render('MergePanel', React.createElement(probe.MergePanel, {
   agentId: 'a-1', branch: 'warmer-tone', onClose() {}, onMerged() {},
