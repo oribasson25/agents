@@ -630,7 +630,7 @@
     return {
       id: uid(),
       name: 'New Agent',
-      avatar: '🤖',
+      avatar: DEFAULT_AVATAR,
       openingMessage: 'Hello! How can I help you today?',
       basePrompt: '',
       skills: [],
@@ -915,6 +915,40 @@
     }} />;
   }
 
+  /**
+   * A one-line field that becomes as many lines as the text needs.
+   *
+   * An opening message is often a paragraph; in a plain input everything past
+   * the first line simply scrolls out of sight.
+   */
+  function GrowField({ value, onChange, placeholder, minRows = 1, maxRows = 6, style }) {
+    const ref = useRef(null);
+    const resize = useCallback(() => {
+      const el = ref.current;
+      if (!el) return;
+      const line = 21;                       // 14px text at 1.5
+      const pad = 21;                        // 10px top + 10px bottom + border
+      el.style.height = 'auto';
+      const wanted = Math.max(el.scrollHeight, minRows * line + pad);
+      el.style.height = Math.min(wanted, maxRows * line + pad) + 'px';
+      el.style.overflowY = wanted > maxRows * line + pad ? 'auto' : 'hidden';
+    }, [minRows, maxRows]);
+
+    useEffect(() => { resize(); }, [value, resize]);
+
+    return (
+      <textarea
+        ref={ref}
+        dir="auto"
+        rows={minRows}
+        value={value || ''}
+        placeholder={placeholder}
+        onChange={e => { onChange(e.target.value); resize(); }}
+        style={{ resize: 'none', lineHeight: 1.5, display: 'block', ...style }}
+      />
+    );
+  }
+
   /* ─────────────────── ICON BUTTON ─────────────────── */
   function IconBtn({ onClick, title, children, danger, style, disabled }) {
     return (
@@ -1194,6 +1228,10 @@
   }
 
   /* ─────────────────── CONFIGURATION TAB ─────────────────── */
+  /* The platform's own mark, as an image an agent can wear. A new agent gets
+     it instead of a stock robot, and the picker offers it back. */
+  const DEFAULT_AVATAR = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='268 14 144 144'%3E%3Cellipse cx='340' cy='108' rx='21' ry='29' fill='%23EF9F27'/%3E%3Cellipse cx='340' cy='72' rx='14' ry='14' fill='%23EF9F27'/%3E%3Ccircle cx='335' cy='70' r='3.5' fill='%23854F0B'/%3E%3Ccircle cx='345' cy='70' r='3.5' fill='%23854F0B'/%3E%3Cpath d='M345,136 C372,138 390,122 390,98 C390,72 374,56 379,38' fill='none' stroke='%23EF9F27' stroke-width='8' stroke-linecap='round'/%3E%3Cpolygon points='375,40 382,24 389,40' fill='%23D85A30'/%3E%3Cpolyline points='319,95 293,80 278,72' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='319,105 291,102 276,100' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='319,115 291,119 276,124' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='319,125 293,136 281,146' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='361,95 387,80 402,72' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='361,105 389,102 404,100' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='361,115 389,119 404,124' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='361,125 387,136 399,146' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M328,62 L313,48' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round'/%3E%3Cpath d='M313,48 L304,40' fill='none' stroke='%23EF9F27' stroke-width='4' stroke-linecap='round'/%3E%3Cpath d='M313,48 L309,57' fill='none' stroke='%23EF9F27' stroke-width='4' stroke-linecap='round'/%3E%3Cpath d='M352,62 L367,48' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round'/%3E%3Cpath d='M367,48 L376,40' fill='none' stroke='%23EF9F27' stroke-width='4' stroke-linecap='round'/%3E%3Cpath d='M367,48 L371,57' fill='none' stroke='%23EF9F27' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E";
+
   const EMOJI_OPTIONS = ['🤖','🧠','💼','🎯','🔥','🚀','⚡','💡','🛡️','🌟','👾','🎨','🔬','📊','🗺️','🎤','🌐','🔑','⚙️','🦁'];
 
   function ConfigurationTab({ agent, onUpdate, stacked }) {
@@ -1267,6 +1305,10 @@
               {showEmojiPicker && (
                 <div style={{ position: 'absolute', top: 72, left: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 10, zIndex: 100, width: 190 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 4, marginBottom: 8 }}>
+                    <button key="logo" title="The 8Legs mark" onClick={() => { update(['avatar'], DEFAULT_AVATAR); setShowEmojiPicker(false); }}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', borderRadius: 6, padding: 4 }}>
+                      <AvatarDisplay value={DEFAULT_AVATAR} size={22} />
+                    </button>
                     {EMOJI_OPTIONS.map(e => (
                       <button key={e} onClick={() => { update(['avatar'], e); setShowEmojiPicker(false); }} style={{ fontSize: 22, background: 'transparent', borderRadius: 6, padding: 4 }}>{e}</button>
                     ))}
@@ -1282,7 +1324,9 @@
               </div>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Opening Message</label>
-                <input value={agent.openingMessage} onChange={e => update(['openingMessage'], e.target.value)} dir="auto" />
+                <GrowField value={agent.openingMessage} onChange={v => update(['openingMessage'], v)}
+                           minRows={1} maxRows={8}
+                           placeholder="The first thing the agent says" />
               </div>
             </div>
           </div>
@@ -1397,39 +1441,6 @@
     );
   }
 
-  // sections: [{ label, items: [{ key, label, active, onClick, mono, note }] }]
-  function WorkspaceSidebar({ sections, footer }) {
-    return (
-      <div style={{ ...WORKSPACE_PANEL, width: 196, flexShrink: 0 }}>
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 6 }}>
-          {sections.map(section => (
-            <div key={section.label} style={{ marginBottom: 8 }}>
-              <div style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{section.label}</div>
-              {section.items.length === 0 && (
-                <div style={{ padding: '4px 9px', fontSize: 11, color: 'var(--text-muted)' }}>—</div>
-              )}
-              {section.items.map(item => (
-                <button key={item.key} onClick={item.onClick} title={item.label}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 6, width: '100%',
-                    textAlign: 'left', padding: '7px 9px', borderRadius: 'var(--r-sm)', fontSize: 12,
-                    fontFamily: item.mono ? "'JetBrains Mono','Fira Code',monospace" : undefined,
-                    background: item.active ? 'var(--primary-dim)' : 'transparent',
-                    color: item.active ? 'var(--primary)' : 'var(--text-2)',
-                    fontWeight: item.active ? 700 : 500,
-                  }}>
-                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>
-                  {item.note && <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>{item.note}</span>}
-                </button>
-              ))}
-            </div>
-          ))}
-        </div>
-        {footer}
-      </div>
-    );
-  }
-
   function WorkspacePanelTabs({ tabs, active, onChange }) {
     return (
       <div style={{ display: 'flex', gap: 2, padding: '0 6px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)', flexShrink: 0 }}>
@@ -1448,17 +1459,8 @@
     );
   }
 
-  function WorkspaceNewButton({ label, onClick, disabled }) {
-    return (
-      <button onClick={onClick} disabled={disabled}
-        style={{ margin: 6, padding: '7px 9px', borderRadius: 'var(--r-sm)', fontSize: 12, fontWeight: 700, background: 'var(--bg-hover)', border: '1px solid var(--border)', color: disabled ? 'var(--text-muted)' : 'var(--primary)' }}>
-        {label}
-      </button>
-    );
-  }
-
   /* ─────────────────── SKILLS ─────────────────── */
-  function SkillsTab({ agent, onUpdate }) {
+  function SkillsTab({ agent, onUpdate, onRailList }) {
     const skills = agent.skills || [];
     const [target, setTarget] = useState(() => (skills.length ? { kind: 'skill', id: skills[0].id } : null));
     const [panelTab, setPanelTab] = useState('config');   // config | assistant
@@ -1469,6 +1471,29 @@
     useEffect(() => {
       if (!selected) setTarget(skills.length ? { kind: 'skill', id: skills[0].id } : null);
     }, [!!selected, skills.length]);
+
+    /* The skills are listed in the editor's rail, under Skills, rather than in
+       a column of their own — the prompt is what needs the room. The handlers
+       go through a ref so a click never runs against a stale agent. */
+    const railRef = useRef({});
+    railRef.current = { select: id => setTarget({ kind: 'skill', id }), add: addSkill };
+    const railSig = skills.map(sk => `${sk.id}:${sk.name}`).join('|');
+    const activeId = target ? target.id : null;
+    useEffect(() => {
+      if (!onRailList) return;
+      onRailList({
+        sections: [{
+          label: 'Skills',
+          items: skills.map(sk => ({
+            key: sk.id, label: sk.name || 'untitled', active: sk.id === activeId,
+            onClick: () => railRef.current.select(sk.id),
+          })),
+        }],
+        newLabel: '＋ New skill',
+        onNew: () => railRef.current.add(),
+      });
+      return () => onRailList(null);
+    }, [onRailList, railSig, activeId]);
 
     function patch(fields) {
       if (selected) onUpdate({ ...agent, skills: skills.map(sk => sk.id === target.id ? { ...sk, ...fields } : sk) });
@@ -1517,20 +1542,6 @@
         />
 
         <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12 }}>
-          <WorkspaceSidebar
-            sections={[{
-              label: 'Skills',
-              items: [
-                ...skills.map(sk => ({
-                  key: sk.id, label: sk.name || 'untitled',
-                  active: sk.id === target.id,
-                  onClick: () => setTarget({ kind: 'skill', id: sk.id }),
-                })),
-              ],
-            }]}
-            footer={<WorkspaceNewButton label="＋ New skill" onClick={addSkill} />}
-          />
-
           {/* Prompt */}
           <div style={{ ...WORKSPACE_PANEL, flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)', flexShrink: 0 }}>
@@ -2336,7 +2347,7 @@
     return `${base}${separator}${n}`;
   }
 
-  function ToolsTab({ agent, onUpdate }) {
+  function ToolsTab({ agent, onUpdate, onRailList }) {
     const tools = agent.tools || [];
     // { kind: 'builtin' } | { kind: 'tool', id } | { kind: 'new' }
     const [target, setTarget] = useState(() => (tools.length ? { kind: 'tool', id: tools[0].id } : { kind: 'builtin' }));
@@ -2355,6 +2366,42 @@
         setTarget(tools.length ? { kind: 'tool', id: tools[0].id } : { kind: 'builtin' });
       }
     }, [target.kind, !!selected, tools.length]);
+
+    /* The tools are listed in the editor's rail, under Tools, so the code gets
+       the width. Handlers go through a ref — a click must never write an
+       agent that was current three keystrokes ago. */
+    const railRef = useRef({});
+    railRef.current = {
+      select: t => setTarget(t),
+      add: addTool,
+    };
+    const railSig = tools.map(t => `${t.id}:${t.name}`).join('|');
+    const activeKey = isBuiltIn ? 'builtin' : target.id;
+    useEffect(() => {
+      if (!onRailList) return;
+      onRailList({
+        sections: [
+          {
+            label: 'Built-in',
+            items: [{
+              key: 'builtin', label: 'send_email', mono: true, active: activeKey === 'builtin',
+              note: agent.emailEnabled ? 'on' : 'off',
+              onClick: () => railRef.current.select({ kind: 'builtin' }),
+            }],
+          },
+          {
+            label: 'Python tools',
+            items: tools.map(t => ({
+              key: t.id, label: t.name || 'untitled', mono: true, active: activeKey === t.id,
+              onClick: () => railRef.current.select({ kind: 'tool', id: t.id }),
+            })),
+          },
+        ],
+        newLabel: '＋ New tool',
+        onNew: () => railRef.current.add(),
+      });
+      return () => onRailList(null);
+    }, [onRailList, railSig, activeKey, agent.emailEnabled]);
 
     function patch(fields) {
       if (selected) onUpdate({ ...agent, tools: tools.map(t => t.id === selected.id ? { ...t, ...fields } : t) });
@@ -2378,32 +2425,6 @@
       onUpdate({ ...agent, tools: tools.filter(t => t.id !== target.id) });
     }
 
-    const sidebar = (
-      <WorkspaceSidebar
-        sections={[
-          {
-            label: 'Built-in',
-            items: [{
-              key: 'builtin', label: 'send_email', mono: true, active: isBuiltIn,
-              note: agent.emailEnabled ? 'on' : 'off',
-              onClick: () => setTarget({ kind: 'builtin' }),
-            }],
-          },
-          {
-            label: 'Python tools',
-            items: [
-              ...tools.map(t => ({
-                key: t.id, label: t.name || 'untitled', mono: true,
-                active: !isBuiltIn && t.id === target.id,
-                onClick: () => setTarget({ kind: 'tool', id: t.id }),
-              })),
-            ],
-          },
-        ]}
-        footer={<WorkspaceNewButton label="＋ New tool" onClick={addTool} />}
-      />
-    );
-
     /* ---- the built-in tool has no code to edit, just a switch and a mailbox ---- */
     if (isBuiltIn) {
       return (
@@ -2415,7 +2436,6 @@
             subtitle="Built-in tool · sends from this agent's own Gmail account"
           />
           <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12 }}>
-            {sidebar}
             <div style={{ ...WORKSPACE_PANEL, flex: 1, minWidth: 0, maxWidth: 720 }}>
               <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)', fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-muted)', textTransform: 'uppercase', flexShrink: 0 }}>
                 Configuration
@@ -2474,8 +2494,6 @@
         />
 
         <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12 }}>
-          {sidebar}
-
           {/* Code + run */}
           <div style={{ ...WORKSPACE_PANEL, flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)', flexShrink: 0 }}>
@@ -4635,6 +4653,53 @@
     );
   }
 
+  /**
+   * What the open section contains, nested under it in the rail: every skill,
+   * or every tool, and the way to add one.
+   */
+  function RailList({ list }) {
+    const row = (item) => (
+      <button key={item.key} onClick={item.onClick} title={item.label}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6, width: '100%', textAlign: 'left',
+          padding: '6px 10px', paddingInlineStart: 30, borderRadius: 8, cursor: 'pointer',
+          fontSize: 12, fontFamily: item.mono ? MONO : 'inherit',
+          background: item.active ? 'var(--primary-dim)' : 'transparent',
+          color: item.active ? 'var(--primary)' : 'var(--text-2)',
+          fontWeight: item.active ? 700 : 500,
+        }}
+        onMouseEnter={e => { if (!item.active) e.currentTarget.style.background = 'var(--bg-hover)'; }}
+        onMouseLeave={e => { if (!item.active) e.currentTarget.style.background = 'transparent'; }}
+      >
+        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>
+        {item.note && <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>{item.note}</span>}
+      </button>
+    );
+
+    return (
+      <div style={{ padding: '4px 0 8px', display: 'flex', flexDirection: 'column', gap: 1 }}>
+        {list.sections.map(sec => (
+          <React.Fragment key={sec.label}>
+            {list.sections.length > 1 && (
+              <Eyebrow style={{ fontSize: 9, padding: '6px 10px 3px', paddingInlineStart: 30 }}>{sec.label}</Eyebrow>
+            )}
+            {sec.items.length === 0
+              ? <div style={{ fontSize: 11.5, color: 'var(--text-muted)', padding: '5px 10px', paddingInlineStart: 30 }}>—</div>
+              : sec.items.map(row)}
+          </React.Fragment>
+        ))}
+        {list.onNew && (
+          <button onClick={list.onNew}
+            style={{
+              marginTop: 6, marginInlineStart: 30, marginInlineEnd: 4, padding: '6px 8px',
+              borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+              background: 'var(--bg-hover)', border: '1px solid var(--border)', color: 'var(--primary)',
+            }}>{list.newLabel}</button>
+        )}
+      </div>
+    );
+  }
+
   /** The tabs of an agent, as the rail down the left of the editor. */
   const AGENT_NAV = [
     { id: 'configuration', label: 'Configuration', icon: Icons.sliders },
@@ -4662,6 +4727,9 @@
     const [loadError, setLoadError] = useState(null);
     const [merging, setMerging] = useState(null);
     const [branches, setBranches] = useState(null);
+    /* Skills and Tools hand their own list up to the rail, so it sits under
+       the section it belongs to instead of eating a column of the editor. */
+    const [railList, setRailList] = useState(null);
     const agent = picked ? loaded : fromApp;
 
     useEffect(() => {
@@ -4802,7 +4870,8 @@
               {AGENT_NAV.map(n => {
                 const on = tab === n.id;
                 return (
-                  <button key={n.id} onClick={() => setTab(n.id)}
+                  <React.Fragment key={n.id}>
+                  <button onClick={() => setTab(n.id)}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 10, height: 38, padding: '0 12px',
                       borderRadius: 10, cursor: 'pointer', textAlign: 'left', fontSize: 13,
@@ -4817,6 +4886,8 @@
                     <span style={{ display: 'flex', opacity: on ? 1 : 0.75 }}>{n.icon}</span>
                     {n.label}
                   </button>
+                  {on && railList && <RailList list={railList} />}
+                  </React.Fragment>
                 );
               })}
             </div>
@@ -4824,8 +4895,8 @@
 
           <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', paddingRight: 4 }}>
             {tab === 'configuration' && <ConfigurationTab agent={agent} onUpdate={update} />}
-            {tab === 'skills' && <SkillsTab agent={agent} onUpdate={update} />}
-            {tab === 'tools' && <ToolsTab agent={agent} onUpdate={update} />}
+            {tab === 'skills' && <SkillsTab agent={agent} onUpdate={update} onRailList={setRailList} />}
+            {tab === 'tools' && <ToolsTab agent={agent} onUpdate={update} onRailList={setRailList} />}
             {tab === 'knowledge' && <KnowledgeTab agent={agent} />}
             {tab === 'export' && <ExportTab agent={agent} />}
             {tab === 'manual tests' && <ManualTestsTab agent={agent} onTest={testThis} />}
@@ -6613,7 +6684,7 @@ npm run migrate            # הרצה בפועל`}</Block>
         if (name === 'create_agent') {
           const created = makeAgent({
             name: input.name || 'New Agent',
-            avatar: input.avatar || '🤖',
+            avatar: input.avatar || DEFAULT_AVATAR,
             basePrompt: input.base_prompt || '',
             openingMessage: input.opening_message || 'Hello! How can I help you today?',
             skills: (input.skills || []).map(skillShape),
