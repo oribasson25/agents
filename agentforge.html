@@ -5476,7 +5476,7 @@ npx @8legs/cli <פקודה>   # בלי להתקין כלום`}</Block>
           <P>דורש Node 18 ומעלה. אין לחבילה שום תלות חיצונית.</P>
 
           <H3>התחברות</H3>
-          <P>צור טוקן ב-<strong>Settings → Personal access tokens</strong>. הוא מוצג פעם אחת בלבד — בשרת נשמר רק ה-hash שלו.</P>
+          <P>צור טוקן ב-<strong>Settings → Personal access tokens</strong>: תן לו שם שתזהה (המחשב, הסביבה) ולחץ צור. הוא מוצג פעם אחת בלבד — בשרת נשמר רק ה-hash שלו, והשם הוא מה שיעזור לדעת איזה טוקן לבטל.</P>
           <Block>{`8legs login
 8legs list`}</Block>
 
@@ -8193,6 +8193,9 @@ npm run migrate            # הרצה בפועל`}</Block>
     const [busy, setBusy] = useState(false);
     const [fresh, setFresh] = useState(null);
     const [error, setError] = useState(null);
+    /* A token is named by the person making it. Three of them called CLI tell
+       you nothing on the day you have to decide which one to revoke. */
+    const [name, setName] = useState('');
 
     async function load() {
       try { setTokens(await apiListTokens()); setError(null); }
@@ -8202,11 +8205,14 @@ npm run migrate            # הרצה בפועל`}</Block>
     useEffect(() => { load(); }, []);
 
     async function create() {
+      const clean = name.trim();
+      if (!clean || busy) return;
       setBusy(true);
       setError(null);
       try {
-        const created = await apiCreateToken('CLI');
-        setFresh(created.token);
+        const created = await apiCreateToken(clean);
+        setFresh({ token: created.token, name: clean });
+        setName('');
         await load();
       } catch (e) { setError(e.message); }
       finally { setBusy(false); }
@@ -8223,22 +8229,38 @@ npm run migrate            # הרצה בפועל`}</Block>
       <div style={sectionStyle}>
         <div style={sectionHeader}>Personal access tokens</div>
 
-        <div style={{ ...rowStyle, alignItems: 'flex-start' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ ...rowStyle, alignItems: 'flex-start', flexWrap: 'wrap', rowGap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minWidth: 220, flex: '1 1 220px' }}>
             <div style={{ ...iconBox, color: 'var(--text-2)' }}>{Icons.terminal}</div>
             <div>
               <div style={{ fontSize: 14, fontWeight: 600 }}>עריכה מה-IDE</div>
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.5 }}>
-                טוקן נותן ל-CLI לפעול בשמך. אפשר לבטל אותו בכל רגע.
+                טוקן נותן ל-CLI לפעול בשמך. תן לו שם שתזהה — אפשר לבטל אותו בכל רגע.
               </div>
             </div>
           </div>
-          <button onClick={create} disabled={busy}
-            style={{ padding: '7px 16px', borderRadius: 'var(--r-sm)', cursor: busy ? 'default' : 'pointer',
-                     background: 'var(--primary)', color: '#0a0a0a', fontSize: 13, fontWeight: 700,
-                     opacity: busy ? 0.6 : 1, flexShrink: 0 }}>
-            {busy ? '…' : 'צור טוקן'}
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') create(); }}
+              maxLength={80}
+              dir="auto"
+              placeholder="שם הטוקן — למשל laptop"
+              style={{ width: 200, padding: '7px 12px', fontSize: 13 }}
+            />
+            <button onClick={create} disabled={busy || !name.trim()}
+              title={name.trim() ? 'צור טוקן בשם הזה' : 'קודם תן לטוקן שם'}
+              style={{ padding: '8px 16px', borderRadius: 'var(--r-sm)',
+                       cursor: busy || !name.trim() ? 'default' : 'pointer',
+                       background: name.trim() ? 'var(--primary)' : 'var(--bg-hover)',
+                       color: name.trim() ? '#0a0a0a' : 'var(--text-muted)',
+                       border: `1px solid ${name.trim() ? 'var(--primary)' : 'var(--border)'}`,
+                       fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap',
+                       opacity: busy ? 0.6 : 1, flexShrink: 0 }}>
+              {busy ? '…' : 'צור טוקן'}
+            </button>
+          </div>
         </div>
 
         <div style={{ borderTop: '1px solid var(--border)', padding: '14px 20px',
@@ -8254,9 +8276,9 @@ npm run migrate            # הרצה בפועל`}</Block>
           <div style={{ borderTop: '1px solid var(--border)', padding: '14px 20px',
                         background: 'rgba(250,204,21,0.07)' }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--warning)', marginBottom: 8 }}>
-              העתק עכשיו — הטוקן לא יוצג שוב
+              <span dir="auto">{fresh.name}</span> — העתק עכשיו, הטוקן לא יוצג שוב
             </div>
-            <CopyableCommand command={fresh} note="הרץ 8legs login והדבק אותו שם." />
+            <CopyableCommand command={fresh.token} note="הרץ 8legs login והדבק אותו שם." />
           </div>
         )}
 
