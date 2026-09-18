@@ -949,6 +949,55 @@
     );
   }
 
+  /**
+   * Ask before something that cannot be undone.
+   *
+   * It states what is about to disappear rather than asking "are you sure",
+   * because that is the question the person actually needs answered.
+   */
+  function ConfirmDialog({ title, body, confirmLabel = 'מחק', cancelLabel = 'ביטול', busy, onConfirm, onCancel }) {
+    useEffect(() => {
+      function onKey(e) {
+        if (e.key === 'Escape') onCancel();
+        if (e.key === 'Enter' && !busy) onConfirm();
+      }
+      document.addEventListener('keydown', onKey);
+      return () => document.removeEventListener('keydown', onKey);
+    }, [onCancel, onConfirm, busy]);
+
+    return (
+      <div onClick={onCancel} style={{
+        position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.35)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: 20,
+      }}>
+        <div onClick={e => e.stopPropagation()} dir="rtl" style={{
+          width: 'min(430px, 100%)', background: 'var(--bg-card)',
+          border: '1px solid var(--border)', borderRadius: 'var(--r-lg)',
+          boxShadow: 'var(--shadow-lg)', padding: 22,
+        }}>
+          <div dir="auto" style={{ fontWeight: 800, fontSize: 16.5, lineHeight: 1.4 }}>{title}</div>
+          {body && (
+            <div dir="auto" style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 10, lineHeight: 1.7 }}>{body}</div>
+          )}
+          <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-start' }}>
+            <button onClick={onConfirm} disabled={busy}
+              style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', cursor: busy ? 'default' : 'pointer',
+                       background: 'var(--danger)', color: '#fff', border: '1px solid var(--danger)',
+                       fontSize: 13, fontWeight: 700, opacity: busy ? 0.6 : 1 }}>
+              {busy ? '…' : confirmLabel}
+            </button>
+            <button onClick={onCancel} disabled={busy}
+              style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', cursor: 'pointer',
+                       background: 'var(--bg-card)', color: 'var(--text-2)',
+                       border: '1px solid var(--border)', fontSize: 13, fontWeight: 600 }}>
+              {cancelLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   /* ─────────────────── ICON BUTTON ─────────────────── */
   function IconBtn({ onClick, title, children, danger, style, disabled }) {
     return (
@@ -4502,6 +4551,7 @@
     const [open, setOpen] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState(null);
+    const [deleting, setDeleting] = useState(null);   // the branch awaiting a yes
 
     const current = branch || agent._branch || 'main';
     const onMain = current === 'main';
@@ -4534,6 +4584,34 @@
     };
     const setWeight = (name, weight) => act(() => apiBranchAction(agent.id, { branch: name, weight }, 'PUT'));
     const stopAll = () => act(() => apiBranchAction(agent.id, { action: 'stop' }, 'PUT'));
+
+    /* Deleting the branch you are looking at leaves you looking at nothing, so
+       it hands you back to main. Conversations on it fall back to main too. */
+    function removeBranch(b) {
+      act(() => apiDeleteBranch(agent.id, b.name), () => {
+        setDeleting(null);
+        if (b.name === current) onSwitch('main');
+        if (onChanged) onChanged();
+      });
+    }
+
+    function deleteCopy(b) {
+      if (!b) return {};
+      if (b.kind === 'draft') {
+        return {
+          title: 'למחוק את הטיוטה?',
+          body: 'השינויים שלא פורסמו יימחקו, והסוכן החי יישאר כפי שהוא. אין ביטול.',
+          confirmLabel: 'מחק טיוטה',
+        };
+      }
+      return {
+        title: `למחוק את הבראנץ׳ ${b.name}?`,
+        body: b.traffic_weight > 0
+          ? `הבראנץ׳ לוקח כרגע ${b.traffic_weight}% מהשיחות — הן יחזרו ל-main. הגרסה הזאת תימחק, ו-main לא מושפע. אין ביטול.`
+          : 'הגרסה הזאת תימחק, ו-main לא מושפע. אין ביטול.',
+        confirmLabel: 'מחק בראנץ׳',
+      };
+    }
 
     return (
       <div style={{ position: 'relative', display: 'inline-flex' }}>
@@ -4577,6 +4655,12 @@
                     <span>% מהשיחות</span>
                   </label>
                 )}
+
+                {/* main is the agent itself — there is nothing to delete. */}
+                {b.kind !== 'main' && (
+                  <IconBtn danger disabled={busy} title={`מחק את ${b.name}`}
+                    onClick={() => setDeleting(b)}>{Icons.trash}</IconBtn>
+                )}
               </div>
             ))}
             <div style={{ display: 'flex', gap: 8, padding: '10px 14px' }}>
@@ -4586,6 +4670,12 @@
             </div>
             {error && <div style={{ padding: '0 14px 10px', fontSize: 12, color: 'var(--danger)' }}>{error}</div>}
           </div>
+        )}
+
+        {deleting && (
+          <ConfirmDialog {...deleteCopy(deleting)} busy={busy}
+            onConfirm={() => removeBranch(deleting)}
+            onCancel={() => setDeleting(null)} />
         )}
       </div>
     );
@@ -8119,9 +8209,18 @@ npm run migrate            # הרצה בפועל`}</Block>
       saveAdminAgentDebounced(agent);
     }
 
-    async function handleDelete(agentId) {
-      if (!confirm('Delete this agent?')) return;
-      await adminDeleteAgent(agentId).catch(() => {});
+    const [deleting, setDeleting] = useState(null);   // the agent awaiting a yes
+    const [deleteBusy, setDeleteBusy] = useState(false);
+
+    async function handleDelete(agent) {
+      setDeleting(agent);
+    }
+
+    async function reallyDelete(agent) {
+      setDeleteBusy(true);
+      await adminDeleteAgent(agent.id).catch(() => {});
+      setDeleteBusy(false);
+      setDeleting(null);
       reload();
     }
 
@@ -8208,7 +8307,7 @@ npm run migrate            # הרצה בפועל`}</Block>
                     style={{ flex: 1, fontSize: 12, padding: '6px', borderRadius: 'var(--r-sm)', background: 'var(--bg-hover)', color: 'var(--text-2)', border: '1px solid var(--border)' }}>
                     ✏️ Edit
                   </button>
-                  <button onClick={() => handleDelete(a.id)}
+                  <button onClick={() => handleDelete(a)}
                     style={{ flex: 1, fontSize: 12, padding: '6px', borderRadius: 'var(--r-sm)', background: 'transparent', color: 'var(--danger)', border: '1px solid var(--danger)' }}>
                     🗑️ Delete
                   </button>
@@ -8216,6 +8315,16 @@ npm run migrate            # הרצה בפועל`}</Block>
               </div>
             ))}
           </div>
+        )}
+
+        {deleting && (
+          <ConfirmDialog
+            title={`למחוק את "${deleting.name}"?`}
+            body={`הסוכן של ${targetUser.username} יימחק על כל המסמכים, השיחות והערוצים שלו. אין ביטול.`}
+            confirmLabel="מחק סוכן"
+            busy={deleteBusy}
+            onConfirm={() => reallyDelete(deleting)}
+            onCancel={() => setDeleting(null)} />
         )}
       </div>
     );
@@ -9180,10 +9289,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             )}
             {onDelete && (
               <Btn danger icon={Icons.trash} style={{ height: 50, justifyContent: 'flex-start' }}
-                   onClick={() => {
-                     if (!confirm(`למחוק את הסוכן ${agent.name}?`)) return;
-                     setMenu(false); onBack(); onDelete(agent.id);
-                   }}>Delete agent</Btn>
+                   onClick={() => { setMenu(false); onDelete(agent.id); }}>Delete agent</Btn>
             )}
           </div>
         </MobileSheet>
@@ -9420,9 +9526,21 @@ npm run migrate            # הרצה בפועל`}</Block>
       apiList().then(agents => dispatch({ type: 'HYDRATE', agents })).catch(() => {});
     }
 
+    /* Deleting an agent takes its documents, conversations and channels with
+       it, so every route to it goes through the same question first. */
+    const [pendingDelete, setPendingDelete] = useState(null);   // agent id
+    const [deleteBusy, setDeleteBusy] = useState(false);
+
     async function handleDelete(id) {
+      setPendingDelete(id);
+    }
+
+    async function reallyDelete(id) {
+      setDeleteBusy(true);
       dispatch({ type: 'DELETE_AGENT', id });
       await apiDelete(id).catch(() => {});
+      setDeleteBusy(false);
+      setPendingDelete(null);
     }
 
     async function handleDuplicate(id) {
@@ -9437,6 +9555,17 @@ npm run migrate            # הרצה בפועל`}</Block>
 
     const editingAgent = state.agents.find(a => a.id === state.editingId);
     const chatAgent = state.chatAgentSnapshot || state.agents.find(a => a.id === state.chatAgentId);
+
+    const doomed = state.agents.find(a => a.id === pendingDelete);
+    const deleteDialog = doomed && (
+      <ConfirmDialog
+        title={`למחוק את "${doomed.name}"?`}
+        body="נמחקים גם המסמכים, שיחות הבדיקה והשיחות של הסוכן, והווידג'ט ו-WhatsApp שלו מפסיקים לענות. אין ביטול."
+        confirmLabel="מחק סוכן"
+        busy={deleteBusy}
+        onConfirm={() => reallyDelete(doomed.id)}
+        onCancel={() => setPendingDelete(null)} />
+    );
 
     if (loading) return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 'calc(100vh / var(--ui-zoom))', background: 'var(--bg-app)', flexDirection: 'column', gap: 14 }}>
@@ -9455,6 +9584,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     // Phones get their own shell over the same state and handlers. The
     // desktop tree below is untouched.
     if (isMobile) return (
+      <React.Fragment>
       <MobileApp
         state={state} dispatch={dispatch} nav={nav} setNav={setNav}
         user={user} onLogout={onLogout}
@@ -9465,6 +9595,8 @@ npm run migrate            # הרצה בפועל`}</Block>
         adminSelectedUser={adminSelectedUser} setAdminSelectedUser={setAdminSelectedUser}
         onReload={hydrate}
       />
+      {deleteDialog}
+      </React.Fragment>
     );
 
     const NAV_CRUMBS = {
@@ -9550,6 +9682,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             initialSessionId={state.chatInitialSessionId}
             onClose={() => dispatch({ type: 'CLOSE_CHAT' })} />
         )}
+        {deleteDialog}
         <FloatingAssistant
           agents={state.agents}
           language={(settings || accountApi()).assistantLanguage || 'he'}
