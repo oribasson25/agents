@@ -51,13 +51,15 @@
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     /*
-     * The whole UI is drawn at 80%, which is where it was found to read best —
-     * the same thing browser zoom at 80% does, but as the default for everyone.
+     * The whole UI is drawn at 72%, which is where it was found to read best —
+     * the same thing browser zoom does, but as the default for everyone. It
+     * was 80%, and 80% of the browser's own 90% is what people were settling
+     * on by hand, so that is the default now.
      * `zoom` multiplies viewport units too, so every 100vh/100vw inside this
      * subtree is divided by --ui-zoom to keep filling the screen. Change the
      * one number below to rescale the entire app.
      */
-    :root { --ui-zoom: 0.8; }
+    :root { --ui-zoom: 0.72; }
     html { height: 100%; }
     body {
       background: var(--bg-app);
@@ -8417,17 +8419,27 @@ npm run migrate            # הרצה בפועל`}</Block>
             ) : (recents || []).map(sx => {
               const on = sx.id === activeSessionId;
               return (
-                <button key={sx.id} onClick={() => onPickRecent(sx)} title={sessionTitle(sx.messages) || sx.title || ''} dir="auto"
+                /* The clamp lives on a span, not on the button: a button
+                   cannot be a -webkit-box — the engine forces flow-root on it
+                   and the clamp is silently dropped. And the row must not
+                   shrink, or a short window squeezes a three-line title into
+                   two lines' worth of box and slices the last one in half. */
+                <button key={sx.id} onClick={() => onPickRecent(sx)} title={sessionTitle(sx.messages) || sx.title || ''}
                   style={{
-                    display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2,
+                    display: 'block', flexShrink: 0,
                     width: '100%', textAlign: 'start', padding: '7px 13px', borderRadius: 9,
                     background: on ? 'var(--bg-hover)' : 'transparent',
                     color: on ? 'var(--text)' : 'var(--text-2)', fontSize: 12.5, lineHeight: 1.45,
-                    fontWeight: on ? 650 : 500, overflow: 'hidden',
+                    fontWeight: on ? 650 : 500,
                   }}
                   onMouseEnter={e => { if (!on) e.currentTarget.style.background = 'var(--bg-hover)'; }}
                   onMouseLeave={e => { if (!on) e.currentTarget.style.background = 'transparent'; }}
-                >{sessionTitle(sx.messages) || sx.title || L('(untitled)', '(ללא כותרת)')}</button>
+                >
+                  <span dir="auto" style={{
+                    display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2,
+                    overflow: 'hidden', wordBreak: 'break-word',
+                  }}>{sessionTitle(sx.messages) || sx.title || L('(untitled)', '(ללא כותרת)')}</span>
+                </button>
               );
             })}
           </div>

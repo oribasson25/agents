@@ -160,7 +160,12 @@ left beside them.
 
 The platform assistant is also a floating chat, reachable by the ✨ button in the corner of
 every screen but Home. Every turn of every assistant — platform, tool and skill — is saved to
-`assistant_sessions` (migration `012`) through `PUT /api/assistant-sessions`. What a conversation is called is derived from
+`assistant_sessions` (migration `012`) through `PUT /api/assistant-sessions`. A row in that list clamps its title to two lines, and the clamp is on a span
+inside the button rather than on the button: a button cannot be a
+`-webkit-box`, so the engine drops the clamp silently. The row also sets
+`flex-shrink: 0`, or a short window squeezes a three-line title into two lines'
+worth of box and slices the last one through the middle. What a conversation is
+called is derived from
 its messages by `sessionTitle`, wherever it is listed: the first thing the user typed
 themselves — never the sentence a "build it for me" button put in their mouth — and only its
 first sentence, since no list column shows a paragraph. Deriving it at display time rather than
