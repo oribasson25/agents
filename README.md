@@ -6,7 +6,7 @@ distribution over a website widget and WhatsApp — configured in the browser, w
 The in-app **Documentation** tab is the user-facing guide, and is written in Hebrew. This file
 covers running and maintaining the deployment.
 
-**What the product calls things.** The interface calls an agent a **AI Chatbot** (plural
+**What the product calls things.** The interface calls an agent an **AI Chatbot** (plural
 *AI Chatbots*). That is a label, not a rename of the thing: the table is still `agents`, the
 routes are still `/api/agents`, the assistant's tools are still `create_agent` and friends, and
 the CLI still pulls an agent folder. This file uses the code's word throughout. Two places
