@@ -691,6 +691,24 @@
     const r = await apiFetch('/api/admin/starter-agent');
     return r.json();
   }
+  async function adminAddStarter(agentId) {
+    const r = await apiFetch('/api/admin/starter-agent', { method: 'POST', body: JSON.stringify({ agentId }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `Could not mark it (${r.status})`);
+    return d;
+  }
+  async function adminRefreshStarter(id, agentId) {
+    const r = await apiFetch('/api/admin/starter-agent', { method: 'PUT', body: JSON.stringify({ id, agentId }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `Could not refresh it (${r.status})`);
+    return d;
+  }
+  async function adminRemoveStarter(id) {
+    const r = await apiFetch(`/api/admin/starter-agent?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `Could not remove it (${r.status})`);
+    return d;
+  }
   async function adminDeleteUser(userId, confirmUsername) {
     const r = await apiFetch(`/api/admin/users/${userId}?confirm=${encodeURIComponent(confirmUsername)}`, { method: 'DELETE' });
     const d = await r.json().catch(() => ({}));
@@ -8815,6 +8833,145 @@ npm run migrate            # הרצה בפועל`}</Block>
   }
 
   /* ─────────────────── ADMIN: USERS LIST ─────────────────── */
+  /**
+   * Which AI Chatbots a new account is handed.
+   *
+   * A starter is frozen when it is marked, so editing your own copy afterwards
+   * changes nothing until you refresh it here — and a copy sitting in somebody
+   * else's account can never take its place, because this list holds ids. The
+   * one thing that needs saying out loud is when the two have drifted apart.
+   */
+  /** "1 skill", "2 skills" — a count reads wrong without it. */
+  function plural(n, noun) { return `${n} ${noun}${n === 1 ? '' : 's'}`; }
+
+  function StarterAgentsPanel() {
+    const [data, setData] = useState(null);
+    const [busy, setBusy] = useState(null);      // the id being worked on
+    const [error, setError] = useState('');
+    const [picking, setPicking] = useState(false);
+
+    const load = useCallback(() => (
+      adminStarterAgent()
+        .then(d => { setData(d); setError(d.error || ''); })
+        .catch(err => { setData({ starters: [], candidates: [] }); setError(err.message); })
+    ), []);
+    useEffect(() => { load(); }, [load]);
+
+    async function act(key, fn) {
+      setBusy(key); setError('');
+      try { await fn(); await load(); }
+      catch (err) { setError(err.message); }
+      finally { setBusy(null); }
+    }
+
+    const starters = (data && data.starters) || [];
+    const candidates = ((data && data.candidates) || []).filter(c => !c.isStarter);
+
+    const card = {
+      padding: '15px 18px', marginBottom: 18, borderRadius: 'var(--r-lg)',
+      background: 'var(--bg-card)', border: '1px solid var(--border)',
+    };
+
+    return (
+      <div style={card}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>Starter AI Chatbots</div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', flex: 1, minWidth: 200 }}>
+            Copied into every new account on sign-up, exactly as they were when you marked them.
+          </div>
+          <Btn size="sm" icon={picking ? undefined : Icons.plus} onClick={() => setPicking(p => !p)}>
+            {picking ? 'Close' : 'Add one of yours'}
+          </Btn>
+        </div>
+
+        {picking && (
+          <div style={{
+            marginBottom: 14, padding: 10, borderRadius: 'var(--r-md)',
+            background: 'var(--bg-panel)', border: '1px solid var(--border)',
+          }}>
+            {candidates.length === 0 ? (
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)', padding: '6px 4px' }}>
+                Every AI Chatbot you own is already a starter.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 220, overflowY: 'auto' }}>
+                {candidates.map(c => (
+                  <button key={c.id} disabled={!!busy}
+                    onClick={() => act(c.id, () => adminAddStarter(c.id)).then(() => setPicking(false))}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10, textAlign: 'start',
+                      padding: '8px 10px', borderRadius: 8, background: 'transparent',
+                      border: '1px solid transparent', color: 'var(--text)', fontSize: 13,
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                    <span dir="auto" style={{ fontWeight: 650, flex: 1, minWidth: 0 }}>{c.name}</span>
+                    <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                      {c.owner} · {c.documents} docs
+                    </span>
+                    <span style={{ fontSize: 11.5, color: 'var(--primary)', fontWeight: 650 }}>
+                      {busy === c.id ? '…' : 'Freeze as starter'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {starters.length === 0 ? (
+          <div style={{
+            fontSize: 12.5, color: 'var(--warning)', padding: '10px 12px', lineHeight: 1.6,
+            background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)',
+            borderRadius: 'var(--r-md)',
+          }}>
+            No starters are marked, so a new account begins with nothing in it.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {starters.map(s => (
+              <div key={s.id} style={{
+                display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+                padding: '10px 12px', borderRadius: 'var(--r-md)',
+                background: 'var(--bg-panel)', border: '1px solid var(--border)',
+              }}>
+                <span dir="auto" style={{ fontWeight: 700, fontSize: 13.5, minWidth: 120 }}>{s.name}</span>
+                <span style={{ fontSize: 11.5, color: 'var(--text-muted)', flex: 1, minWidth: 180 }}>
+                  {plural(s.skills, 'skill')} · {plural(s.tools, 'tool')} · {plural(s.documents, 'doc')}
+                  {s.takenAt ? ` · frozen ${new Date(s.takenAt).toLocaleDateString()}` : ''}
+                </span>
+                {!s.sourceExists && (
+                  <Chip tone="neutral" title="The AI Chatbot this was taken from has been deleted. The copy here still works.">
+                    source deleted
+                  </Chip>
+                )}
+                {s.sourceExists && s.sourceChanged && (
+                  <Chip tone="tools" title="Your own copy has been edited since this snapshot was taken. New accounts still get the snapshot.">
+                    source has changed
+                  </Chip>
+                )}
+                {s.sourceExists && (
+                  <Btn size="sm" disabled={busy === s.id}
+                    title="Take the snapshot again from the AI Chatbot it came from"
+                    onClick={() => act(s.id, () => adminRefreshStarter(s.id, s.sourceAgentId))}>
+                    {busy === s.id ? '…' : 'Refresh'}
+                  </Btn>
+                )}
+                <Btn size="sm" danger icon={Icons.trash} disabled={busy === s.id}
+                  title="Stop handing this to new accounts"
+                  onClick={() => act(s.id, () => adminRemoveStarter(s.id))}>
+                  Remove
+                </Btn>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {error && <div style={{ color: 'var(--danger)', fontSize: 12, marginTop: 10 }}>{error}</div>}
+      </div>
+    );
+  }
+
   function AdminView({ onSelectUser, myAgents }) {
     const [tab, setTab]             = useState('users');
     const [users, setUsers]         = useState(null);
@@ -8824,14 +8981,6 @@ npm run migrate            # הרצה בפועל`}</Block>
     const [confirmText, setConfirmText] = useState('');
     const [deleteBusy, setDeleteBusy] = useState(false);
     const [deleteError, setDeleteError] = useState({});
-    const [starter, setStarter] = useState(null);   // { templates: [{ name, found, … }], allFound }
-
-    useEffect(() => {
-      adminStarterAgent()
-        .then(setStarter)
-        .catch(() => setStarter({ templates: [], allFound: false, error: 'Could not check.' }));
-    }, []);
-
     useEffect(() => {
       adminListUsers().then(setUsers).catch(() => setUsers([]));
     }, []);
@@ -8883,35 +9032,7 @@ npm run migrate            # הרצה בפועל`}</Block>
           }
         />
 
-        {/* The starter agents are matched by name, so a rename can silently
-            stop new sign-ups from getting one. Say so out loud, per agent. */}
-        {starter && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 22, flexWrap: 'wrap',
-            padding: '15px 18px', marginBottom: 18, borderRadius: 'var(--r-lg)',
-            background: 'var(--bg-card)',
-            border: `1px solid ${starter.allFound ? 'var(--border)' : 'rgba(245,158,11,0.35)'}`,
-          }}>
-            <div style={{ minWidth: 190 }}>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>Starter AI Chatbots</div>
-              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>
-                Copied into every new account on sign-up
-              </div>
-            </div>
-            {(starter.templates || []).map(t => (
-              <div key={t.name} style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
-                <span style={{ color: t.found ? 'var(--success)' : 'var(--warning)' }}>{t.found ? '✓' : '⚠'}</span>
-                <span dir="ltr" style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 600 }}>{t.name}</span>
-                <span style={{ color: 'var(--text-muted)', fontSize: 11.5 }}>
-                  {t.found
-                    ? `${t.skills} skills · ${t.tools} tools`
-                    : `${t.reason} — name an AI Chatbot of yours exactly this to fix it.`}
-                </span>
-              </div>
-            ))}
-            {starter.error && <div style={{ color: 'var(--danger)', fontSize: 12 }}>{starter.error}</div>}
-          </div>
-        )}
+        <StarterAgentsPanel />
 
         <div style={{ background: 'var(--bg-card)', borderRadius: 'var(--r-lg)', border: '1px solid var(--border)', overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 880 }}>

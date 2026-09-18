@@ -208,17 +208,27 @@ without pasting a traceback.
 
 ## Starter agents
 
-Every new account is seeded with a copy of each admin-owned agent named in
-`TEMPLATE_AGENT_NAMES` (`api/_defaultAgent.js`) — currently `weather` and `bobi`. The copies
-are live: editing one of those agents changes what the next sign-up receives. Each carries the
-prompt, skills, tools and knowledge documents, but none of the owner's credentials — no LLM API
-key, no WhatsApp number or tokens, no Gmail connection, and tool secret values blanked while
-their names are kept as a hint.
+Every new account is seeded with a copy of each row in `starter_agents` (migration `018`), the
+list an admin picks by hand in the Admin tab. A starter is a **frozen copy** — the agent's
+definition and its documents as they were the moment it was marked — so editing your own agent
+afterwards changes nothing until you press Refresh, and the panel says when the two have
+drifted apart. Each copy carries the prompt, skills, tools and knowledge documents, but none of
+the owner's credentials: no LLM API key, no WhatsApp number or tokens, no Gmail connection, and
+tool secret values blanked while their names are kept as a hint.
 
-Seeding never fails a sign-up: a missing, renamed or unreadable template is logged and skipped,
-and one template failing does not stop the others. `GET /api/admin/starter-agent` reports each
-template's state and, when one is missing, why — no agent by that name, an ownerless one, one
-owned by a non-admin, or a near-miss name — which the Admin tab shows at the top.
+They used to be found by name — the newest admin-owned agent called `weather` or `bobi` — which
+had two ways to go wrong. Hand a starter to somebody who is also an admin, let them edit it,
+and their copy (same name, later `updated_at`) quietly became the template. And with two agents
+of yours named alike, whichever you touched last won without saying so. The list holds ids now,
+and `snapshotAgent` refuses anything an admin does not own, so neither is reachable: a copy in
+somebody else's account is a different row and can never stand in for the starter. Migration
+`018` carries today's two over, frozen as they are, so no account comes up empty on deploy.
+
+Seeding never fails a sign-up: an unreadable starter is logged and skipped, one failing does
+not stop the others, and an empty list simply means a new account starts empty — which the
+Admin tab warns about. `probes/starters-probe.mjs` holds the guarantees: the frozen copy is
+what is handed out, another admin's same-named copy is not, a refresh moves it forward, and
+nothing of the owner's travels with it.
 
 ## Migrations
 

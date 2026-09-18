@@ -1,83 +1,87 @@
 import { sql } from '../_db.js';
 import { checkAdmin } from '../_auth.js';
-import { TEMPLATE_AGENT_NAMES, findTemplateAgents } from '../_defaultAgent.js';
+import { listStarters, snapshotAgent, removeStarter } from '../_defaultAgent.js';
 
 /**
- * Reports, per starter agent, whether new sign-ups will actually receive it —
- * and when they won't, why. The templates are found by name, so one can
- * silently stop matching after a rename or an ownership change.
+ * The starters a new account is handed, and the admin-owned agents that could
+ * become one.
+ *
+ * A starter is frozen when it is marked, so the interesting thing to report is
+ * whether the agent it was taken from has moved on since — that is the one
+ * state an admin cannot see from anywhere else, and the reason the Refresh
+ * button exists.
  */
 export default async function handler(req, res) {
   const admin = checkAdmin(req, res);
   if (!admin) return;
-  if (req.method !== 'GET') return res.status(405).end();
 
   try {
-    const found = await findTemplateAgents();
+    if (req.method === 'GET') {
+      const starters = await listStarters();
 
-    // Everything named like a template, so a miss explains itself.
-    const candidates = await sql`
-      select a.id,
-             a.data->>'name'  as name,
-             a.user_id,
-             u.username,
-             coalesce(u.is_admin, false) as owner_is_admin
-      from agents a
-      left join users u on u.id = a.user_id
-      where lower(trim(coalesce(a.data->>'name', ''))) = any(${TEMPLATE_AGENT_NAMES})
-         or exists (
-           select 1 from unnest(${TEMPLATE_AGENT_NAMES}::text[]) n
-           where lower(trim(coalesce(a.data->>'name', ''))) like '%' || n || '%'
-         )
-      order by a.updated_at desc
-      limit 20
-    `;
+      /* Every agent an admin owns; the picker offers the ones not already
+         frozen, and the rest explain why a starter says "source is gone". */
+      const candidates = await sql`
+        select a.id, a.data->>'name' as name, a.user_id, u.username,
+               (select count(*)::int from documents d where d.agent_id = a.id and d.parent_id is null) as documents
+        from agents a
+        join users u on u.id = a.user_id
+        where u.is_admin
+        order by a.updated_at desc
+        limit 100
+      `;
 
-    const counts = found.length
-      ? await sql`
-          select agent_id, count(*)::int as documents
-          from documents
-          where agent_id = any(${found.map(f => f.id)})
-          group by agent_id
-        `
-      : [];
+      return res.json({
+        starters: starters.map(s => ({
+          id: s.id,
+          name: s.name,
+          sourceAgentId: s.source_agent_id,
+          sourceExists: !!s.source_data,
+          /* Frozen means the copy can drift from the agent it came from, and
+             only a comparison says whether it has. */
+          sourceChanged: !!s.source_data && JSON.stringify(s.source_data) !== JSON.stringify(s.data),
+          skills: (s.data?.skills || []).length,
+          tools: (s.data?.tools || []).length,
+          documents: Array.isArray(s.documents) ? s.documents.length : 0,
+          createdBy: s.created_by_name,
+          takenAt: s.updated_at || s.created_at,
+        })),
+        candidates: candidates.map(c => ({
+          id: c.id,
+          name: c.name || '(unnamed)',
+          owner: c.username,
+          documents: c.documents,
+          isStarter: starters.some(s => s.source_agent_id === c.id),
+        })),
+      });
+    }
 
-    const templates = TEMPLATE_AGENT_NAMES.map(name => {
-      const hit = found.find(f => f.template_name === name);
-      if (hit) {
-        return {
-          name,
-          found: true,
-          agentId: hit.id,
-          owner: hit.username,
-          skills: (hit.data?.skills || []).length,
-          tools: (hit.data?.tools || []).length,
-          documents: (counts.find(c => c.agent_id === hit.id) || {}).documents || 0,
-        };
-      }
-      const near = candidates.filter(c => (c.name || '').toLowerCase().includes(name));
-      const reason = near.length === 0
-        ? `אין סוכן בשם "${name}".`
-        : near.some(c => !c.user_id)
-          ? `יש סוכן בשם "${name}" אבל בלי בעלים.`
-          : near.some(c => !c.owner_is_admin)
-            ? `יש סוכן בשם "${name}" אבל הבעלים שלו לא אדמין.`
-            : `יש סוכן דומה אבל השם שלו לא בדיוק "${name}".`;
-      return { name, found: false, reason, near };
-    });
+    if (req.method === 'POST') {
+      const { agentId } = req.body || {};
+      if (!agentId) return res.status(400).json({ error: 'agentId is required' });
+      const result = await snapshotAgent({ agentId, admin });
+      if (result.error) return res.status(400).json(result);
+      return res.json(result);
+    }
 
-    return res.json({
-      templateNames: TEMPLATE_AGENT_NAMES,
-      templates,
-      allFound: templates.every(t => t.found),
-      candidates,
-    });
+    /* Re-freezing: the same agent, as it is now. */
+    if (req.method === 'PUT') {
+      const { id, agentId } = req.body || {};
+      if (!id || !agentId) return res.status(400).json({ error: 'id and agentId are required' });
+      const result = await snapshotAgent({ agentId, admin, starterId: id });
+      if (result.error) return res.status(400).json(result);
+      return res.json(result);
+    }
+
+    if (req.method === 'DELETE') {
+      const id = (req.query.id || '').trim();
+      if (!id) return res.status(400).json({ error: 'id is required' });
+      await removeStarter(id);
+      return res.json({ ok: true });
+    }
   } catch (err) {
-    return res.status(500).json({
-      templateNames: TEMPLATE_AGENT_NAMES,
-      templates: [],
-      allFound: false,
-      error: err.message,
-    });
+    return res.status(500).json({ error: err.message });
   }
+
+  return res.status(405).end();
 }
