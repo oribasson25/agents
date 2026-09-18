@@ -120,7 +120,7 @@
        React branch (see MOBILE), so none of this touches the desktop. */
     @media (max-width: 768px) {
       :root { --ui-zoom: 1; }                       /* the 80% desktop scale is wrong on a phone */
-      .m-app { height: 100vh; height: 100dvh; }     /* dvh: the toolbar slides, the app keeps fitting */
+      .m-app { height: 100vh; height: 100dvh; height: var(--app-h, 100dvh); }
       .m-nav, .m-sheet { padding-bottom: env(safe-area-inset-bottom); }
       .m-root input, .m-root textarea, .m-root select { font-size: 16px; }   /* iOS zooms in on anything smaller */
       .m-scroll-x { scrollbar-width: none; -webkit-overflow-scrolling: touch; }
@@ -201,6 +201,23 @@
     .bg-logo-watermark {
       opacity: 0.045;
     }
+
+    /* ── right-to-left text in a left-to-right layout ──
+       A Hebrew sentence in a box that is laid out for English comes out with
+       its full stop on the wrong side, and a truncated one loses its opening
+       words instead of its closing ones — the ellipsis lands at the head.
+       `plaintext` makes every block take its direction from its own first
+       letter, which is what each of these boxes actually wants. It is scoped
+       to the interface language so an English layout is never reordered. */
+    [data-ui-lang="he"] :is(div, p, span, li, label, button, a, h1, h2, h3, h4, td, th) {
+      unicode-bidi: plaintext;
+    }
+
+    /* ── the phone's viewport ──
+       An open keyboard does not shrink 100dvh on iOS: the composer ends up
+       under the keys and the shell looks stretched. --app-h is the visual
+       viewport, set from JS while a phone is on screen; the .m-app rule that
+       uses it is in the phone block above. */
 
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after {
@@ -450,6 +467,9 @@
   function setAccountApi(cfg) {
     ACCOUNT_API = { ...ACCOUNT_API, ...(cfg || {}) };
     UI_LANG = ACCOUNT_API.assistantLanguage === 'he' ? 'he' : 'en';
+    // The bidi rule for Hebrew is a stylesheet's job, and this is how it hears
+    // about the language.
+    try { document.documentElement.setAttribute('data-ui-lang', UI_LANG); } catch (e) { /* no DOM */ }
   }
 
   /* ── the interface's language ──
@@ -791,12 +811,20 @@
      button weights. Every screen is built from these so nothing drifts. */
 
   /** The small uppercase mono label that sits over every page title. */
+  /**
+   * The small label above a section. Its mono, letter-spaced, upper-cased shape
+   * is an English one — Hebrew put through it comes out as spaced-apart
+   * letters — so a Hebrew label gets a plain one instead.
+   */
   function Eyebrow({ children, style }) {
+    const he = typeof children === 'string' && isHebrew(children);
     return (
-      <div style={{
-        fontFamily: MONO, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.16em',
-        textTransform: 'uppercase', color: 'var(--text-muted)', ...style,
-      }}>{children}</div>
+      <div dir="auto" style={he
+        ? { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', ...style }
+        : {
+            fontFamily: MONO, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.16em',
+            textTransform: 'uppercase', color: 'var(--text-muted)', ...style,
+          }}>{children}</div>
     );
   }
 
@@ -4176,7 +4204,9 @@
         {/* Drawer. On a phone it is the whole screen, and the panel's desktop
             proportions — a 420px column drawn at 80% — have to be re-cut: a
             shorter header, tighter padding, and a composer sized for a thumb. */}
-        <div className="slide-in-right" style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: fullScreen ? '100vw' : 420, background: 'var(--bg-sidebar)', borderLeft: fullScreen ? 'none' : '1px solid var(--border)', zIndex: 201, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+        <div className="slide-in-right" style={{ position: 'fixed', top: 0, right: 0,
+          bottom: fullScreen ? 'auto' : 0, height: fullScreen ? 'var(--app-h, 100dvh)' : undefined,
+          width: fullScreen ? '100vw' : 420, background: 'var(--bg-sidebar)', borderLeft: fullScreen ? 'none' : '1px solid var(--border)', zIndex: 201, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
           {/* Header */}
           <div style={{ padding: fullScreen ? '9px 10px 9px 14px' : '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
             <div style={{ width: fullScreen ? 34 : 40, height: fullScreen ? 34 : 40, borderRadius: '50%', background: 'var(--bg-panel)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}><AvatarDisplay value={agent.avatar} size={fullScreen ? 34 : 40} /></div>
@@ -7781,9 +7811,7 @@ npm run migrate            # הרצה בפועל`}</Block>
           width: 310, flexShrink: 0, borderInlineStart: '1px solid var(--border)',
           background: 'var(--bg-panel)', padding: '16px 18px', overflowY: 'auto',
         }}>
-          {language === 'en'
-            ? <Eyebrow style={{ marginBottom: 11 }}>{copy.card.head}</Eyebrow>
-            : <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 11 }}>{copy.card.head}</div>}
+          <Eyebrow style={{ marginBottom: 11 }}>{copy.card.head}</Eyebrow>
           <AgentBuildCard agent={built} copy={copy} dir={dir}
             onOpen={onOpenAgent} onTest={onTestAgent} />
         </aside>
@@ -8351,9 +8379,7 @@ npm run migrate            # הרצה בפועל`}</Block>
           <div style={{ padding: '0 20px 8px', display: 'flex', alignItems: 'center', gap: 8 }}>
             {/* The mono, letter-spaced eyebrow is an English shape; Hebrew gets
                 a plain label instead of spaced-out letters. */}
-            {en
-              ? <Eyebrow style={{ flex: 1 }}>Chats</Eyebrow>
-              : <div style={{ flex: 1, fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>שיחות</div>}
+            <Eyebrow style={{ flex: 1 }}>{L('Chats', 'שיחות')}</Eyebrow>
             <button onClick={onNewChat} title={en ? 'New chat' : 'שיחה חדשה'}
               style={{ display: 'flex', alignItems: 'center', background: 'transparent', color: 'var(--text-muted)', padding: 2, borderRadius: 7 }}
               onMouseEnter={e => e.currentTarget.style.color = 'var(--primary)'}
@@ -8369,7 +8395,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             ) : (recents || []).map(sx => {
               const on = sx.id === activeSessionId;
               return (
-                <button key={sx.id} onClick={() => onPickRecent(sx)} title={sx.title || ''}
+                <button key={sx.id} onClick={() => onPickRecent(sx)} title={sx.title || ''} dir="auto"
                   style={{
                     display: 'block', width: '100%', textAlign: 'start', padding: '7px 13px', borderRadius: 9,
                     background: on ? 'var(--bg-hover)' : 'transparent',
@@ -9454,6 +9480,34 @@ npm run migrate            # הרצה בפועל`}</Block>
 
   const MOBILE_QUERY = '(max-width: 768px)';
 
+  /**
+   * The height the phone can actually show. An open keyboard shrinks the
+   * visual viewport but leaves 100dvh alone, so a shell sized in dvh keeps its
+   * composer under the keys and its header off the top of the screen. Reading
+   * it straight from visualViewport is the only number that tells the truth.
+   */
+  function useViewportHeight(active) {
+    useEffect(() => {
+      const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+      const root = typeof document !== 'undefined' ? document.documentElement : null;
+      if (!active || !vv || !root) return;
+      const apply = () => {
+        root.style.setProperty('--app-h', `${Math.round(vv.height)}px`);
+        // Safari scrolls the page to reveal the focused field, which slides the
+        // fixed shell out of view; the shell is already the right size.
+        if (window.scrollY !== 0) window.scrollTo(0, 0);
+      };
+      apply();
+      vv.addEventListener('resize', apply);
+      vv.addEventListener('scroll', apply);
+      return () => {
+        vv.removeEventListener('resize', apply);
+        vv.removeEventListener('scroll', apply);
+        root.style.removeProperty('--app-h');
+      };
+    }, [active]);
+  }
+
   function useIsMobile() {
     const [mobile, setMobile] = useState(() =>
       typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(MOBILE_QUERY).matches : false);
@@ -9544,7 +9598,8 @@ npm run migrate            # הרצה בפועל`}</Block>
         <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 300, display: open ? 'block' : 'none' }} />
         <div className="m-sheet" style={{
           position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 301, display: open ? 'flex' : 'none',
-          height: full ? 'calc(100% - 28px)' : 'auto', maxHeight: 'calc(100% - 28px)',
+          height: full ? 'calc(var(--app-h, 100dvh) - 28px)' : 'auto',
+          maxHeight: 'calc(var(--app-h, 100dvh) - 28px)',
           background: 'var(--bg-sidebar)', borderRadius: '22px 22px 0 0', borderTop: '1px solid var(--border)',
           flexDirection: 'column', overflow: 'hidden',
           boxShadow: '0 -12px 40px rgba(0,0,0,0.5)',
@@ -10054,6 +10109,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     const [moreOpen, setMoreOpen] = useState(false);
     const [seed, setSeed] = useState(null);         // the assistant sheet
     const [homeSeed, setHomeSeed] = useState(null); // the home conversation
+    useViewportHeight(true);
     const language = (settings || accountApi()).assistantLanguage || 'he';
 
     // Anything that calls askAssistant() opens the sheet with its question.

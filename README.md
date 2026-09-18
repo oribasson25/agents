@@ -90,6 +90,16 @@ migration `010` backfills them from each user's most recently updated agent that
 
 ## Language
 
+Hebrew in a layout built for English needs help from the browser: a full stop
+lands on the wrong side, and a truncated line loses its opening words because
+the ellipsis goes to the head. `<html data-ui-lang>` carries the interface
+language, and one stylesheet rule gives every block `unicode-bidi: plaintext`
+while it is Hebrew, so each block takes its direction from its own first
+letter. A saved chat title is the user's own words in either language, so those
+rows carry `dir="auto"` whatever the interface is set to. `Eyebrow` drops its
+mono, letter-spaced, upper-cased shape for a Hebrew label — that shape is an
+English one, and Hebrew put through it comes out as spaced-apart letters.
+
 The interface is English. `user_settings.assistant_language` (`en` or `he`) switches the whole
 of it — chrome and assistants alike — and it is edited as **Interface language** in Settings.
 In the browser it lands in one module variable behind `L(en, he)`, `uiLang()` and `uiDir()`;
@@ -127,6 +137,16 @@ wherever it is clicked, opens the home chat with that question already asked ins
 floating bubble — which is hidden on the home screen, since the screen is already a chat.
 
 ## Phones
+
+An open keyboard shrinks the visual viewport but leaves `100dvh` alone, so a
+shell sized in `dvh` keeps its composer under the keys. `useViewportHeight`
+writes `window.visualViewport.height` into `--app-h`, and the shell, the test
+drawer and the sheets are sized by it.
+
+The whole app is one unhashed HTML file, so `vercel.json` sends it with
+`max-age=0, must-revalidate`. Without that a phone can go on serving an old
+build for days after a deploy — which looks exactly like a feature that never
+shipped.
 
 The phone shell is a separate React branch (`MobileApp`), and two desktop leaves reach into it
 where their proportions do not survive the trip. The test chat (`ChatTestDrawer fullScreen`)

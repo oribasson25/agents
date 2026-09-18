@@ -15,7 +15,7 @@ const src = fs.readFileSync(new URL('../agentforge.html', import.meta.url).pathn
 const body = src.match(/<script type="text\/babel"[^>]*>([\s\S]*?)<\/script>/)[1];
 
 /* Hand the probe the components it wants to render. */
-const exposed = ['TokensSection', 'TokenMinter', 'LocalIdePanel', 'SettingsPanel', 'AgentEditor', 'BranchBar', 'MergePanel', 'MobileDraftBar', 'MobileAgentEditor', 'CopyableCommand', 'DocsView', 'HomeChatView', 'AgentBuildCard', 'Sidebar', 'splitOptions', 'HOME_COPY', 'homeSystemExtra', 'greeting', 'L'];
+const exposed = ['TokensSection', 'TokenMinter', 'LocalIdePanel', 'SettingsPanel', 'AgentEditor', 'BranchBar', 'MergePanel', 'MobileDraftBar', 'MobileAgentEditor', 'CopyableCommand', 'DocsView', 'HomeChatView', 'AgentBuildCard', 'Sidebar', 'splitOptions', 'HOME_COPY', 'homeSystemExtra', 'greeting', 'L', 'Eyebrow'];
 const code = babel.transform(
   body + `\n;globalThis.__probe = { ${exposed.map(n => `${n}: typeof ${n} !== 'undefined' ? ${n} : null`).join(', ')} };`,
   { presets: ['react'] }).code;
@@ -177,6 +177,19 @@ for (const needle of ['Home', 'Agents', 'סוכן למעקב הזמנות']) {
   if (side && !side.includes(needle)) { console.log(`✗ the sidebar is missing: ${needle}`); failed++; }
 }
 if (side && side.includes('>Assistant<')) { console.log('✗ the sidebar still carries the Assistant tab'); failed++; }
+
+/* A saved chat title is whatever the user typed. Without dir="auto" a Hebrew
+   one is truncated at its opening words and its "?" lands at the front. */
+if (side && !/dir="auto"[^>]*>[\s\S]{0,40}סוכן למעקב הזמנות/.test(side)) {
+  console.log('✗ the chat rows do not carry their own direction'); failed++;
+} else console.log('✓ a chat title in the sidebar carries dir="auto"');
+
+/* The eyebrow's letter-spaced mono is an English shape. */
+const ebEn = render('Eyebrow in English', React.createElement(probe.Eyebrow, {}, 'Runtime'));
+const ebHe = render('Eyebrow in Hebrew', React.createElement(probe.Eyebrow, {}, 'שיחות'));
+if (!/letter-spacing/.test(ebEn)) { console.log('✗ the English eyebrow lost its letter-spacing'); failed++; }
+if (/letter-spacing/.test(ebHe)) { console.log('✗ a Hebrew eyebrow is still letter-spaced'); failed++; }
+else console.log('✓ a Hebrew eyebrow drops the English letter-spacing');
 
 /* The suggested-answer buttons only exist if the marker line is parsed off. */
 const parsed = probe.splitOptions('באיזו שפה הוא מדבר?\n::options:: עברית | אנגלית | שתיהן');
