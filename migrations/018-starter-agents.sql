@@ -11,14 +11,17 @@
 -- afterwards does not change what the next sign-up receives until you refresh
 -- the snapshot on purpose; self-contained, so it survives the source agent
 -- being renamed, edited or deleted.
+-- Every key in this schema is text, not uuid — agents.id and users.id included
+-- — so these match them. A uuid column here cannot carry a foreign key to a
+-- text one, and the whole table fails to create.
 create table if not exists starter_agents (
-  id              uuid primary key,
-  source_agent_id uuid references agents(id) on delete set null,
+  id              text primary key,
+  source_agent_id text references agents(id) on delete set null,
   name            text        not null,
   data            jsonb       not null,
   documents       jsonb       not null default '[]'::jsonb,
   position        int         not null default 0,
-  created_by      uuid references users(id) on delete set null,
+  created_by      text references users(id) on delete set null,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
@@ -28,7 +31,7 @@ create index if not exists starter_agents_position_idx on starter_agents (positi
 -- Carry over what sign-ups get today, so nobody's next account comes up empty:
 -- the same two names, resolved the old way one last time, frozen as they are.
 insert into starter_agents (id, source_agent_id, name, data, documents, position, created_by)
-select gen_random_uuid(),
+select gen_random_uuid()::text,
        t.id,
        coalesce(t.data->>'name', 'starter'),
        t.data,
