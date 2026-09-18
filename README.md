@@ -156,6 +156,16 @@ skill or a tool opened inside a tab reports `onDetail`, and the 94px rail and th
 step aside so Monaco — minimap off, wrapping on — gets the whole screen instead of the ~270px
 left beside them.
 
+## Drafts
+
+Editing in the browser never writes to the live agent: a `PUT /api/agents/:id`
+with no branch lands on the agent's draft, opening one if it has none, and
+answers with `_branch` set to what it wrote to. The browser reads that back and
+notes it on its copy (`SET_BRANCH`), which is what makes the publish bar appear
+the moment you type instead of on the next full load of the agent list. The
+save is debounced, so that action carries only the branch — replacing the whole
+record with the response would undo whatever was typed while it was in flight.
+
 ## Assistant conversations
 
 The platform assistant is also a floating chat, reachable by the ✨ button in the corner of

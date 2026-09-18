@@ -748,6 +748,14 @@
         ...state,
         agents: state.agents.map(a => a.id === action.agent.id ? action.agent : a),
       };
+      /* Which version you are editing, and nothing else. The save that reports
+         it is debounced, so by the time the answer comes back the agent in
+         hand may already have later keystrokes in it — replacing the whole
+         record here would throw them away. */
+      case 'SET_BRANCH': return {
+        ...state,
+        agents: state.agents.map(a => a.id === action.id ? { ...a, _branch: action.branch } : a),
+      };
       case 'DELETE_AGENT': return {
         ...state,
         agents: state.agents.filter(a => a.id !== action.id),
@@ -10370,7 +10378,15 @@ npm run migrate            # הרצה בפועל`}</Block>
     const saveAgent = useCallback(async (agent) => {
       dispatch({ type: 'UPDATE_AGENT', agent });
       try {
-        await apiUpdate(agent);
+        /* The first edit to a live agent opens a draft for it, and the save
+           answers with the branch the edit actually landed on. Without reading
+           that back, nothing on screen knows there is anything to publish
+           until the next time the agent list is fetched — which is why the
+           publish bar used to need a refresh to appear. */
+        const saved = await apiUpdate(agent);
+        if (saved && saved._branch && saved._branch !== (agent._branch || 'main')) {
+          dispatch({ type: 'SET_BRANCH', id: agent.id, branch: saved._branch });
+        }
         saveErrorRef.current = '';
       } catch (err) {
         // The save is debounced and otherwise invisible, so a rejected change

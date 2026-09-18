@@ -15,7 +15,7 @@ const src = fs.readFileSync(new URL('../agentforge.html', import.meta.url).pathn
 const body = src.match(/<script type="text\/babel"[^>]*>([\s\S]*?)<\/script>/)[1];
 
 /* Hand the probe the components it wants to render. */
-const exposed = ['TokensSection', 'TokenMinter', 'LocalIdePanel', 'SettingsPanel', 'AgentEditor', 'BranchBar', 'MergePanel', 'MobileDraftBar', 'MobileAgentEditor', 'CopyableCommand', 'DocsView', 'HomeChatView', 'AgentBuildCard', 'Sidebar', 'splitOptions', 'HOME_COPY', 'homeSystemExtra', 'greeting', 'L', 'Eyebrow', 'sessionTitle'];
+const exposed = ['TokensSection', 'TokenMinter', 'LocalIdePanel', 'SettingsPanel', 'AgentEditor', 'BranchBar', 'MergePanel', 'MobileDraftBar', 'MobileAgentEditor', 'CopyableCommand', 'DocsView', 'HomeChatView', 'AgentBuildCard', 'Sidebar', 'splitOptions', 'HOME_COPY', 'homeSystemExtra', 'greeting', 'L', 'Eyebrow', 'sessionTitle', 'reducer'];
 const code = babel.transform(
   body + `\n;globalThis.__probe = { ${exposed.map(n => `${n}: typeof ${n} !== 'undefined' ? ${n} : null`).join(', ')} };`,
   { presets: ['react'] }).code;
@@ -184,6 +184,21 @@ if (side && side.includes('>Assistant<')) { console.log('✗ the sidebar still c
 if (side && !/dir="auto"[^>]*>[\s\S]{0,40}סוכן למעקב הזמנות/.test(side)) {
   console.log('✗ the chat rows do not carry their own direction'); failed++;
 } else console.log('✓ a chat title in the sidebar carries dir="auto"');
+
+/* The first edit to a live agent opens a draft, and the save says so. The
+   answer arrives after a debounce, by which time the agent in hand may hold
+   later keystrokes — noting the branch must not take them back with it. */
+{
+  const before = { agents: [{ id: 'a-1', name: 'weather', _branch: 'main' }] };
+  const typed = probe.reducer(before, { type: 'UPDATE_AGENT', agent: { id: 'a-1', name: 'weather (warmer)', _branch: 'main' } });
+  const noted = probe.reducer(typed, { type: 'SET_BRANCH', id: 'a-1', branch: 'draft' });
+  const now = noted.agents[0];
+  if (now._branch !== 'draft') { console.log('✗ the save did not move the agent onto its draft'); failed++; }
+  if (now.name !== 'weather (warmer)') { console.log('✗ noting the branch threw away a later edit'); failed++; }
+  if (now._branch === 'draft' && now.name === 'weather (warmer)') {
+    console.log('✓ an edit opens a draft without losing the keystrokes after it');
+  }
+}
 
 /* A conversation is named after the first thing the user typed themselves —
    not the sentence a "build it for me" button put in their mouth, and not the
