@@ -7583,6 +7583,11 @@ npm run migrate            # הרצה בפועל`}</Block>
       }
     }
 
+    /* The welcome panel keeps its dark gradient, so its text carries its own
+       ink — the page's text colour is written for a light background. */
+    const HERO_INK = '#f2f3f7';
+    const HERO_INK_DIM = 'rgba(242,243,247,0.66)';
+
     const isLogin = mode === 'login';
     const canSubmit = isLogin ? (username && password) : (username && password && phone);
     const isMobile = useIsMobile();   // on a phone the form is the whole screen
@@ -7594,7 +7599,9 @@ npm run migrate            # הרצה בפועל`}</Block>
           {/* Decorative glow */}
           <div style={{ position: 'absolute', top: '30%', left: '50%', transform: 'translate(-50%,-50%)', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(239,159,39,0.08) 0%, transparent 70%)', pointerEvents: 'none' }} />
           {/* Watermark logo */}
-          <BgLogo size={420} wrapStyle={{ bottom: '-60px', left: '-60px' }} />
+          {/* The watermark is tuned for the light page; on this dark panel the
+              same opacity reads as a second logo. */}
+          <BgLogo size={420} wrapStyle={{ bottom: '-60px', left: '-60px', opacity: 0.35 }} />
           <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <svg viewBox="200 20 280 230" width="220" height="90" role="img" xmlns="http://www.w3.org/2000/svg">
               <ellipse cx="340" cy="108" rx="21" ry="29" fill="#EF9F27"/>
@@ -7618,22 +7625,22 @@ npm run migrate            # הרצה בפועל`}</Block>
               <path d="M367,48 L376,40" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
               <path d="M367,48 L371,57" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
               <text x="340" y="210" textAnchor="middle" fontFamily="'Plus Jakarta Sans','Segoe UI',sans-serif" fontSize="52" fontWeight="700">
-                <tspan fill="var(--text)">8Legs</tspan><tspan fill="#EF9F27">.ai</tspan>
+                <tspan fill={HERO_INK}>8Legs</tspan><tspan fill="#EF9F27">.ai</tspan>
               </text>
             </svg>
             <div style={{ marginTop: 28 }}>
-              <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.02em', marginBottom: 10 }}>Your Agents. Your Rules.</div>
-              <div style={{ fontSize: 14, color: 'var(--text-muted)', maxWidth: 280, lineHeight: 1.7 }}>Build, configure and deploy AI agents in minutes — no code required.</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: HERO_INK, letterSpacing: '-0.02em', marginBottom: 10 }}>Your Agents. Your Rules.</div>
+              <div style={{ fontSize: 14, color: HERO_INK_DIM, maxWidth: 280, lineHeight: 1.7 }}>Build, configure and deploy AI agents in minutes — no code required.</div>
             </div>
             {/* Feature pills */}
             <div style={{ display: 'flex', gap: 8, marginTop: 32, flexWrap: 'wrap', justifyContent: 'center' }}>
               {['Claude & GPT models', 'RAG knowledge base', 'Custom tools'].map(f => (
-                <span key={f} style={{ fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 20, background: 'var(--bg-hover)', border: '1px solid var(--border)', color: 'var(--text-2)' }}>{f}</span>
+                <span key={f} style={{ fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 20, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.14)', color: HERO_INK_DIM }}>{f}</span>
               ))}
             </div>
           </div>
           {/* Footer */}
-          <div style={{ position: 'absolute', bottom: 20, fontSize: 11, color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+          <div style={{ position: 'absolute', bottom: 20, fontSize: 11, color: 'rgba(242,243,247,0.45)', letterSpacing: '0.04em' }}>
             by <span style={{ color: 'var(--primary)', fontWeight: 600 }}>Ori Basson</span>
           </div>
         </div>
