@@ -44,7 +44,11 @@ export default async function handler(req, res) {
               ${(title || '').slice(0, 200)}, ${JSON.stringify(messages)}, now(), now())
       on conflict (id) do update set
         messages   = excluded.messages,
-        title      = case when assistant_sessions.title = '' then excluded.title else assistant_sessions.title end,
+        -- The title is derived from the first thing the user typed themselves,
+        -- which the first turn of a conversation opened from a button does not
+        -- yet contain. So a later turn is allowed to correct it; only an empty
+        -- one is ignored.
+        title      = case when excluded.title <> '' then excluded.title else assistant_sessions.title end,
         subject    = excluded.subject,
         updated_at = now()
       where assistant_sessions.user_id = ${user.userId}

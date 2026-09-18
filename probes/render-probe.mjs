@@ -15,7 +15,7 @@ const src = fs.readFileSync(new URL('../agentforge.html', import.meta.url).pathn
 const body = src.match(/<script type="text\/babel"[^>]*>([\s\S]*?)<\/script>/)[1];
 
 /* Hand the probe the components it wants to render. */
-const exposed = ['TokensSection', 'TokenMinter', 'LocalIdePanel', 'SettingsPanel', 'AgentEditor', 'BranchBar', 'MergePanel', 'MobileDraftBar', 'MobileAgentEditor', 'CopyableCommand', 'DocsView', 'HomeChatView', 'AgentBuildCard', 'Sidebar', 'splitOptions', 'HOME_COPY', 'homeSystemExtra', 'greeting', 'L', 'Eyebrow'];
+const exposed = ['TokensSection', 'TokenMinter', 'LocalIdePanel', 'SettingsPanel', 'AgentEditor', 'BranchBar', 'MergePanel', 'MobileDraftBar', 'MobileAgentEditor', 'CopyableCommand', 'DocsView', 'HomeChatView', 'AgentBuildCard', 'Sidebar', 'splitOptions', 'HOME_COPY', 'homeSystemExtra', 'greeting', 'L', 'Eyebrow', 'sessionTitle'];
 const code = babel.transform(
   body + `\n;globalThis.__probe = { ${exposed.map(n => `${n}: typeof ${n} !== 'undefined' ? ${n} : null`).join(', ')} };`,
   { presets: ['react'] }).code;
@@ -170,7 +170,8 @@ render('AgentBuildCard before anything exists', React.createElement(probe.AgentB
 const side = render('Sidebar with recent chats', React.createElement(probe.Sidebar, {
   activeNav: 'home', onNav() {}, user: { username: 'ori', isAdmin: false }, onLogout() {},
   settings: { provider: 'claude', apiKey: 'k', model: 'claude-opus-5' },
-  recents: [{ id: 's-1', title: 'סוכן למעקב הזמנות' }], activeSessionId: 's-1',
+  recents: [{ id: 's-1', title: 'סוכן למעקב הזמנות', messages: [{ role: 'user', content: 'סוכן למעקב הזמנות' }] }],
+  activeSessionId: 's-1',
   onPickRecent() {}, onNewChat() {}, language: 'en',
 }));
 for (const needle of ['Home', 'Agents', 'סוכן למעקב הזמנות']) {
@@ -183,6 +184,27 @@ if (side && side.includes('>Assistant<')) { console.log('✗ the sidebar still c
 if (side && !/dir="auto"[^>]*>[\s\S]{0,40}סוכן למעקב הזמנות/.test(side)) {
   console.log('✗ the chat rows do not carry their own direction'); failed++;
 } else console.log('✓ a chat title in the sidebar carries dir="auto"');
+
+/* A conversation is named after the first thing the user typed themselves —
+   not the sentence a "build it for me" button put in their mouth, and not the
+   rest of a paragraph that no list column could ever show. */
+const canned = 'בנה לי סוכן חדש. שאל אותי מה הוא צריך לעשות.';
+const cases = [
+  [[{ role: 'user', content: canned, seeded: true },
+    { role: 'assistant', content: 'ok' },
+    { role: 'user', content: 'סוכן למעקב הזמנות בחנות רהיטים. תודה!' }],
+   'סוכן למעקב הזמנות בחנות רהיטים.'],
+  /* saved before the flag existed: recognised by its words */
+  [[{ role: 'user', content: canned }, { role: 'user', content: 'משהו אחר לגמרי' }],
+   'משהו אחר לגמרי'],
+  /* nothing but the canned ask yet — one sentence of it, not the instruction */
+  [[{ role: 'user', content: canned }], 'בנה לי סוכן חדש.'],
+];
+for (const [msgs, want] of cases) {
+  const got = probe.sessionTitle(msgs);
+  if (got !== want) { console.log(`✗ sessionTitle gave "${got}", wanted "${want}"`); failed++; }
+}
+console.log('✓ a conversation is named after what the user actually asked');
 
 /* The eyebrow's letter-spaced mono is an English shape. */
 const ebEn = render('Eyebrow in English', React.createElement(probe.Eyebrow, {}, 'Runtime'));

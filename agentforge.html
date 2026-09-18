@@ -2329,7 +2329,7 @@
         kind,
         agentId: agent.id,
         subject: subjectRef.current?.name || '',
-        title: (real.find(m => m.role === 'user') || {}).content || '',
+        title: sessionTitle(all),
         messages: real.map(m => ({ role: m.role, content: m.content, applied: m.applied ? m.applied.fields : undefined })),
       });
     }
@@ -6933,7 +6933,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     useEffect(() => {
       if (!seed || !seed.text || seed.nonce === seededRef.current) return;
       seededRef.current = seed.nonce;
-      if (accountApiUsable()) send(seed.text, { fresh: seed.fresh });
+      if (accountApiUsable()) send(seed.text, { fresh: seed.fresh, seeded: true });
       else setInput(seed.text);
     }, [seed]);
 
@@ -6946,10 +6946,10 @@ npm run migrate            # הרצה בפועל`}</Block>
         id: sessionIdRef.current,
         kind: 'platform',
         subject: '',
-        title: (real.find(m => m.role === 'user') || {}).content || '',
+        title: sessionTitle(all),
         messages: real.map(m => m.role === 'tool'
           ? { role: 'tool', name: m.name, input: m.input, result: m.result }
-          : { role: m.role, content: m.content }),
+          : { role: m.role, content: m.content, ...(m.seeded ? { seeded: true } : {}) }),
       });
       if (onSaved) onSaved();
     }
@@ -6972,7 +6972,7 @@ npm run migrate            # הרצה בפועל`}</Block>
       setFocusAgentId(null);
       setMessages((session.messages || []).map(m => m.role === 'tool'
         ? { id: uid(), role: 'tool', name: m.name, input: m.input, result: m.result }
-        : { id: uid(), role: m.role, content: m.content }));
+        : { id: uid(), role: m.role, content: m.content, seeded: !!m.seeded }));
     }
 
     function findAgent(id) {
@@ -7157,7 +7157,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     /* `fresh` asks the question in a conversation of its own: a link from
        somewhere else in the app means a new chat, not a turn inside whatever
        was left open here. */
-    async function send(text, { fresh } = {}) {
+    async function send(text, { fresh, seeded } = {}) {
       const question = (text || '').trim();
       if (!question || pending || noKey) return;
       setInput('');
@@ -7167,13 +7167,14 @@ npm run migrate            # הרצה בפועל`}</Block>
             ...messages.filter(m => m.role === 'user' || m.role === 'assistant').map(m => ({ role: m.role, content: m.content })),
             { role: 'user', content: question },
           ];
+      const asked = { id: uid(), role: 'user', content: question, seeded: !!seeded };
       if (fresh) {
         sessionIdRef.current = uid();
         setSessionId(sessionIdRef.current);
         setFocusAgentId(null);
-        setMessages([{ id: uid(), role: 'user', content: question }]);
+        setMessages([asked]);
       } else {
-        setMessages(m => [...m, { id: uid(), role: 'user', content: question }]);
+        setMessages(m => [...m, asked]);
       }
       setPending(true);
       try {
@@ -7304,14 +7305,16 @@ npm run migrate            # הרצה בפועל`}</Block>
    */
 
   /** What "build it for me" asks, in the language the interface is in. */
-  function FIRST_AGENT_ASK() {
-    return L('Build me my first agent. Ask me what it needs to do.',
-             'בנה לי סוכן ראשון. שאל אותי מה הוא צריך לעשות.');
-  }
-  function NEW_AGENT_ASK() {
-    return L('Build me a new agent. Ask me what it needs to do.',
-             'בנה לי סוכן חדש. שאל אותי מה הוא צריך לעשות.');
-  }
+  const CANNED_ASKS = [
+    'Build me my first agent. Ask me what it needs to do.',
+    'Build me a new agent. Ask me what it needs to do.',
+    'בנה לי סוכן ראשון. שאל אותי מה הוא צריך לעשות.',
+    'בנה לי סוכן חדש. שאל אותי מה הוא צריך לעשות.',
+  ];
+  function FIRST_AGENT_ASK() { return L(CANNED_ASKS[0], CANNED_ASKS[2]); }
+  function NEW_AGENT_ASK()   { return L(CANNED_ASKS[1], CANNED_ASKS[3]); }
+  /* Conversations saved before the flag existed are recognised by their words. */
+  function isCannedAsk(text) { return CANNED_ASKS.includes((text || '').trim()); }
 
   /**
    * The time of day, by the clock on this machine. Night belongs to the
@@ -7437,6 +7440,25 @@ npm run migrate            # הרצה בפועל`}</Block>
     }
     lines.push('', language === 'en' ? 'Speak English.' : 'דבר עברית.');
     return lines.join('\n');
+  }
+
+  /**
+   * What a conversation is called in the list beside it.
+   *
+   * Two things ruin the obvious answer of "the first thing the user said". A
+   * conversation opened from a "build it for me" button starts with the same
+   * canned sentence every time, so every row reads alike; and the sentence
+   * carries an instruction to the model ("ask me what it needs to do") that
+   * says nothing about which conversation this is. So: the first thing the
+   * user typed themselves, and only its first sentence.
+   */
+  function sessionTitle(messages) {
+    const said = (messages || []).filter(m => m.role === 'user');
+    const own = said.find(m => !m.seeded && !isCannedAsk(m.content)) || said[0];
+    let text = ((own && own.content) || '').trim().replace(/\s+/g, ' ');
+    const stop = text.search(/[.!?…](\s|$)/);
+    if (stop >= 12) text = text.slice(0, stop + 1);
+    return text.slice(0, 140);
   }
 
   /* The assistant marks its suggested answers with a final ::options:: line.
@@ -8040,7 +8062,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
             <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 800, fontSize: 18, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 620 }}>
-                {open.title || L('(untitled)', '(ללא כותרת)')}
+                {sessionTitle(open.messages) || open.title || L('(untitled)', '(ללא כותרת)')}
               </div>
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>
                 <span style={{ color: meta.color, fontWeight: 700 }}>{meta.label}</span>
@@ -8136,7 +8158,7 @@ npm run migrate            # הרצה בפועל`}</Block>
                   </span>
                   <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--text-muted)' }}>{sx.message_count} msg</span>
                 </div>
-                <div dir="auto" style={{ fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sx.title || L('(untitled)', '(ללא כותרת)')}</div>
+                <div dir="auto" style={{ fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sessionTitle(sx.messages) || sx.title || L('(untitled)', '(ללא כותרת)')}</div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{new Date(sx.updated_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</div>
               </button>
             );
@@ -8209,7 +8231,7 @@ npm run migrate            # הרצה בפועל`}</Block>
                       </td>
                       <td style={{ ...td, fontFamily: MONO, fontSize: 12, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>{sx.message_count} msg</td>
                       <td style={{ ...td, maxWidth: 380 }}>
-                        <div dir="auto" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sx.title || L('(untitled)', '(ללא כותרת)')}</div>
+                        <div dir="auto" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sessionTitle(sx.messages) || sx.title || L('(untitled)', '(ללא כותרת)')}</div>
                       </td>
                       <td style={{ ...td, textAlign: 'end', whiteSpace: 'nowrap' }}>
                         <IconBtn onClick={e => { e.stopPropagation(); remove(sx); }} danger title={L('Delete', 'מחיקה')}>{Icons.trash}</IconBtn>
@@ -8395,16 +8417,17 @@ npm run migrate            # הרצה בפועל`}</Block>
             ) : (recents || []).map(sx => {
               const on = sx.id === activeSessionId;
               return (
-                <button key={sx.id} onClick={() => onPickRecent(sx)} title={sx.title || ''} dir="auto"
+                <button key={sx.id} onClick={() => onPickRecent(sx)} title={sessionTitle(sx.messages) || sx.title || ''} dir="auto"
                   style={{
-                    display: 'block', width: '100%', textAlign: 'start', padding: '7px 13px', borderRadius: 9,
+                    display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2,
+                    width: '100%', textAlign: 'start', padding: '7px 13px', borderRadius: 9,
                     background: on ? 'var(--bg-hover)' : 'transparent',
-                    color: on ? 'var(--text)' : 'var(--text-2)', fontSize: 12.5,
-                    fontWeight: on ? 650 : 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    color: on ? 'var(--text)' : 'var(--text-2)', fontSize: 12.5, lineHeight: 1.45,
+                    fontWeight: on ? 650 : 500, overflow: 'hidden',
                   }}
                   onMouseEnter={e => { if (!on) e.currentTarget.style.background = 'var(--bg-hover)'; }}
                   onMouseLeave={e => { if (!on) e.currentTarget.style.background = 'transparent'; }}
-                >{sx.title || (en ? '(untitled)' : '(ללא כותרת)')}</button>
+                >{sessionTitle(sx.messages) || sx.title || L('(untitled)', '(ללא כותרת)')}</button>
               );
             })}
           </div>

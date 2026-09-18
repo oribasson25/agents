@@ -160,7 +160,11 @@ left beside them.
 
 The platform assistant is also a floating chat, reachable by the ✨ button in the corner of
 every screen but Home. Every turn of every assistant — platform, tool and skill — is saved to
-`assistant_sessions` (migration `012`) through `PUT /api/assistant-sessions`. The sidebar lists
+`assistant_sessions` (migration `012`) through `PUT /api/assistant-sessions`. What a conversation is called is derived from
+its messages by `sessionTitle`, wherever it is listed: the first thing the user typed
+themselves — never the sentence a "build it for me" button put in their mouth — and only its
+first sentence, since no list column shows a paragraph. Deriving it at display time rather than
+trusting the stored `title` also repairs the rows saved before this existed. The sidebar lists
 the recent platform conversations under the nav items and reopens one in the home screen;
 **All conversations** below them opens the full history, with filters per kind, a keyword
 search over the transcripts, and each conversation's tool calls with their arguments and
