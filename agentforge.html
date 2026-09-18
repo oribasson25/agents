@@ -14,39 +14,40 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
   <style>
+    /* One palette. The interface is light; there is no theme to choose. */
     :root {
-      --bg-app: #07080a;
-      --bg-sidebar: #0b0d10;
-      --bg-card: #0f1114;
-      --bg-panel: #141720;
-      --bg-input: #181b22;
-      --bg-hover: #1e2230;
+      --bg-app: #f2f4f8;
+      --bg-sidebar: #e8ecf2;
+      --bg-card: #ffffff;
+      --bg-panel: #f6f8fb;
+      --bg-input: #eef0f5;
+      --bg-hover: #e2e6ef;
       --primary: #EF9F27;
       --primary-hover: #F5B34D;
-      --primary-dim: rgba(239,159,39,0.12);
-      --primary-glow: rgba(239,159,39,0.25);
-      --success: #22c55e;
-      --warning: #f59e0b;
-      --danger: #ef4444;
-      --teal: #14b8a6;
-      --teal-dim: rgba(20,184,166,0.12);
-      --violet: #9b8cfa;
-      --violet-dim: rgba(155,140,250,0.12);
+      --primary-dim: rgba(239,159,39,0.10);
+      --primary-glow: rgba(239,159,39,0.20);
+      --success: #16a34a;
+      --warning: #b45309;
+      --danger: #dc2626;
+      --teal: #0d9488;
+      --teal-dim: rgba(13,148,136,0.10);
+      --violet: #6d5ce0;
+      --violet-dim: rgba(109,92,224,0.10);
       /* Page navigation is amber; a selection *inside* a page is the inverse
-         surface — a light chip with dark ink. */
-      --sel: #e9e9ee;
-      --sel-ink: #0b0c0f;
-      --text: #eeeef2;
-      --text-2: #8b90a0;
-      --text-muted: #4b5168;
-      --border: #1f2335;
+         surface — a dark chip with light ink. */
+      --sel: #0d0f14;
+      --sel-ink: #ffffff;
+      --text: #0d0f14;
+      --text-2: #445068;
+      --text-muted: #8a97b0;
+      --border: #d8dde8;
       --border-focus: #EF9F27;
       --r-sm: 8px;
       --r-md: 12px;
       --r-lg: 16px;
       --r-xl: 20px;
-      --shadow: 0 4px 24px rgba(0,0,0,0.5);
-      --shadow-lg: 0 8px 40px rgba(0,0,0,0.6);
+      --shadow: 0 4px 24px rgba(15,23,42,0.06);
+      --shadow-lg: 0 8px 40px rgba(15,23,42,0.10);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     /*
@@ -179,29 +180,8 @@
     }
 
     .bg-logo-watermark {
-      opacity: 0.018;
+      opacity: 0.045;
     }
-
-    [data-theme="light"] {
-      --bg-app: #f2f4f8;
-      --bg-sidebar: #e8ecf2;
-      --bg-card: #ffffff;
-      --bg-panel: #f6f8fb;
-      --bg-input: #eef0f5;
-      --bg-hover: #e2e6ef;
-      --text: #0d0f14;
-      --text-2: #445068;
-      --text-muted: #8a97b0;
-      --border: #d8dde8;
-      --shadow: 0 4px 24px rgba(0,0,0,0.07);
-      --shadow-lg: 0 8px 40px rgba(0,0,0,0.10);
-      --primary-dim: rgba(239,159,39,0.10);
-      --primary-glow: rgba(239,159,39,0.20);
-      --teal-dim: rgba(20,184,166,0.10);
-      --sel: #0d0f14;
-      --sel-ink: #ffffff;
-    }
-    [data-theme="light"] .bg-logo-watermark { opacity: 0.04; }
 
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after {
@@ -306,6 +286,7 @@
     clock: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 1.8"/></svg>,
     check: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
     play: <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5l12 7.5-12 7.5z"/></svg>,
+    tidy: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="18" x2="18" y2="18"/></svg>,
     users: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
   };
 
@@ -561,6 +542,29 @@
     return r.json();
   }
 
+  /**
+   * One turn of a real conversation.
+   *
+   * The same endpoint the embedded widget posts to: the agent runs on the
+   * server, branch routing picks which version answers, and the conversation
+   * is stored as a 'widget' interaction. Deliberately a plain fetch with no
+   * token — this is the end user's path, not the builder's.
+   */
+  async function liveChatTurn(agentId, messages, sessionId) {
+    const r = await fetch(`/api/widget/${agentId}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages, sessionId }),
+    });
+    const raw = await r.text();
+    let data;
+    try { data = JSON.parse(raw); }
+    catch (_) { throw new Error(`Server returned non-JSON (${r.status}): ${raw.slice(0, 200)}`); }
+    if (!r.ok) throw new Error(data.error || `Request failed (${r.status})`);
+    if (!data.content) throw new Error('Empty response from server');
+    return data.content;
+  }
+
   async function deleteChatSession(id) {
     return apiFetch(`/api/chat-sessions?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
   }
@@ -671,8 +675,22 @@
       // coming back doesn't replay it.
       case 'CLEAR_NEW': return { ...state, agents: state.agents.map(a => a._isNew ? stripUiFields(a) : a) };
       case 'SET_VIEW': return { ...state, view: action.view, editingId: action.editingId || state.editingId };
-      case 'OPEN_CHAT': return { ...state, chatAgentId: action.id, chatInitialSessionId: action.sessionId || null };
-      case 'CLOSE_CHAT': return { ...state, chatAgentId: null, chatInitialSessionId: null };
+      /* `agent` carries the exact version to talk to — the branch the editor
+         is on, which is not the copy the list holds. `live` runs the
+         conversation through the real channel instead of the test path. */
+      case 'OPEN_CHAT': return {
+        ...state,
+        chatAgentId: action.id,
+        chatAgentSnapshot: action.agent || null,
+        chatBranch: action.branch || null,
+        chatLive: !!action.live,
+        chatInitialSessionId: action.sessionId || null,
+      };
+      case 'CLOSE_CHAT': return {
+        ...state,
+        chatAgentId: null, chatAgentSnapshot: null, chatBranch: null,
+        chatLive: false, chatInitialSessionId: null,
+      };
       default: return state;
     }
   }
@@ -1100,7 +1118,7 @@
         editor = monaco.editor.create(containerRef.current, {
           value: value || '',
           language: 'python',
-          theme: 'vs-dark',
+          theme: 'vs',
           fontSize: 14,
           fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
           lineNumbers: 'on',
@@ -1244,7 +1262,7 @@
               <input type="file" accept="image/*" ref={fileInputRef} style={{ display: 'none' }} onChange={handleImageUpload} />
               <button
                 onClick={() => setShowEmojiPicker(v => !v)}
-                style={{ width: 64, height: 64, borderRadius: '50%', background: '#1e1e1e', fontSize: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--border)', overflow: 'hidden', padding: 0 }}
+                style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--bg-panel)', fontSize: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--border)', overflow: 'hidden', padding: 0 }}
               ><AvatarDisplay value={agent.avatar} size={40} /></button>
               {showEmojiPicker && (
                 <div style={{ position: 'absolute', top: 72, left: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 10, zIndex: 100, width: 190 }}>
@@ -1329,7 +1347,7 @@
             </span>
             <button onClick={() => setAskAI(v => !v)} title="Ask AI to write or change this prompt"
               style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, padding: '4px 11px', borderRadius: 'var(--r-xl)', background: askAI ? 'var(--teal)' : 'var(--teal-dim)', color: askAI ? '#04211e' : 'var(--teal)', border: '1px solid var(--teal)', flexShrink: 0 }}>
-              ✨ Ask AI
+              Ask AI
             </button>
           </div>
           <div style={{ flex: 1, minHeight: 0, padding: 10, display: 'flex', flexDirection: 'column' }}>
@@ -1341,7 +1359,7 @@
             On a phone there is no room for a third column: the same panel
             opens as a sheet from the bottom. */}
         {stacked ? (
-          <MobileSheet open={askAI} onClose={() => setAskAI(false)} full title="✨ Assistant">
+          <MobileSheet open={askAI} onClose={() => setAskAI(false)} full title="Assistant">
             <AssistantPanel agent={agent} kind="agent" subject={agent} targetKey={agent.id} onApply={applyFields} />
           </MobileSheet>
         ) : (
@@ -1522,7 +1540,7 @@
               </span>
               <button onClick={() => setPanelTab('assistant')} title="Ask AI to write or change this prompt"
                 style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, padding: '4px 11px', borderRadius: 'var(--r-xl)', background: panelTab === 'assistant' ? 'var(--teal)' : 'var(--teal-dim)', color: panelTab === 'assistant' ? '#04211e' : 'var(--teal)', border: '1px solid var(--teal)' }}>
-                ✨ Ask AI
+                Ask AI
               </button>
             </div>
             <div style={{ flex: 1, minHeight: 0, padding: 10, display: 'flex', flexDirection: 'column' }}>
@@ -1535,7 +1553,7 @@
             <WorkspacePanelTabs
               tabs={[
                 { id: 'config', label: 'Configuration' },
-                { id: 'assistant', label: '✨ Assistant' },
+                { id: 'assistant', label: 'Assistant' },
               ]}
               active={panelTab}
               onChange={setPanelTab}
@@ -2467,7 +2485,7 @@
               </span>
               <button onClick={() => setPanelTab('assistant')} title="Ask AI to write or change this code"
                 style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, padding: '4px 11px', borderRadius: 'var(--r-xl)', background: panelTab === 'assistant' ? 'var(--teal)' : 'var(--teal-dim)', color: panelTab === 'assistant' ? '#04211e' : 'var(--teal)', border: '1px solid var(--teal)' }}>
-                ✨ Ask AI
+                Ask AI
               </button>
             </div>
             <div style={{ flex: 1, minHeight: 0 }}>
@@ -2482,7 +2500,7 @@
               tabs={[
                 { id: 'config', label: 'Configuration' },
                 { id: 'secrets', label: 'Secrets' },
-                { id: 'assistant', label: '✨ Assistant' },
+                { id: 'assistant', label: 'Assistant' },
               ]}
               active={panelTab}
               onChange={setPanelTab}
@@ -3511,7 +3529,7 @@
                       {/* Says whether this document is in a shape the agent can retrieve from */}
                       {doc.normalized
                         ? <span title="סודר על ידי מודל: חולק לסעיפים קצרים עם מילות מפתח בעברית ובאנגלית"
-                            style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 6, background: 'var(--teal-dim)', color: 'var(--teal)' }}>✨ מסודר</span>
+                            style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 6, background: 'var(--teal-dim)', color: 'var(--teal)' }}>מסודר</span>
                         : <span title="נשמר כמו שהוא — לא בהכרח קל לסוכן למצוא בו"
                             style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 6, background: 'var(--bg-hover)', color: 'var(--text-muted)' }}>גולמי</span>}
                       {doc.chunks > 0 && <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>{doc.chunks} קטעי חיפוש</span>}
@@ -3523,7 +3541,7 @@
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                     <IconBtn onClick={() => reorganizeDoc(doc.id)} disabled={busyDoc === doc.id}
-                      title={doc.normalized ? 'לסדר מחדש מהמקור' : 'לסדר את המסמך לקריאה של הסוכן'}>✨</IconBtn>
+                      title={doc.normalized ? 'לסדר מחדש מהמקור' : 'לסדר את המסמך לקריאה של הסוכן'}>{Icons.tidy}</IconBtn>
                     {doc.has_original && (
                       <IconBtn onClick={() => restoreDoc(doc.id)} disabled={busyDoc === doc.id} title="להחזיר את הטקסט המקורי">↩</IconBtn>
                     )}
@@ -3853,13 +3871,13 @@
 
 
   /* ─────────────────── CHAT TEST DRAWER ─────────────────── */
-  function ChatTestDrawer({ agent, onClose, initialSessionId, fullScreen }) {
+  function ChatTestDrawer({ agent, onClose, initialSessionId, fullScreen, branch, live }) {
     const openingMsg = { id: uid(), role: 'agent', content: agent.openingMessage || 'Hello!', timestamp: new Date(), isOpening: true };
     const [messages, setMessages] = useState([openingMsg]);
     const [input, setInput] = useState('');
     const [pending, setPending] = useState(false);
     const [activeSkillId, setActiveSkillId] = useState(null);
-    const [showHistory, setShowHistory] = useState(!!initialSessionId);
+    const [showHistory, setShowHistory] = useState(!live && !!initialSessionId);
     const [viewingSession, setViewingSession] = useState(null); // { startedAt, messages }
     const [historyTick, setHistoryTick] = useState(0);
     const listRef = useRef(null);
@@ -3871,21 +3889,23 @@
     const messagesRef = useRef(messages);
     useEffect(() => { messagesRef.current = messages; }, [messages]);
     useEffect(() => {
+      if (live) return;   // a live conversation is stored by the server, as an interaction
       const msgs = messages.filter(m => m.role !== 'typing');
       if (!msgs.some(m => m.role === 'user')) return;   // nothing said yet
       saveTestSession(currentSessionIdRef.current, agent.id, msgs)
         .then(() => setHistoryTick(t => t + 1));
-    }, [messages, agent.id]);
+    }, [messages, agent.id, live]);
 
     const [history, setHistory] = useState([]);
     const [historyError, setHistoryError] = useState(null);
     useEffect(() => {
-      let live = true;
+      if (live) return;   // the history panel lists manual tests, and this is not one
+      let alive = true;
       apiListTestSessions(agent.id)
-        .then(d => { if (live) { setHistory(d.sessions || []); setHistoryError(null); } })
-        .catch(err => { if (live) setHistoryError(err.message); });
-      return () => { live = false; };
-    }, [agent.id, historyTick]);
+        .then(d => { if (alive) { setHistory(d.sessions || []); setHistoryError(null); } })
+        .catch(err => { if (alive) setHistoryError(err.message); });
+      return () => { alive = false; };
+    }, [agent.id, historyTick, live]);
 
     // Server rows use assistant/user; the drawer renders agent/user.
     function asDrawerSession(row) {
@@ -3935,8 +3955,10 @@
       inputRef.current?.focus();
       const t0 = performance.now();
 
-      // Skill switch detection
-      const skillMatch = text.match(/^#(\w+)/);
+      // Skill switch detection. A live conversation is run by the server, so
+      // whatever it does with #skill is what a real user would see — this
+      // banner would only be the browser guessing.
+      const skillMatch = live ? null : text.match(/^#(\w+)/);
       let skillBanner = null;
       if (skillMatch) {
         const skill = agent.skills.find(s => s.name.toLowerCase() === skillMatch[1].toLowerCase());
@@ -3952,12 +3974,24 @@
       setMessages(newMsgs);
       setPending(true);
 
-      const history = messages.filter(m => m.role === 'user' || m.role === 'agent').map(m => ({
-        role: m.role === 'agent' ? 'assistant' : 'user', content: m.content,
-      }));
+      const history = messages
+        .filter(m => (m.role === 'user' || m.role === 'agent') && !(live && m.isOpening))
+        .map(m => ({ role: m.role === 'agent' ? 'assistant' : 'user', content: m.content }));
       history.push({ role: 'user', content: maskedText });
 
       try {
+        /* Live: the server runs the agent, picks the branch by traffic, and
+           stores the conversation as an interaction. Nothing of the turn
+           happens in this tab beyond showing it. */
+        if (live) {
+          const answer = await liveChatTurn(agent.id, history, currentSessionIdRef.current);
+          const dtLive = performance.now() - t0;
+          setMessages(m => m.filter(x => x.id !== typingId).concat({
+            id: uid(), role: 'agent', content: answer, timestamp: new Date(), durationMs: dtLive,
+          }));
+          return;
+        }
+
         const content = await callWithTools(agent, history, async (toolName, toolInput) => {
           if (toolName === 'switch_skill') {
             const skill = (agent.skills || []).find(s => s.name.toLowerCase() === (toolInput.skill_name || '').toLowerCase());
@@ -3998,15 +4032,29 @@
         <div className="slide-in-right" style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: fullScreen ? '100vw' : 420, background: 'var(--bg-sidebar)', borderLeft: fullScreen ? 'none' : '1px solid var(--border)', zIndex: 201, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
           {/* Header */}
           <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#1e1e1e', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}><AvatarDisplay value={agent.avatar} size={40} /></div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700, fontSize: 15 }}>{agent.name}</div>
+            <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--bg-panel)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}><AvatarDisplay value={agent.avatar} size={40} /></div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                <span dir="auto" style={{ fontWeight: 700, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agent.name}</span>
+                {live
+                  ? <Chip tone="live">Live</Chip>
+                  : branch && branch !== 'main'
+                    ? <Chip mono tone="neutral">{branch}</Chip>
+                    : null}
+              </div>
               <div style={{ fontSize: 12, color: hasKey ? 'var(--success)' : 'var(--danger)', display: 'flex', alignItems: 'center', gap: 4 }}>
                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: hasKey ? 'var(--success)' : 'var(--danger)', display: 'inline-block' }} />
-                {hasKey ? (accountApi().provider === 'ollama' ? `🦙 ${accountApi().ollamaHost}` : accountApi().model) : (accountApi().provider === 'ollama' ? 'No Ollama host set' : 'No API key in Settings')}
+                {hasKey ? (accountApi().provider === 'ollama' ? `Ollama · ${accountApi().ollamaHost}` : accountApi().model) : (accountApi().provider === 'ollama' ? 'No Ollama host set' : 'No API key in Settings')}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                {live
+                  ? 'שיחה אמיתית — עוברת דרך הערוץ החי ונשמרת ב-Interactions'
+                  : `בדיקה ידנית${branch && branch !== 'main' ? ` על ${branch}` : ''} — נשמרת ב-Manual tests`}
               </div>
             </div>
-            <IconBtn onClick={() => setShowHistory(h => !h)} title="Chat history" style={{ background: showHistory ? 'var(--bg-hover)' : undefined }}>🕐</IconBtn>
+            {!live && (
+              <IconBtn onClick={() => setShowHistory(h => !h)} title="Chat history" style={{ background: showHistory ? 'var(--bg-hover)' : undefined }}>🕐</IconBtn>
+            )}
             <IconBtn onClick={onClose} title="Close">✕</IconBtn>
           </div>
 
@@ -4134,7 +4182,11 @@
               />
               <button onClick={sendMessage} disabled={pending || !input.trim()} style={{ background: 'var(--primary)', color: '#fff', padding: '0 14px', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 18 }}>➤</button>
             </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Use #SkillName to switch skills &nbsp;•&nbsp; @toolName to call tools</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              {live
+                ? 'הסוכן עונה כאן בדיוק כמו למשתמש אמיתי'
+                : <React.Fragment>Use #SkillName to switch skills &nbsp;•&nbsp; @toolName to call tools</React.Fragment>}
+            </div>
           </div>
         </div>
       </>
@@ -4360,7 +4412,7 @@
    * branch, the share of real conversations each one takes, and the way to
    * start another.
    */
-  function BranchChip({ agent, branch, onSwitch, onChanged }) {
+  function BranchChip({ agent, branch, onSwitch, onChanged, onBranches }) {
     const [branches, setBranches] = useState(null);
     const [open, setOpen] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -4371,9 +4423,15 @@
     const isDraft = current === 'draft';
 
     const load = useCallback(async () => {
-      try { setBranches((await apiBranches(agent.id)).branches); }
+      try {
+        const list = (await apiBranches(agent.id)).branches;
+        setBranches(list);
+        /* The header outside this chip says Live or not, and only the branch
+           list knows which versions real conversations reach. */
+        if (onBranches) onBranches(list);
+      }
       catch (e) { setError(e.message); }
-    }, [agent.id]);
+    }, [agent.id, onBranches]);
     useEffect(() => { load(); }, [load, agent._branch]);
 
     async function act(fn, then) {
@@ -4419,6 +4477,9 @@
                   <span dir="ltr" style={{ fontFamily: MONO }}>{b.name}</span>
                   {b.kind === 'draft' && <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>  טיוטה</span>}
                   {b.live && <span style={{ color: 'var(--success)', fontWeight: 500 }}>  חי</span>}
+                  {b.live && b.name !== 'main' && (
+                    <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>  {b.traffic_weight}% מהשיחות</span>
+                  )}
                 </button>
 
                 {/* A draft is a place to work, never something customers reach. */}
@@ -4601,6 +4662,7 @@
     const [loaded, setLoaded] = useState(null);
     const [loadError, setLoadError] = useState(null);
     const [merging, setMerging] = useState(null);
+    const [branches, setBranches] = useState(null);
     const agent = picked ? loaded : fromApp;
 
     useEffect(() => {
@@ -4633,6 +4695,10 @@
       saveOnBranchDebounced(next);
     }, [picked, onUpdate, saveOnBranchDebounced]);
 
+    /* Testing runs against the version on screen, branch and all — otherwise
+       you would be talking to main while looking at an experiment. */
+    const testThis = () => onTest && onTest(agent, picked || agent._branch || 'main');
+
     /* Picking the branch the app already holds just means "stop overriding". */
     function switchTo(name) {
       setPicked(name === (fromApp._branch || 'main') ? null : name);
@@ -4648,6 +4714,10 @@
 
     const branchNow = picked || agent._branch || 'main';
     const mergeable = branchNow !== 'main' && branchNow !== 'draft';
+    /* A branch is live when real conversations reach it — main always, and any
+       experiment a share of the traffic is routed to. */
+    const branchInfo = (branches || []).find(b => b.name === branchNow);
+    const liveNow = branchInfo ? branchInfo.live : branchNow === 'main';
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -4677,11 +4747,14 @@
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 9, flexWrap: 'wrap' }}>
               <BranchChip agent={agent} branch={picked} onSwitch={switchTo}
+                          onBranches={setBranches}
                           onChanged={() => { setPicked(null); onReload && onReload(); }} />
-              {branchNow === 'main'
-                ? <Chip tone="live">Live</Chip>
-                : branchNow === 'draft'
-                  ? <Chip tone="draft">Draft</Chip>
+              {branchNow === 'draft'
+                ? <Chip tone="draft">Draft</Chip>
+                : liveNow
+                  ? <Chip tone="live">
+                      Live{branchNow !== 'main' && branchInfo ? ` · ${branchInfo.traffic_weight}%` : ''}
+                    </Chip>
                   : <Chip tone="neutral">Experiment</Chip>}
               <Chip tone="skills" mono>{agent.skills.length} skills</Chip>
               <Chip tone="tools" mono>{agent.tools.length} tools</Chip>
@@ -4694,8 +4767,8 @@
             )}
             <PullCommandButton agentId={agent.id} />
             {onTest && (
-              <Btn variant="primary" icon={Icons.play} onClick={onTest}
-                   title="Talk to this agent — the conversation is saved in Manual tests">
+              <Btn variant="primary" icon={Icons.play} onClick={testThis}
+                   title={`Talk to ${branchNow} — the conversation is saved in Manual tests`}>
                 Test
               </Btn>
             )}
@@ -4752,7 +4825,7 @@
             {tab === 'tools' && <ToolsTab agent={agent} onUpdate={update} />}
             {tab === 'knowledge' && <KnowledgeTab agent={agent} />}
             {tab === 'export' && <ExportTab agent={agent} />}
-            {tab === 'manual tests' && <ManualTestsTab agent={agent} onTest={onTest} />}
+            {tab === 'manual tests' && <ManualTestsTab agent={agent} onTest={testThis} />}
             {tab === 'whatsapp' && <WhatsAppTab agent={agent} onUpdate={update} />}
           </div>
         </div>
@@ -4859,7 +4932,8 @@
         <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: 6, borderTop: '1px solid var(--border)', paddingTop: 13 }}
              onClick={e => e.stopPropagation()}>
           <Btn size="sm" icon={Icons.edit} onClick={onEdit}>Edit</Btn>
-          <Btn size="sm" icon={Icons.play} onClick={onTest}>Test</Btn>
+          <Btn size="sm" icon={Icons.play} onClick={onTest}
+               title="A real conversation through the live channel — it lands in Interactions">Test</Btn>
           <div style={{ marginInlineStart: 'auto', display: 'flex', gap: 2 }}>
             {iconActions.map(a => (
               <IconBtn key={a.label} onClick={a.fn} title={a.label} danger={a.danger}
@@ -4901,7 +4975,8 @@
         </div>
         <div style={{ display: 'flex', gap: 4, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
           <Btn size="sm" icon={Icons.edit} onClick={onEdit}>Edit</Btn>
-          <Btn size="sm" icon={Icons.play} onClick={onTest}>Test</Btn>
+          <Btn size="sm" icon={Icons.play} onClick={onTest}
+               title="A real conversation through the live channel — it lands in Interactions">Test</Btn>
           <IconBtn onClick={onDuplicate} title="Duplicate">{Icons.copy}</IconBtn>
           <IconBtn onClick={onExport} title="Export">{Icons.export}</IconBtn>
           <IconBtn onClick={onDelete} title="Delete" danger>{Icons.trash}</IconBtn>
@@ -4922,9 +4997,9 @@
       { id: 'config',       label: 'Configuration' },
       { id: 'skills',       label: 'Skills' },
       { id: 'tools',        label: 'Tools' },
-      { id: 'platform',     label: '✨ אסיסטנט המערכת' },
+      { id: 'platform',     label: 'אסיסטנט המערכת' },
       { id: 'history',      label: 'היסטוריית אסיסטנטים' },
-      { id: 'assistant',    label: '✨ אסיסטנט הבנייה' },
+      { id: 'assistant',    label: 'אסיסטנט הבנייה' },
       { id: 'knowledge',    label: 'Knowledge (RAG)' },
       { id: 'test',         label: 'בדיקה ו-Manual tests' },
       { id: 'cli',          label: '⌨ עריכה מ-IDE (CLI)' },
@@ -4992,7 +5067,7 @@
           </UL>
 
           <H3>איפה כל דבר יושב</H3>
-          <P>בסייד-בר: <strong>Agents</strong> (הסוכנים שלך), <strong>Assistant</strong> (היסטוריית השיחות עם האסיסטנטים), <strong>Interactions</strong> (שיחות של משתמשי קצה), <strong>Documentation</strong> (הדף הזה), <strong>Settings</strong>, ו-<strong>Admin</strong> למשתמשי אדמין בלבד. הכפתור <strong>✨ שאל את האסיסטנט</strong> בפינה הימנית התחתונה פותח את אסיסטנט המערכת מכל מסך.</P>
+          <P>בסייד-בר: <strong>Agents</strong> (הסוכנים שלך), <strong>Assistant</strong> (היסטוריית השיחות עם האסיסטנטים), <strong>Interactions</strong> (שיחות של משתמשי קצה), <strong>Documentation</strong> (הדף הזה), <strong>Settings</strong>, ו-<strong>Admin</strong> למשתמשי אדמין בלבד. הכפתור <strong>שאל את האסיסטנט</strong> בפינה הימנית התחתונה פותח את אסיסטנט המערכת מכל מסך.</P>
         </div>
       ),
 
@@ -5013,7 +5088,7 @@
           <P>כל סוכן בעמוד הבית מוצג בכרטיס עם האווטאר, השם, תאריך היצירה ומספר הסקילים והכלים. בתחתית הכרטיס חמש פעולות:</P>
           <UL>
             <li><strong>Edit</strong> — פתיחת עורך הסוכן (גם לחיצה על הכרטיס עצמו)</li>
-            <li><strong>Test</strong> — פתיחת צ'אט בדיקה בצד</li>
+            <li><strong>Test</strong> — שיחה אמיתית עם הסוכן, בדיוק כמו של משתמש קצה: רצה בשרת, מנותבת לפי אחוזי הבראנצ'ים, ונרשמת ב-Interactions</li>
             <li><strong>Duplicate</strong> — שכפול הסוכן, כולל סקילים וכלים</li>
             <li><strong>Export</strong> — פתיחת לשונית ההטמעה</li>
             <li><strong>Delete</strong> — מחיקה מיידית של הסוכן וכל מה שתלוי בו</li>
@@ -5144,8 +5219,8 @@ def run(**kwargs):
       /* ─────────────── PLATFORM ASSISTANT ─────────────── */
       platform: (
         <div dir="rtl">
-          <H2>✨ אסיסטנט המערכת</H2>
-          <P>הכפתור <strong>✨ שאל את האסיסטנט</strong> בפינה הימנית התחתונה, בכל מסך. אפשר להגיע אליו גם מ-<strong>Build with the assistant</strong> בראש עמוד הסוכנים. לחיצה פותחת צ'אט צף ולחיצה נוספת מקפלת אותו — כך שאפשר לבקש שינוי בזמן שרואים את מה שרוצים לשנות. זה לא סוכן שאתה בונה אלא אסיסטנט שמתפעל את המערכת בשבילך — הוא מבצע פעולות, לא רק מסביר איפה ללחוץ.</P>
+          <H2>אסיסטנט המערכת</H2>
+          <P>הכפתור <strong>שאל את האסיסטנט</strong> בפינה הימנית התחתונה, בכל מסך. אפשר להגיע אליו גם מ-<strong>Build with the assistant</strong> בראש עמוד הסוכנים. לחיצה פותחת צ'אט צף ולחיצה נוספת מקפלת אותו — כך שאפשר לבקש שינוי בזמן שרואים את מה שרוצים לשנות. זה לא סוכן שאתה בונה אלא אסיסטנט שמתפעל את המערכת בשבילך — הוא מבצע פעולות, לא רק מסביר איפה ללחוץ.</P>
 
           <H3>מה הוא עושה</H3>
           <UL>
@@ -5176,8 +5251,8 @@ def run(**kwargs):
       /* ─────────────── ASSISTANT ─────────────── */
       assistant: (
         <div dir="rtl">
-          <H2>✨ אסיסטנט הבנייה</H2>
-          <P>גם ב-Tools וגם ב-Skills יש לשונית <strong>✨ Assistant</strong> בפאנל הצד, וכפתור <strong>✨ Ask AI</strong> ליד העורך שמקפיץ אליה. זה צ'אט שכותב בשבילך — והתוצאה נכתבת ישר לתוך העורך והשדות, לא כטקסט שצריך להעתיק.</P>
+          <H2>אסיסטנט הבנייה</H2>
+          <P>גם ב-Tools וגם ב-Skills יש לשונית <strong>Assistant</strong> בפאנל הצד, וכפתור <strong>Ask AI</strong> ליד העורך שמקפיץ אליה. זה צ'אט שכותב בשבילך — והתוצאה נכתבת ישר לתוך העורך והשדות, לא כטקסט שצריך להעתיק.</P>
 
           <H3>איך זה עובד</H3>
           <UL>
@@ -5251,7 +5326,7 @@ def run(**kwargs):
           <P>שורת מילות המפתח היא הסיבה שאפשר לשאול בעברית על מסמך שכתוב באנגלית — החיפוש הוא לקסיקלי ולא סמנטי, ובלי המילים בעברית לא הייתה חפיפה בכלל.</P>
           <UL>
             <li>המקור נשמר תמיד. הכפתור <Code>↩</Code> בכרטיס המסמך מחזיר אותו</li>
-            <li><Code>✨</Code> מריץ את הסידור שוב, תמיד מהמקור ולא מעל סידור קודם</li>
+            <li>כפתור הסידור מריץ אותו שוב, תמיד מהמקור ולא מעל סידור קודם</li>
             <li>אם אין מפתח API או שהמודל נכשל, המסמך נשמר כמו שהוא ומסומן <strong>גולמי</strong></li>
             <li>דפים שנסרקו מאתר מחולקים לקטעים אבל לא עוברים סידור — סריקה יכולה להיות מאה דפים, וזה מאה קריאות מודל</li>
           </UL>
@@ -5265,7 +5340,7 @@ def run(**kwargs):
           <P>מזינים כתובת אחת או יותר, והסורק עובר על האתר ושומר כל דף כמסמך מסומן <Code>web</Code>. הכותרות (<Code>h1</Code>-<Code>h6</Code>) נשמרות כסעיפים, וכל דף מחולק לקטעי חיפוש כמו כל מסמך אחר. הסריקה מתרעננת אוטומטית פעמיים ביום.</P>
           <Warn>הסורק קורא את ה-HTML שהשרת מחזיר — הוא <strong>לא מריץ JavaScript</strong>. אתר שנבנה בדפדפן (React, Vue, Angular) יחזיר דפים כמעט ריקים, והממשק יסמן כמה דפים כאלה נמצאו. במקרה כזה עדיף להדביק את התוכן ידנית.</Warn>
           <UL>
-            <li>דפים שנסרקו <strong>לא</strong> עוברים את הסידור האוטומטי — סריקה יכולה להיות מאה דפים. אפשר להריץ <Code>✨</Code> על דף בודד ידנית</li>
+            <li>דפים שנסרקו <strong>לא</strong> עוברים את הסידור האוטומטי — סריקה יכולה להיות מאה דפים. אפשר להריץ את הסידור על דף בודד ידנית</li>
             <li>עמוד גדול במיוחד נחתך ב-60 אלף תווים</li>
             <li>סריקה נעצרת לבד לפני שנגמר הזמן ומסמנת <strong>נעצר מוקדם</strong> — הרצה חוזרת ממשיכה</li>
           </UL>
@@ -5277,7 +5352,12 @@ def run(**kwargs):
       test: (
         <div dir="rtl">
           <H2>בדיקת הסוכן</H2>
-          <P>כפתור <strong>Test</strong> פותח צ'אט בצד, מול ההגדרות המעודכנות של הסוכן — בלי לפרסם כלום.</P>
+          <P>יש שתי דרכים לדבר עם סוכן, והן לא אותו דבר:</P>
+          <UL>
+            <li><strong>Test במסך הסוכנים</strong> — שיחה אמיתית. היא רצה בשרת דרך אותו ערוץ שהווידג'ט משתמש בו, מנותבת לבראנץ' לפי אחוזי התנועה, ונשמרת ב-<strong>Interactions</strong> ככל שיחה אחרת.</li>
+            <li><strong>Test בתוך עורך הסוכן</strong> — בדיקה ידנית מול ההגדרות שעל המסך, כולל הבראנץ' שאתה נמצא עליו כרגע, בלי לפרסם כלום. נשמרת ב-<strong>Manual tests</strong>.</li>
+          </UL>
+          <P>הבדיקה הידנית היא זו שמראה קריאות לכלים, מעבר סקילים וזמני תגובה — היא רצה בדפדפן, ולכן היא יכולה להראות את מה שקורה בדרך.</P>
 
           <H3>מה רואים בצ'אט</H3>
           <UL>
@@ -5782,11 +5862,11 @@ npm run migrate            # הרצה בפועל`}</Block>
               </button>
             )}
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 760 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
             {msgs.map((m, i) => (
               <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
                 <div style={{
-                  maxWidth: '80%', padding: '10px 14px', fontSize: 14, lineHeight: 1.5,
+                  maxWidth: '72%', padding: '10px 14px', fontSize: 14, lineHeight: 1.5,
                   whiteSpace: 'pre-wrap', wordBreak: 'break-word',
                   borderRadius: m.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
                   background: m.role === 'user' ? 'var(--primary)' : 'var(--bg-card)',
@@ -6354,7 +6434,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     '- A TOOL is Python that must define `def run(**kwargs)`. Declared parameters arrive in kwargs; secrets come from os.environ; only the standard library plus the packages listed on the tool are available; there is no persistent disk; outbound HTTPS works; return a string, and return a readable error string instead of raising. Reference a tool from a prompt as @tool_name.',
     '- Parameter types are string, number, integer or boolean.',
     '- send_email is a built-in tool, switched on per agent, that sends from a Gmail account connected on that agent (Tools tab). You cannot connect Gmail for the user — say where to do it.',
-    "- KNOWLEDGE is documents (pasted, PDF/DOCX upload, or crawled sites). On upload each one is rewritten by the model into short titled sections with a bilingual keyword line, then split into chunks; a question retrieves chunks by full-text search into the prompt. The search is LEXICAL, not semantic — it matches words, so a document only answers questions phrased with words it contains. You cannot upload files for the user, but you can tell them to press ✨ on a document to have it reorganised.",
+    "- KNOWLEDGE is documents (pasted, PDF/DOCX upload, or crawled sites). On upload each one is rewritten by the model into short titled sections with a bilingual keyword line, then split into chunks; a question retrieves chunks by full-text search into the prompt. The search is LEXICAL, not semantic — it matches words, so a document only answers questions phrased with words it contains. You cannot upload files for the user, but you can tell them to press the tidy button on a document to have it reorganised.",
     '- CHANNELS: the in-app test chat, an embeddable website widget (Export tab), and WhatsApp via Meta Cloud API (Whatsapp tab, needs a phone number id, access token, app secret and verify token from Meta). A WhatsApp number belongs to one agent only.',
     '- DLP can mask credit-card and Israeli-ID numbers before they reach the model and before history is stored.',
     '- INTERACTIONS lists every conversation real end users had across channels, filterable and searchable.',
@@ -6690,7 +6770,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: compact ? 0 : 560, maxWidth: compact ? 'none' : 900 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: compact ? 10 : 16, flexShrink: 0 }}>
-          {!compact && <div style={{ width: 38, height: 38, borderRadius: 11, background: 'var(--primary-dim)', border: '1px solid rgba(239,159,39,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 19 }}>✨</div>}
+          {!compact && <div style={{ width: 38, height: 38, borderRadius: 11, background: 'var(--primary-dim)', border: '1px solid rgba(239,159,39,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}>{Icons.sparkle}</div>}
           <div style={{ flex: 1, minWidth: 0 }}>
             {!compact && <div style={{ fontWeight: 800, fontSize: 22, letterSpacing: '-0.02em' }}>Assistant</div>}
             <div style={{ fontSize: compact ? 11 : 12, color: 'var(--text-muted)', marginTop: compact ? 0 : 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -6835,7 +6915,7 @@ npm run migrate            # הרצה בפועל`}</Block>
         boxShadow: '0 12px 40px rgba(0,0,0,0.45), 0 0 0 4px var(--primary-glow)',
       }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, marginBottom: 9 }}>
-          <span style={{ fontSize: 17, lineHeight: 1.2 }}>✨</span>
+          <span style={{ display: 'flex', color: 'var(--primary)', flexShrink: 0, marginTop: 1 }}>{Icons.sparkle}</span>
           <div style={{ flex: 1, fontWeight: 800, fontSize: 14, lineHeight: 1.45 }}>{copy.title}</div>
           <button onClick={onDismiss} title={copy.dismiss}
             style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 16, lineHeight: 1, padding: 0, flexShrink: 0 }}>×</button>
@@ -6906,7 +6986,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             display: 'flex', flexDirection: 'column', overflow: 'hidden',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 14px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)', flexShrink: 0 }}>
-              <span style={{ fontSize: 16 }}>✨</span>
+              <span style={{ display: 'flex', color: 'var(--primary)' }}>{Icons.sparkle}</span>
               <div style={{ flex: 1, fontWeight: 700, fontSize: 14 }}>Assistant</div>
               <IconBtn onClick={() => setOpen(false)} title={language === 'en' ? 'Collapse' : 'לקפל'}>▾</IconBtn>
             </div>
@@ -6946,7 +7026,7 @@ npm run migrate            # הרצה בפועל`}</Block>
           onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.04)'; }}
           onMouseLeave={e => { e.currentTarget.style.transform = 'none'; }}
         >
-          {open ? '▾' : <React.Fragment><span style={{ fontSize: 17 }}>✨</span>{copy.label}</React.Fragment>}
+          {open ? '▾' : copy.label}
         </button>
       </React.Fragment>
     );
@@ -7014,7 +7094,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             )}
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 780 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
             {msgs.map((m, i) => {
               if (m.role === 'tool') {
                 const args = Object.entries(m.input || {}).map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : String(v)}`).join(', ');
@@ -7124,8 +7204,8 @@ npm run migrate            # הרצה בפועל`}</Block>
           <div style={{ color: 'var(--text-2)', padding: 30 }}>טוען…</div>
         ) : sessions.length === 0 ? (
           <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '60px 20px', fontSize: 14, background: 'var(--bg-card)', border: '1px dashed var(--border)', borderRadius: 'var(--r-lg)' }}>
-            <div style={{ fontSize: 34, marginBottom: 12 }}>✨</div>
-            {query || kind ? 'אין שיחות שתואמות את הסינון.' : 'עוד לא דיברת עם האסיסטנטים. הכפתור ✨ שאל את האסיסטנט בפינה למטה פותח את הצ\'אט.'}
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12, color: 'var(--text-muted)' }}>{Icons.sparkle}</div>
+            {query || kind ? 'אין שיחות שתואמות את הסינון.' : 'עוד לא דיברת עם האסיסטנטים. הכפתור "שאל את האסיסטנט" בפינה למטה פותח את הצ\'אט.'}
           </div>
         ) : (
           <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', overflowX: 'auto' }}>
@@ -7464,7 +7544,7 @@ npm run migrate            # הרצה בפועל`}</Block>
               <path d="M367,48 L376,40" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
               <path d="M367,48 L371,57" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
               <text x="340" y="210" textAnchor="middle" fontFamily="'Plus Jakarta Sans','Segoe UI',sans-serif" fontSize="52" fontWeight="700">
-                <tspan fill="#eeeef2">8Legs</tspan><tspan fill="#EF9F27">.ai</tspan>
+                <tspan fill="var(--text)">8Legs</tspan><tspan fill="#EF9F27">.ai</tspan>
               </text>
             </svg>
             <div style={{ marginTop: 28 }}>
@@ -7582,7 +7662,7 @@ npm run migrate            # הרצה בפועל`}</Block>
               </div>
             </div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 720 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
             {msgs.filter(m => m.role === 'user' || m.role === 'assistant').map((m, i) => (
               <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
                 <div style={{
@@ -8111,14 +8191,13 @@ npm run migrate            # הרצה בפועל`}</Block>
     );
   }
 
-  function SettingsPanel({ theme, onToggleTheme, user, onLogout, settings, onSaveSettings, stacked }) {
-    const isLight = theme === 'light';
+  function SettingsPanel({ user, onLogout, settings, onSaveSettings, stacked }) {
     const [draft, setDraft] = useState(() => settings || accountApi());
     const [showKey, setShowKey] = useState(false);
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [error, setError] = useState(null);
-    const [section, setSection] = useState('set-appearance');
+    const [section, setSection] = useState('set-model');
 
     // Adopt the settings once they arrive, unless the user is already editing.
     const dirty = JSON.stringify(draft) !== JSON.stringify(settings || {});
@@ -8170,7 +8249,6 @@ npm run migrate            # הרצה בפועל`}</Block>
       display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
     };
     const SECTIONS = [
-      { id: 'set-appearance', label: 'Appearance' },
       { id: 'set-model',      label: 'Model & key' },
       { id: 'set-tokens',     label: 'Access tokens' },
       { id: 'set-account',    label: 'Account' },
@@ -8213,41 +8291,6 @@ npm run migrate            # הרצה בפועל`}</Block>
           </div>
 
           <div style={{ flex: 1, minWidth: 0, maxWidth: stacked ? 'none' : 720, display: 'flex', flexDirection: 'column', gap: stacked ? 16 : 22 }}>
-        <div id="set-appearance" style={sectionStyle}>
-          <div style={sectionHeader}>Appearance</div>
-          <div style={rowStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ ...iconBox, color: isLight ? '#f59e0b' : 'var(--text-2)' }}>
-                {isLight ? Icons.sun : Icons.moon}
-              </div>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 600 }}>Dark interface</div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                  Easier on the eyes for long editing sessions
-                </div>
-              </div>
-            </div>
-            {/* The switch reads as what it turns on, not as where you are */}
-            <button
-              onClick={onToggleTheme}
-              title={`Switch to ${isLight ? 'dark' : 'light'} mode`}
-              style={{
-                width: 50, height: 28, borderRadius: 14, padding: 0,
-                background: isLight ? 'var(--bg-hover)' : 'var(--primary)',
-                border: '1.5px solid ' + (isLight ? 'var(--border)' : 'var(--primary)'),
-                position: 'relative', cursor: 'pointer', flexShrink: 0,
-                transition: 'background 0.2s, border-color 0.2s',
-              }}
-            >
-              <div style={{
-                position: 'absolute', top: 3, width: 20, height: 20,
-                left: isLight ? 3 : 23, borderRadius: '50%', background: '#fff',
-                transition: 'left 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
-              }} />
-            </button>
-          </div>
-        </div>
-
         {/* One key for the whole account */}
         <div id="set-model" style={sectionStyle}>
           <div style={sectionHeader}>AI · Model &amp; API key</div>
@@ -8406,8 +8449,8 @@ npm run migrate            # הרצה בפועל`}</Block>
 
   /**
    * The bottom navigation. Four stops, the same four the sidebar leads with on
-   * a desktop. Everything rarer — documentation, admin, the theme, logging out
-   * — is behind the ☰ in the top bar. Hidden on depth screens (editor, chat),
+   * a desktop. Everything rarer — documentation, admin, logging out — is
+   * behind the ☰ in the top bar. Hidden on depth screens (editor, chat),
    * where the back button owns the corner.
    */
   function MobileBottomNav({ active, onNav }) {
@@ -8478,7 +8521,7 @@ npm run migrate            # הרצה בפועל`}</Block>
   function MobileAssistantSheet({ open, onClose, agents, language, onAgentsChanged, onHistory, seed }) {
     return (
       <MobileSheet open={open} onClose={onClose} full
-        title={<span><span style={{ marginRight: 8 }}>✨</span>Assistant</span>}
+        title="Assistant"
         right={onHistory && (
           <button onClick={onHistory} title={language === 'en' ? 'Conversation history' : 'היסטוריית שיחות'}
             style={{ width: 40, height: 40, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-2)' }}>
@@ -8561,7 +8604,7 @@ npm run migrate            # הרצה בפועל`}</Block>
   }
 
   /** Everything that is not one of the four tabs, as tappable rows. */
-  function MobileMore({ user, theme, onToggleTheme, onLogout, onOpen }) {
+  function MobileMore({ user, onLogout, onOpen }) {
     const Row = ({ icon, label, hint, onClick, danger }) => (
       <button onClick={onClick} style={{ width: '100%', minHeight: 56, display: 'flex', alignItems: 'center', gap: 14, padding: '0 16px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', color: danger ? 'var(--danger)' : 'var(--text)', textAlign: 'left' }}>
         <span style={{ display: 'flex', color: danger ? 'var(--danger)' : 'var(--text-2)', transform: 'scale(1.15)' }}>{icon}</span>
@@ -8586,7 +8629,6 @@ npm run migrate            # הרצה בפועל`}</Block>
         </div>
         <Row icon={Icons.docs} label="Documentation" hint="איך כל חלק במערכת עובד" onClick={() => onOpen('docs')} />
         {user.isAdmin && <Row icon={Icons.admin} label="Admin" hint="משתמשים וסוכני התבנית" onClick={() => onOpen('admin')} />}
-        <Row icon={theme === 'dark' ? Icons.sun : Icons.moon} label={theme === 'dark' ? 'Light mode' : 'Dark mode'} onClick={onToggleTheme} />
         <div style={{ height: 6 }} />
         <Row icon={Icons.logout} label="Log out" onClick={onLogout} danger />
       </div>
@@ -8681,7 +8723,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <MobileDetailHeader badge="#" name={selected.name || 'untitled skill'} onBack={() => setOpenId(null)} onDelete={deleteCurrent} />
-        <MobileSegments active={seg} onChange={setSeg} items={[{ id: 'prompt', label: 'Prompt' }, { id: 'config', label: 'Config' }, { id: 'assistant', label: '✨ Assistant' }]} />
+        <MobileSegments active={seg} onChange={setSeg} items={[{ id: 'prompt', label: 'Prompt' }, { id: 'config', label: 'Config' }, { id: 'assistant', label: 'Assistant' }]} />
 
         {seg === 'prompt' && (
           <div style={{ ...WORKSPACE_PANEL, height: 'calc(100dvh - 300px)', minHeight: 380, padding: 10 }}>
@@ -8774,7 +8816,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <MobileDetailHeader badge="py" mono name={`${selected.name || 'untitled'}.py`} onBack={() => setOpen(null)} onDelete={deleteCurrent} />
-        <MobileSegments active={seg} onChange={setSeg} items={[{ id: 'code', label: 'Code' }, { id: 'config', label: 'Config' }, { id: 'run', label: 'Run' }, { id: 'assistant', label: '✨ AI' }]} />
+        <MobileSegments active={seg} onChange={setSeg} items={[{ id: 'code', label: 'Code' }, { id: 'config', label: 'Config' }, { id: 'run', label: 'Run' }, { id: 'assistant', label: 'AI' }]} />
 
         {seg === 'code' && (
           <div style={{ ...WORKSPACE_PANEL, height: 'calc(100dvh - 300px)', minHeight: 380 }}>
@@ -8948,7 +8990,7 @@ npm run migrate            # הרצה בפועל`}</Block>
 
   /** The phone shell: top-level screens with the bottom nav, depth screens without. */
   function MobileApp({
-    state, dispatch, nav, setNav, user, theme, onToggleTheme, onLogout, settings, onSaveSettings,
+    state, dispatch, nav, setNav, user, onLogout, settings, onSaveSettings,
     onCreate, onUpdate, onDelete, onDuplicate, editingAgent, chatAgent, editorTab, setEditorTab,
     adminSelectedUser, setAdminSelectedUser, onReload,
   }) {
@@ -9006,7 +9048,7 @@ npm run migrate            # הרצה בפועל`}</Block>
         <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
           <MobileTopBar left={burger} title="Settings" center />
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '10px 16px 24px' }}>
-            <SettingsPanel theme={theme} onToggleTheme={onToggleTheme} user={user} onLogout={onLogout} settings={settings} onSaveSettings={onSaveSettings} stacked />
+            <SettingsPanel user={user} onLogout={onLogout} settings={settings} onSaveSettings={onSaveSettings} stacked />
           </div>
         </div>
       );
@@ -9060,11 +9102,14 @@ npm run migrate            # הרצה בפועל`}</Block>
         {!inEditor && <MobileBottomNav active={navActive} onNav={go} />}
         <MobileSheet open={moreOpen} onClose={() => setMoreOpen(false)} title="8Legs.ai">
           <div style={{ overflowY: 'auto' }}>
-            <MobileMore user={user} theme={theme} onToggleTheme={onToggleTheme}
-                        onLogout={onLogout} onOpen={go} />
+            <MobileMore user={user} onLogout={onLogout} onOpen={go} />
           </div>
         </MobileSheet>
-        {chatAgent && <ChatTestDrawer fullScreen agent={chatAgent} initialSessionId={state.chatInitialSessionId} onClose={() => dispatch({ type: 'CLOSE_CHAT' })} />}
+        {chatAgent && (
+          <ChatTestDrawer fullScreen agent={chatAgent} branch={state.chatBranch} live={state.chatLive}
+            initialSessionId={state.chatInitialSessionId}
+            onClose={() => dispatch({ type: 'CLOSE_CHAT' })} />
+        )}
         <MobileAssistantSheet open={assistantOpen} onClose={() => setAssistantOpen(false)} seed={seed}
           agents={state.agents} language={language}
           onHistory={() => { setAssistantOpen(false); go('assistant'); }}
@@ -9073,12 +9118,15 @@ npm run migrate            # הרצה בפועל`}</Block>
     );
   }
 
-  function App({ user, onLogout, theme, onToggleTheme }) {
+  function App({ user, onLogout }) {
     const [state, dispatch] = useReducer(reducer, {
       agents: [],
       view: 'list',
       editingId: null,
       chatAgentId: null,
+      chatAgentSnapshot: null,
+      chatBranch: null,
+      chatLive: false,
       chatInitialSessionId: null,
     });
     const [nav, setNav] = useState('home');
@@ -9185,7 +9233,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     }
 
     const editingAgent = state.agents.find(a => a.id === state.editingId);
-    const chatAgent = state.agents.find(a => a.id === state.chatAgentId);
+    const chatAgent = state.chatAgentSnapshot || state.agents.find(a => a.id === state.chatAgentId);
 
     if (loading) return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 'calc(100vh / var(--ui-zoom))', background: 'var(--bg-app)', flexDirection: 'column', gap: 14 }}>
@@ -9206,7 +9254,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     if (isMobile) return (
       <MobileApp
         state={state} dispatch={dispatch} nav={nav} setNav={setNav}
-        user={user} theme={theme} onToggleTheme={onToggleTheme} onLogout={onLogout}
+        user={user} onLogout={onLogout}
         settings={settings} onSaveSettings={handleSaveSettings}
         onCreate={handleCreate} onUpdate={handleUpdate} onDelete={handleDelete} onDuplicate={handleDuplicate}
         editingAgent={editingAgent} chatAgent={chatAgent}
@@ -9264,8 +9312,6 @@ npm run migrate            # הרצה בפועל`}</Block>
             )
           ) : nav === 'settings' ? (
             <SettingsPanel
-              theme={theme}
-              onToggleTheme={onToggleTheme}
               user={user}
               onLogout={onLogout}
               settings={settings}
@@ -9278,7 +9324,7 @@ npm run migrate            # הרצה בפועל`}</Block>
               onCrumbs={setEditorCrumbs}
               onUpdate={handleUpdate}
               onReload={hydrate}
-              onTest={() => dispatch({ type: 'OPEN_CHAT', id: editingAgent.id })}
+              onTest={(version, branch) => dispatch({ type: 'OPEN_CHAT', id: editingAgent.id, agent: version, branch })}
               onBack={() => { setEditorTab(null); dispatch({ type: 'SET_VIEW', view: 'list' }); }}
             />
           ) : (
@@ -9286,7 +9332,7 @@ npm run migrate            # הרצה בפועל`}</Block>
               agents={state.agents}
               onNew={handleCreate}
               onEdit={id => dispatch({ type: 'SET_VIEW', view: 'editor', editingId: id })}
-              onTest={id => dispatch({ type: 'OPEN_CHAT', id })}
+              onTest={id => dispatch({ type: 'OPEN_CHAT', id, live: true })}
               onDuplicate={handleDuplicate}
               onDelete={handleDelete}
               onExport={id => dispatch({ type: 'SET_VIEW', view: 'editor', editingId: id })}
@@ -9296,7 +9342,11 @@ npm run migrate            # הרצה בפועל`}</Block>
         </div>
         </div>
 
-        {chatAgent && <ChatTestDrawer agent={chatAgent} initialSessionId={state.chatInitialSessionId} onClose={() => dispatch({ type: 'CLOSE_CHAT' })} />}
+        {chatAgent && (
+          <ChatTestDrawer agent={chatAgent} branch={state.chatBranch} live={state.chatLive}
+            initialSessionId={state.chatInitialSessionId}
+            onClose={() => dispatch({ type: 'CLOSE_CHAT' })} />
+        )}
         <FloatingAssistant
           agents={state.agents}
           language={(settings || accountApi()).assistantLanguage || 'he'}
@@ -9310,14 +9360,7 @@ npm run migrate            # הרצה בפועל`}</Block>
   /* ─────────────────── ROOT ─────────────────── */
   function Root() {
     const [user, setUser] = useState(() => getAuth());
-    const [theme, setTheme] = useState(() => localStorage.getItem('agentforge_theme') || 'dark');
 
-    useEffect(() => {
-      document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : '');
-      localStorage.setItem('agentforge_theme', theme);
-    }, [theme]);
-
-    function toggleTheme() { setTheme(t => t === 'dark' ? 'light' : 'dark'); }
     function handleLogin(data) { setUser(data); }
     function handleLogout() {
       sessionStorage.removeItem('agentforge_auth');
@@ -9325,7 +9368,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     }
 
     if (!user) return <LoginGate onLogin={handleLogin} />;
-    return <App user={user} onLogout={handleLogout} theme={theme} onToggleTheme={toggleTheme} />;
+    return <App user={user} onLogout={handleLogout} />;
   }
 
   ReactDOM.createRoot(document.getElementById('root')).render(<Root />);

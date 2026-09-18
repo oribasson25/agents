@@ -86,11 +86,13 @@ export async function listBranches(agentId, user) {
     where agent_id = ${agentId} and merged_at is null
     order by kind = 'draft' desc, created_at
   `;
+  /* Live means "real conversations reach this version". That is main, and it
+     is also any branch an experiment routes a share of the traffic to. */
   return [
     { id: null, name: MAIN, kind: 'main', live: true,
       traffic_weight: 100 - rows.reduce((n, r) => n + r.traffic_weight, 0),
       version: agentVersion(owned.data) },
-    ...rows.map(r => ({ ...r, live: false })),
+    ...rows.map(r => ({ ...r, live: r.traffic_weight > 0 })),
   ];
 }
 
