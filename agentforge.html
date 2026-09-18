@@ -1982,8 +1982,8 @@
     const params = (tool.parameters || []).filter(p => p.name);
     const { lastRun, errors } = diagnostics;
     return [
-      'You are a Python tool-writing assistant built into the 8Legs.ai agent builder.',
-      'You write and revise the code of ONE tool, which an AI agent will call at runtime.',
+      'You are a Python tool-writing assistant built into the 8Legs.ai AI Chatbot builder.',
+      'You write and revise the code of ONE tool, which an AI Chatbot will call at runtime.',
       '',
       'Runtime contract — never break it:',
       ...TOOL_RUNTIME_CONTRACT.map(line => `- ${line}`),
@@ -1996,7 +1996,7 @@
       '- Outside the block, report the tool\'s metadata as plain lines. Write these in English, and',
       '  include a line only when you are setting or changing that field:',
       '    NAME: snake_case_tool_name',
-      '    DESCRIPTION: one sentence the agent reads to decide when to call this tool',
+      '    DESCRIPTION: one sentence the AI Chatbot reads to decide when to call this tool',
       '    PARAM: city | string | The city to look up',
       '    PACKAGES: requests, beautifulsoup4',
       '- One PARAM line per parameter, in call order. The type must be string, number, integer or',
@@ -2026,7 +2026,7 @@
       'Recent failures involving this tool (newest first) — fix the cause, do not guess:',
       formatErrors(errors),
       '',
-      "The builder's own test conversations with this agent (newest first) — how the agent behaved when they tried it, including the tools it called. If the user refers to something going wrong, read these before changing anything:",
+      "The builder's own test conversations with this AI Chatbot (newest first) — how the AI Chatbot behaved when they tried it, including the tools it called. If the user refers to something going wrong, read these before changing anything:",
       formatTestConversations(diagnostics.tests),
     ].join('\n');
   }
@@ -2062,12 +2062,12 @@
     const skills = (agent.skills || []).filter(sk => sk.name);
 
     return [
-      'You are a prompt-writing assistant built into the 8Legs.ai agent builder.',
-      "You write and revise ONE agent's BASE PROMPT — the instructions that are always active, on every",
+      'You are a prompt-writing assistant built into the 8Legs.ai AI Chatbot builder.',
+      "You write and revise ONE AI Chatbot's BASE PROMPT — the instructions that are always active, on every",
       'channel, in every conversation, whatever skill is running.',
       '',
       'What belongs in a base prompt:',
-      '- Who the agent is, who it serves, and the tone and language it answers in.',
+      '- Who the AI Chatbot is, who it serves, and the tone and language it answers in.',
       '- The rules that always hold: what it must never do, what it must always ask for, how it behaves',
       '  when it does not know something or when a tool fails.',
       '- A short statement of what it can do, and when to hand off to one of its skills.',
@@ -2075,10 +2075,10 @@
       "and a skill's own prompt is appended under a `## Skill: <name>` heading when it activates.",
       '',
       'How to reference tools and skills from inside the prompt:',
-      "- The tools listed below are real functions the agent can call. Write a tool's exact name with an",
+      "- The tools listed below are real functions the AI Chatbot can call. Write a tool's exact name with an",
       '  @ prefix — `@fetch_weather` — and say which parameters to pass; the parameter names are the',
       '  ones declared on that tool.',
-      '- To hand the conversation to a skill, instruct the agent to call the `switch_skill` tool with',
+      '- To hand the conversation to a skill, instruct the AI Chatbot to call the `switch_skill` tool with',
       "  `skill_name` set to that skill's exact name. In prompt text the convention is `#SkillName`",
       '  with no spaces.',
       '- Reference only tools and skills that appear in the lists below. Never invent one.',
@@ -2086,7 +2086,7 @@
       'How to answer:',
       '- Answer in the language the user writes in, briefly, with no preamble.',
       '- The base prompt you write must ALWAYS be in English, whatever language the user writes to you',
-      '  in. The one exception: a sentence the agent has to say to its users verbatim in another',
+      '  in. The one exception: a sentence the AI Chatbot has to say to its users verbatim in another',
       '  language stays in that language, quoted — and the prompt should state which language to reply in.',
       '- Structure it with short `## Section` headings (Role, Instructions, Constraints and so on); the',
       '  builder can collapse them.',
@@ -2095,7 +2095,7 @@
       '- Outside the block, report identity fields as plain lines, and include a line only when you are',
       '  setting or changing that field:',
       '    NAME: Insurance Support',
-      '    OPENING: the first line the agent says to a user, in the language it speaks to them',
+      '    OPENING: the first line the AI Chatbot says to a user, in the language it speaks to them',
       '- If the user only asks a question, answer it without a block or metadata lines.',
       '',
       `The agent being edited: ${agent.name || '(unnamed)'}`,
@@ -2109,10 +2109,10 @@
       agent.basePrompt || '(empty)',
       '```',
       '',
-      "Recent failures on this agent (newest first). If one of them is caused by what the base prompt asks the agent to do — a tool that isn't there, a rule that contradicts itself — fix the prompt:",
+      "Recent failures on this AI Chatbot (newest first). If one of them is caused by what the base prompt asks the AI Chatbot to do — a tool that isn't there, a rule that contradicts itself — fix the prompt:",
       formatErrors(diagnostics.errors),
       '',
-      "The builder's own test conversations with this agent (newest first) — what it actually said when they tried it. If the user refers to what it answered, or to something going wrong, read these before changing anything:",
+      "The builder's own test conversations with this AI Chatbot (newest first) — what it actually said when they tried it. If the user refers to what it answered, or to something going wrong, read these before changing anything:",
       formatTestConversations(diagnostics.tests),
     ].filter(line => line !== '').join('\n');
   }
@@ -2123,20 +2123,20 @@
     const base = (agent.basePrompt || '').trim();
 
     return [
-      'You are a prompt-writing assistant built into the 8Legs.ai agent builder.',
-      "You write and revise ONE skill's prompt — the instructions the agent follows while that skill is active.",
+      'You are a prompt-writing assistant built into the 8Legs.ai AI Chatbot builder.',
+      "You write and revise ONE skill's prompt — the instructions the AI Chatbot follows while that skill is active.",
       '',
       'How skills work here:',
-      "- Every skill's prompt is part of the agent's system prompt, under a `## Skill: <name>` heading with its description above it. Keep this prompt self-contained and about this skill only.",
-      "- The agent reads the skill's short description to decide when to switch to it, so the description must say when the skill applies, not what it does internally.",
+      "- Every skill's prompt is part of the AI Chatbot's system prompt, under a `## Skill: <name>` heading with its description above it. Keep this prompt self-contained and about this skill only.",
+      "- The AI Chatbot reads the skill's short description to decide when to switch to it, so the description must say when the skill applies, not what it does internally.",
       '- Markdown `## Section` headings structure the prompt and the builder can collapse them, so prefer short named sections and numbered steps over long paragraphs.',
       '- While a skill is active, knowledge retrieval is scoped to that skill\'s own documents.',
       '',
       'How to reference tools and other skills from inside the prompt:',
-      '- The tools listed below are real functions the agent can call. To tell it to use one, write the',
+      '- The tools listed below are real functions the AI Chatbot can call. To tell it to use one, write the',
       '  tool\'s exact name with an @ prefix — `@fetch_weather` — and say which parameters to pass.',
       '  The parameter names are the ones declared on that tool.',
-      '- To hand the conversation to another skill, instruct the agent to call the `switch_skill` tool',
+      '- To hand the conversation to another skill, instruct the AI Chatbot to call the `switch_skill` tool',
       '  with `skill_name` set to that skill\'s exact name. In prompt text the convention is `#SkillName`',
       '  with no spaces.',
       '- Reference only tools and skills that appear in the lists below. Never invent one, and never',
@@ -2145,14 +2145,14 @@
       'How to answer:',
       '- Answer in the language the user writes in, briefly, with no preamble.',
       '- The prompt you write must ALWAYS be in English, whatever language the user writes to you in.',
-      '  The one exception: a sentence the agent has to say to the user verbatim in another language',
+      '  The one exception: a sentence the AI Chatbot has to say to the user verbatim in another language',
       '  stays in that language, quoted — and the prompt should state which language to reply in.',
       '- Whenever you write or change the prompt, output the COMPLETE new prompt inside ONE ```markdown block.',
       "  Never a diff, never a fragment — that block replaces what is in the user's editor.",
       '- Outside the block, report the skill\'s metadata as plain lines, in English, and include a line',
       '  only when you are setting or changing that field:',
       '    NAME: Weather Lookup',
-      '    DESCRIPTION: one sentence saying when the agent should switch to this skill',
+      '    DESCRIPTION: one sentence saying when the AI Chatbot should switch to this skill',
       '- If the user only asks a question, answer it without a block or metadata lines.',
       '',
       `The agent: ${agent.name || '(unnamed)'}`,
@@ -2169,10 +2169,10 @@
       skill.prompt || '(empty)',
       '```',
       '',
-      "Recent failures on this agent (newest first). If one of them is caused by what this prompt asks the agent to do — a tool that isn't there, a parameter it never passes — fix the prompt:",
+      "Recent failures on this AI Chatbot (newest first). If one of them is caused by what this prompt asks the AI Chatbot to do — a tool that isn't there, a parameter it never passes — fix the prompt:",
       formatErrors(diagnostics.errors),
       '',
-      "The builder's own test conversations with this agent (newest first) — what it actually said when they tried it. If the user refers to what it answered, or to something going wrong, read these before changing anything:",
+      "The builder's own test conversations with this AI Chatbot (newest first) — what it actually said when they tried it. If the user refers to what it answered, or to something going wrong, read these before changing anything:",
       formatTestConversations(diagnostics.tests),
     ].join('\n');
   }
@@ -5370,7 +5370,7 @@
     const sections = [
       { id: 'intro',        label: 'מה זה 8Legs.ai' },
       { id: 'home',         label: 'דף הבית — צ׳אט' },
-      { id: 'agents',       label: 'סוכנים' },
+      { id: 'agents',       label: 'AI Chatbots' },
       { id: 'config',       label: 'Configuration' },
       { id: 'skills',       label: 'Skills' },
       { id: 'tools',        label: 'Tools' },
@@ -5422,13 +5422,13 @@
       intro: (
         <div dir="rtl">
           <H2>מה זה 8Legs.ai</H2>
-          <P>פלטפורמה לבניית סוכני AI בלי לכתוב תשתית. כל סוכן הוא הגדרה אחת שכוללת פרומפט, מודל, סקילים, כלי Python, בסיס ידע וערוצי הפצה — והוא זמין מיד בצ'אט בדיקה, כווידג'ט באתר וכמספר WhatsApp.</P>
+          <P>פלטפורמה לבניית AI Chatbots בלי לכתוב תשתית. כל AI Chatbot הוא הגדרה אחת שכוללת פרומפט, מודל, סקילים, כלי Python, בסיס ידע וערוצי הפצה — והוא זמין מיד בצ'אט בדיקה, כווידג'ט באתר וכמספר WhatsApp.</P>
 
-          <H3>מה מרכיב סוכן</H3>
+          <H3>מה מרכיב AI Chatbot</H3>
           <UL>
             <li><strong>Configuration</strong> — זהות, פרומפט בסיס, ספק AI ומודל, מיסוך מידע רגיש</li>
-            <li><strong>Skills</strong> — מצבים ממוקדים שהסוכן עובר ביניהם, כל אחד עם פרומפט משלו</li>
-            <li><strong>Tools</strong> — פונקציות Python שהסוכן קורא בזמן שיחה, ועוד כלי מובנה לשליחת מייל</li>
+            <li><strong>Skills</strong> — מצבים ממוקדים שה-AI Chatbot עובר ביניהם, כל אחד עם פרומפט משלו</li>
+            <li><strong>Tools</strong> — פונקציות Python שה-AI Chatbot קורא בזמן שיחה, ועוד כלי מובנה לשליחת מייל</li>
             <li><strong>Knowledge</strong> — מסמכים וסריקת אתרים שנשלפים לפי הקשר</li>
             <li><strong>Export / WhatsApp</strong> — הטמעה באתר וחיבור למספר WhatsApp</li>
           </UL>
@@ -5437,14 +5437,14 @@
           <UL>
             <li><strong>Frontend</strong> — קובץ HTML אחד עם React שנטען מ-CDN, בלי build step</li>
             <li><strong>Backend</strong> — Vercel Serverless Functions תחת <Code>/api</Code></li>
-            <li><strong>Database</strong> — Neon PostgreSQL; סוכן נשמר כ-JSONB בטבלת <Code>agents</Code></li>
+            <li><strong>Database</strong> — Neon PostgreSQL; AI Chatbot נשמר כ-JSONB בטבלת <Code>agents</Code></li>
             <li><strong>מודלים</strong> — Claude (Anthropic), OpenAI, או Ollama מקומי</li>
             <li><strong>הרצת כלים</strong> — Python serverless עם <Code>pip install</Code> לפי דרישה</li>
             <li><strong>סריקת אתרים</strong> — Playwright + Chromium שמריץ JavaScript לפני החילוץ</li>
           </UL>
 
           <H3>איפה כל דבר יושב</H3>
-          <P>בסייד-בר: <strong>Home</strong> (צ'אט — כאן בונים סוכן בשיחה), <strong>Agents</strong> (הסוכנים שלך), <strong>Interactions</strong> (שיחות של משתמשי קצה), <strong>Documentation</strong> (הדף הזה), <strong>Settings</strong>, ו-<strong>Admin</strong> למשתמשי אדמין בלבד. מתחת לפריטים האלה רשימת השיחות האחרונות ב-Home, ובתחתיתה <strong>כל השיחות →</strong> להיסטוריה המלאה של כל האסיסטנטים. הכפתור <strong>שאל את האסיסטנט</strong> בפינה הימנית התחתונה פותח את אסיסטנט המערכת מכל מסך חוץ מ-Home, שהוא כבר צ'אט.</P>
+          <P>בסייד-בר: <strong>Home</strong> (צ'אט — כאן בונים AI Chatbot בשיחה), <strong>AI Chatbots</strong> (ה-AI Chatbots שלך), <strong>Interactions</strong> (שיחות של משתמשי קצה), <strong>Documentation</strong> (הדף הזה), <strong>Settings</strong>, ו-<strong>Admin</strong> למשתמשי אדמין בלבד. מתחת לפריטים האלה רשימת השיחות האחרונות ב-Home, ובתחתיתה <strong>כל השיחות →</strong> להיסטוריה המלאה של כל האסיסטנטים. הכפתור <strong>שאל את האסיסטנט</strong> בפינה הימנית התחתונה פותח את אסיסטנט המערכת מכל מסך חוץ מ-Home, שהוא כבר צ'אט.</P>
         </div>
       ),
 
@@ -5454,17 +5454,17 @@
           <H2>דף הבית — צ׳אט</H2>
           <P>הדבר הראשון שרואים אחרי התחברות הוא שיחה, לא רשימה: הלוגו באמצע המסך, ברכה לפי השעה עם שם המשתמש, ושדה אחד מתחתיו. מה שכותבים שם הולך לאסיסטנט המערכת — אותו אסיסטנט שמתפעל את הפלטפורמה, עם כל הכלים שלו.</P>
 
-          <H3>ראיון — כשמבקשים סוכן חדש</H3>
-          <P>בכל פעם שמבקשים לבנות סוכן חדש, בכל ניסוח, השיחה הופכת לראיון: שאלה אחת בכל פעם — מה הסוכן צריך לעשות ולמי, באיזו שפה הוא מדבר, מאיפה מגיעות התשובות ובאיזה ערוץ הוא חי. ברגע שיש מספיק מידע הוא קורא ל-<Code>create_agent</Code> באמצע השיחה וממשיך לחדד משם, במקום לחכות לסוף. זה לא תלוי בכמה סוכנים כבר יש בחשבון — גם הסוכן העשירי מתחיל בראיון.</P>
+          <H3>ראיון — כשמבקשים AI Chatbot חדש</H3>
+          <P>בכל פעם שמבקשים לבנות AI Chatbot חדש, בכל ניסוח, השיחה הופכת לראיון: שאלה אחת בכל פעם — מה ה-AI Chatbot צריך לעשות ולמי, באיזו שפה הוא מדבר, מאיפה מגיעות התשובות ובאיזה ערוץ הוא חי. ברגע שיש מספיק מידע הוא קורא ל-<Code>create_agent</Code> באמצע השיחה וממשיך לחדד משם, במקום לחכות לסוף. זה לא תלוי בכמה AI Chatbots כבר יש בחשבון — גם ה-AI Chatbot העשירי מתחיל בראיון.</P>
 
           <H3>בלי ראיון — שאלות ושינויים</H3>
-          <P>שאלת ידע על הפלטפורמה, או שינוי בסוכן שכבר קיים, לא מפעילים ראיון: הוא עונה או מבצע בתור אחד, ושואל שאלה חוזרת רק אם באמת אי אפשר בלעדיה. "תעשה אותו יותר ידידותי" הוא שינוי, לא סוכן חדש.</P>
+          <P>שאלת ידע על הפלטפורמה, או שינוי ב-AI Chatbot שכבר קיים, לא מפעילים ראיון: הוא עונה או מבצע בתור אחד, ושואל שאלה חוזרת רק אם באמת אי אפשר בלעדיה. "תעשה אותו יותר ידידותי" הוא שינוי, לא AI Chatbot חדש.</P>
 
           <H3>כפתורי תשובה</H3>
           <P>כששאלה של האסיסטנט יש לה כמה תשובות סבירות, הוא מסיים את ההודעה בשורת <Code>::options::</Code> והמסך הופך אותה לכפתורים. מודל שלא כותב את השורה הזאת פשוט מקבל הודעה בלי כפתורים — שום דבר לא נשבר.</P>
 
           <H3>הכרטיס שמתמלא</H3>
-          <P>בצד המסך יושב כרטיס של הסוכן שנבנה בשיחה הזאת: שם ואווטאר, תפקיד, Skills, Tools וערוץ — כל שורה מסומנת כשהיא מתמלאת, עם פס התקדמות ושני כפתורים, <strong>פתח בעורך</strong> ו<strong>בדוק בצ׳אט</strong>. הכרטיס מופיע רק כשיש מה להראות: בראיון, או אחרי שהאסיסטנט יצר או שינה סוכן. במובייל הוא נוסע בתוך השיחה עצמה.</P>
+          <P>בצד המסך יושב כרטיס של ה-AI Chatbot שנבנה בשיחה הזאת: שם ואווטאר, תפקיד, Skills, Tools וערוץ — כל שורה מסומנת כשהיא מתמלאת, עם פס התקדמות ושני כפתורים, <strong>פתח בעורך</strong> ו<strong>בדוק בצ׳אט</strong>. הכרטיס מופיע רק כשיש מה להראות: בראיון, או אחרי שהאסיסטנט יצר או שינה AI Chatbot. במובייל הוא נוסע בתוך השיחה עצמה.</P>
 
           <H3>שיחות קודמות</H3>
           <P>כל שיחה נשמרת אוטומטית אחרי כל תור, ומופיעה ברשימה בסייד-בר מתחת לפריטי הניווט. לחיצה על שיחה פותחת אותה בדף הבית וממשיכה אותה; ה-<strong>+</strong> שליד הכותרת מתחיל שיחה חדשה.</P>
@@ -5475,26 +5475,26 @@
       /* ─────────────── AGENTS ─────────────── */
       agents: (
         <div dir="rtl">
-          <H2>סוכנים</H2>
+          <H2>AI Chatbots</H2>
 
           <H3>חשבון והתחברות</H3>
-          <P>ההרשמה דורשת שם משתמש, סיסמה וטלפון. כל סוכן שייך למשתמש שיצר אותו, ומשתמש רגיל רואה רק את הסוכנים שלו. ההתחברות מחזיקה טוקן ב-<Code>sessionStorage</Code>, כך שסגירת הדפדפן מנתקת.</P>
+          <P>ההרשמה דורשת שם משתמש, סיסמה וטלפון. כל AI Chatbot שייך למשתמש שיצר אותו, ומשתמש רגיל רואה רק את ה-AI Chatbots שלו. ההתחברות מחזיקה טוקן ב-<Code>sessionStorage</Code>, כך שסגירת הדפדפן מנתקת.</P>
 
-          <H3>סוכני הפתיחה</H3>
-          <P>חשבון חדש מתחיל עם עותק של סוכני הדוגמה <Code>weather</Code> ו-<Code>bobi</Code> — כולל הפרומפט, הסקילים, הכלים ובסיס הידע של כל אחד — כדי שיהיה ממה להתחיל. מה שלא מועתק: מפתח ה-API, הגדרות ה-WhatsApp, חיבור ה-Gmail והערכים של ה-Secrets. שמות ה-Secrets נשארים כרמז למה שצריך למלא.</P>
-          <P>ההעתקה חיה: שינוי באחד מהסוכנים האלה משפיע על ההרשמות הבאות. בטאב Admin יש שורת מצב שמראה לכל תבנית אם היא נמצאת ומה היא נושאת.</P>
-          <Warn>הסוכנים האלה לא יענו עד שיוגדר מפתח API לחשבון במסך Settings.</Warn>
+          <H3>AI Chatbots של הפתיחה</H3>
+          <P>חשבון חדש מתחיל עם עותק של AI Chatbots של הדוגמה <Code>weather</Code> ו-<Code>bobi</Code> — כולל הפרומפט, הסקילים, הכלים ובסיס הידע של כל אחד — כדי שיהיה ממה להתחיל. מה שלא מועתק: מפתח ה-API, הגדרות ה-WhatsApp, חיבור ה-Gmail והערכים של ה-Secrets. שמות ה-Secrets נשארים כרמז למה שצריך למלא.</P>
+          <P>ההעתקה חיה: שינוי באחד מה-AI Chatbots האלה משפיע על ההרשמות הבאות. בטאב Admin יש שורת מצב שמראה לכל תבנית אם היא נמצאת ומה היא נושאת.</P>
+          <Warn>ה-AI Chatbots האלה לא יענו עד שיוגדר מפתח API לחשבון במסך Settings.</Warn>
 
-          <H3>כרטיס סוכן</H3>
-          <P>כל סוכן בטאב <strong>Agents</strong> מוצג בכרטיס עם האווטאר, השם, תאריך היצירה ומספר הסקילים והכלים. בתחתית הכרטיס חמש פעולות:</P>
+          <H3>כרטיס AI Chatbot</H3>
+          <P>כל AI Chatbot בטאב <strong>AI Chatbots</strong> מוצג בכרטיס עם האווטאר, השם, תאריך היצירה ומספר הסקילים והכלים. בתחתית הכרטיס חמש פעולות:</P>
           <UL>
-            <li><strong>Edit</strong> — פתיחת עורך הסוכן (גם לחיצה על הכרטיס עצמו)</li>
-            <li><strong>Test</strong> — שיחה אמיתית עם הסוכן, בדיוק כמו של משתמש קצה: רצה בשרת, מנותבת לפי אחוזי הבראנצ'ים, ונרשמת ב-Interactions</li>
-            <li><strong>Duplicate</strong> — שכפול הסוכן, כולל סקילים וכלים</li>
+            <li><strong>Edit</strong> — פתיחת עורך ה-AI Chatbot (גם לחיצה על הכרטיס עצמו)</li>
+            <li><strong>Test</strong> — שיחה אמיתית עם ה-AI Chatbot, בדיוק כמו של משתמש קצה: רצה בשרת, מנותבת לפי אחוזי הבראנצ'ים, ונרשמת ב-Interactions</li>
+            <li><strong>Duplicate</strong> — שכפול ה-AI Chatbot, כולל סקילים וכלים</li>
             <li><strong>Export</strong> — פתיחת לשונית ההטמעה</li>
-            <li><strong>Delete</strong> — מחיקה מיידית של הסוכן וכל מה שתלוי בו</li>
+            <li><strong>Delete</strong> — מחיקה מיידית של ה-AI Chatbot וכל מה שתלוי בו</li>
           </UL>
-          <Warn>מחיקת סוכן מוחקת גם את המסמכים והשיחות שלו, וסוגרת את ערוץ ה-WhatsApp והווידג'ט שלו. אין ביטול.</Warn>
+          <Warn>מחיקת AI Chatbot מוחקת גם את המסמכים והשיחות שלו, וסוגרת את ערוץ ה-WhatsApp והווידג'ט שלו. אין ביטול.</Warn>
 
           <H3>שמירה</H3>
           <P>אין כפתור Save בשום מקום בעורך. כל שינוי נשמר אוטומטית מעט אחרי שהפסקת להקליד, וכתוב "saved automatically" בכותרת המסכים שנשמרים כך.</P>
@@ -5508,25 +5508,25 @@
 
           <H3>Identity</H3>
           <UL>
-            <li><strong>Agent Name</strong> — מופיע בכרטיס, בווידג'ט וב-Interactions</li>
+            <li><strong>AI Chatbot Name</strong> — מופיע בכרטיס, בווידג'ט וב-Interactions</li>
             <li><strong>Avatar</strong> — אמוג'י מתוך רשימה, או העלאת תמונה</li>
-            <li><strong>Opening Message</strong> — ההודעה הראשונה שהסוכן אומר בווידג'ט ובצ'אט הבדיקה</li>
+            <li><strong>Opening Message</strong> — ההודעה הראשונה שה-AI Chatbot אומר בווידג'ט ובצ'אט הבדיקה</li>
           </UL>
 
           <H3>Base Prompt</H3>
-          <P>הפרומפט הקבוע של הסוכן, שנשלח לפני כל שיחה. העורך תומך בכתיבה עם כותרות <Code>## Section</Code> שאפשר לקפל, ובמצב Preview שמדגיש הזכרות של <Code>@tool</Code> ו-<Code>#Skill</Code>.</P>
+          <P>הפרומפט הקבוע של ה-AI Chatbot, שנשלח לפני כל שיחה. העורך תומך בכתיבה עם כותרות <Code>## Section</Code> שאפשר לקפל, ובמצב Preview שמדגיש הזכרות של <Code>@tool</Code> ו-<Code>#Skill</Code>.</P>
           <P>הפרומפט הסופי שהמודל מקבל מורכב מהפרומפט הזה, ואחריו הידע הרלוונטי שנשלף לשיחה, ואחריו כל הסקילים תחת כותרת <Code>## Skill: שם</Code>.</P>
           <Tip>ציין במפורש שפה, טון, מה מותר ומה אסור, ומה לעשות כשאין תשובה. פרומפט מפורט מצמצם המצאות.</Tip>
 
           <H3>מודל ומפתח API — ברמת החשבון</H3>
-          <P>המפתח, הספק והמודל מוגדרים <strong>פעם אחת במסך Settings</strong> ומשמשים את כל הסוכנים, כל הערוצים והאסיסטנטים. אין הגדרה נפרדת לכל סוכן.</P>
+          <P>המפתח, הספק והמודל מוגדרים <strong>פעם אחת במסך Settings</strong> ומשמשים את כל ה-AI Chatbots, כל הערוצים והאסיסטנטים. אין הגדרה נפרדת לכל AI Chatbot.</P>
           <UL>
             <li><strong>Claude</strong> — <Code>claude-opus-4-5</Code>, <Code>claude-sonnet-4-5</Code>, <Code>claude-haiku-4-5</Code>. דורש מפתח Anthropic.</li>
             <li><strong>OpenAI</strong> — <Code>gpt-4o</Code>, <Code>gpt-4o-mini</Code>, <Code>gpt-4-turbo</Code>, <Code>gpt-3.5-turbo</Code>. דורש מפתח OpenAI.</li>
             <li><strong>Ollama</strong> — מודל מקומי. במקום מפתח מזינים כתובת שרת, והקריאות עוברות דרך פרוקסי בשרת.</li>
           </UL>
           <P>באותו מסך בוחרים גם את <strong>שפת האסיסטנט</strong> — עברית או אנגלית.</P>
-          <Warn>בלי מפתח (או בלי כתובת Ollama) אף סוכן לא יענה בשום ערוץ, והאסיסטנטים חסומים. ההערה בפינה הימנית העליונה מציגה את המצב בכל מסך.</Warn>
+          <Warn>בלי מפתח (או בלי כתובת Ollama) אף AI Chatbot לא יענה בשום ערוץ, והאסיסטנטים חסומים. ההערה בפינה הימנית העליונה מציגה את המצב בכל מסך.</Warn>
 
           <H3>DLP — מניעת דליפת מידע</H3>
           <P>שני מסננים אופציונליים: <strong>מספרי כרטיס אשראי</strong> (16 ספרות עם או בלי מפרידים) ו-<strong>תעודת זהות</strong> (9 ספרות). כשהם דולקים:</P>
@@ -5542,17 +5542,17 @@
       skills: (
         <div dir="rtl">
           <H2>Skills</H2>
-          <P>סקיל הוא מצב ממוקד של הסוכן — למשל "בדיקת מזג אוויר" או "פתיחת קריאת שירות" — עם פרומפט משלו. לחיצה על הלשונית פותחת מסך עבודה: רשימת הסקילים בצד, עורך הפרומפט במרכז, ופאנל הגדרות בצד.</P>
+          <P>סקיל הוא מצב ממוקד של ה-AI Chatbot — למשל "בדיקת מזג אוויר" או "פתיחת קריאת שירות" — עם פרומפט משלו. לחיצה על הלשונית פותחת מסך עבודה: רשימת הסקילים בצד, עורך הפרומפט במרכז, ופאנל הגדרות בצד.</P>
 
           <H3>מה מגדירים בסקיל</H3>
           <UL>
-            <li><strong>Name</strong> — השם המדויק שדרכו הסוכן עובר לסקיל</li>
+            <li><strong>Name</strong> — השם המדויק שדרכו ה-AI Chatbot עובר לסקיל</li>
             <li><strong>Description</strong> — <em>מתי</em> להשתמש בסקיל. זה מה שהמודל קורא כדי להחליט לעבור אליו, ולכן הוא החלק הכי חשוב</li>
-            <li><strong>Skill Prompt</strong> — ההוראות שהסוכן מבצע כשהסקיל פעיל</li>
+            <li><strong>Skill Prompt</strong> — ההוראות שה-AI Chatbot מבצע כשהסקיל פעיל</li>
           </UL>
 
-          <H3>איך הסוכן עובר בין סקילים</H3>
-          <P>כשלסוכן יש סקילים, המודל מקבל כלי פנימי בשם <Code>switch_skill</Code> שמקבל <Code>skill_name</Code>. הוא קורא לו כשהמשתמש מגיע לתחום של סקיל מסוים. בטקסט הפרומפט הקונבנציה היא לכתוב <Code>#SkillName</Code> בלי רווחים, וכדי לקרוא לכלי — <Code>@tool_name</Code>.</P>
+          <H3>איך ה-AI Chatbot עובר בין סקילים</H3>
+          <P>כשל-AI Chatbot יש סקילים, המודל מקבל כלי פנימי בשם <Code>switch_skill</Code> שמקבל <Code>skill_name</Code>. הוא קורא לו כשהמשתמש מגיע לתחום של סקיל מסוים. בטקסט הפרומפט הקונבנציה היא לכתוב <Code>#SkillName</Code> בלי רווחים, וכדי לקרוא לכלי — <Code>@tool_name</Code>.</P>
           <P>כל הסקילים נמצאים בפרומפט המערכת מהרגע הראשון, כל אחד תחת <Code>## Skill: שם</Code> עם התיאור מעליו. כשסקיל פעיל בצ'אט הבדיקה, שליפת הידע מצטמצמת למסמכים של אותו סקיל.</P>
 
           <H3>עורך הפרומפט</H3>
@@ -5572,7 +5572,7 @@
           <P>לשונית Tools נפתחת ישר במסך עבודה: רשימת הכלים בצד, עורך קוד במרכז, פאנל הרצה מתחתיו, ופאנל הגדרות בצד עם שלוש לשוניות.</P>
 
           <H3>send_email — הכלי המובנה</H3>
-          <P>בסקציית <strong>BUILT-IN</strong> בסייד-בר. מתג אחד מפעיל אותו, ומתחתיו מחברים חשבון Gmail <strong>לסוכן הזה</strong> — כל סוכן שולח מהכתובת שלו. אחרי החיבור הכלי זמין בצ'אט הבדיקה, בווידג'ט וב-WhatsApp, והמודל קורא לו עם <Code>to</Code>, <Code>subject</Code> ו-<Code>body</Code>.</P>
+          <P>בסקציית <strong>BUILT-IN</strong> בסייד-בר. מתג אחד מפעיל אותו, ומתחתיו מחברים חשבון Gmail <strong>ל-AI Chatbot הזה</strong> — כל AI Chatbot שולח מהכתובת שלו. אחרי החיבור הכלי זמין בצ'אט הבדיקה, בווידג'ט וב-WhatsApp, והמודל קורא לו עם <Code>to</Code>, <Code>subject</Code> ו-<Code>body</Code>.</P>
 
           <H3>כלי Python — חוזה ההרצה</H3>
           <P>הקוד רץ ב-serverless מבודד, וחייב להגדיר פונקציה בשם <Code>run</Code>:</P>
@@ -5621,17 +5621,17 @@ def run(**kwargs):
       platform: (
         <div dir="rtl">
           <H2>אסיסטנט המערכת</H2>
-          <P>אותו אסיסטנט מופיע בשני מקומות: <strong>דף הבית</strong>, שהוא שיחה איתו על כל המסך, והכפתור <strong>שאל את האסיסטנט</strong> בפינה הימנית התחתונה בכל מסך אחר. <strong>Build with the assistant</strong> בראש טאב Agents מעביר לדף הבית עם השאלה כבר מוקלדת. לחיצה על הכפתור הצף פותחת צ'אט צף ולחיצה נוספת מקפלת אותו — כך שאפשר לבקש שינוי בזמן שרואים את מה שרוצים לשנות. זה לא סוכן שאתה בונה אלא אסיסטנט שמתפעל את המערכת בשבילך — הוא מבצע פעולות, לא רק מסביר איפה ללחוץ.</P>
+          <P>אותו אסיסטנט מופיע בשני מקומות: <strong>דף הבית</strong>, שהוא שיחה איתו על כל המסך, והכפתור <strong>שאל את האסיסטנט</strong> בפינה הימנית התחתונה בכל מסך אחר. <strong>Build with the assistant</strong> בראש טאב AI Chatbots מעביר לדף הבית עם השאלה כבר מוקלדת. לחיצה על הכפתור הצף פותחת צ'אט צף ולחיצה נוספת מקפלת אותו — כך שאפשר לבקש שינוי בזמן שרואים את מה שרוצים לשנות. זה לא AI Chatbot שאתה בונה אלא אסיסטנט שמתפעל את המערכת בשבילך — הוא מבצע פעולות, לא רק מסביר איפה ללחוץ.</P>
 
           <H3>מה הוא עושה</H3>
           <UL>
-            <li>בונה סוכן חדש מאפס — פרומפט, סקילים, כלי Python והודעת פתיחה, בפעולה אחת</li>
-            <li>משנה סוכן קיים — משפר פרומפט, מוסיף או מתקן סקיל, כותב כלי</li>
+            <li>בונה AI Chatbot חדש מאפס — פרומפט, סקילים, כלי Python והודעת פתיחה, בפעולה אחת</li>
+            <li>משנה AI Chatbot קיים — משפר פרומפט, מוסיף או מתקן סקיל, כותב כלי</li>
             <li>מריץ כלי שכתב כדי לבדוק שהוא עובד, ומתקן לפי השגיאה</li>
             <li>מדליק <Code>send_email</Code>, מגדיר DLP, משנה שם ואווטאר</li>
             <li>עונה על שאלות על הפלטפורמה — איך סקילים עוברים, מה חוזה ההרצה של כלי, איך מחברים WhatsApp</li>
-            <li>שולף מה קרה בשיחות לפי סוכן, ערוץ או מילת חיפוש</li>
-            <li>מוחק סוכן — עם שאלה בצ'אט ואישור בדפדפן לפני</li>
+            <li>שולף מה קרה בשיחות לפי AI Chatbot, ערוץ או מילת חיפוש</li>
+            <li>מוחק AI Chatbot — עם שאלה בצ'אט ואישור בדפדפן לפני</li>
           </UL>
 
           <H3>מה הוא לא יכול</H3>
@@ -5645,7 +5645,7 @@ def run(**kwargs):
 
           <H3>שקיפות</H3>
           <P>כל קריאה לכלי מוצגת בשיחה עם הפרמטרים והתוצאה, כך שרואים בדיוק מה הוא עשה. הוא רץ על המפתח והמודל של החשבון, ומודל חזק יותר נותן תוצאות טובות יותר במשימות מורכבות.</P>
-          <Tip>נסה: "בנה סוכן שירות לקוחות לחברת ביטוח, עם סקיל לפתיחת תביעה" או "תוסיף לסוכן weather כלי לתחזית חמישה ימים ותריץ אותו".</Tip>
+          <Tip>נסה: "בנה AI Chatbot שירות לקוחות לחברת ביטוח, עם סקיל לפתיחת תביעה" או "תוסיף ל-AI Chatbot weather כלי לתחזית חמישה ימים ותריץ אותו".</Tip>
         </div>
       ),
 
@@ -5657,24 +5657,24 @@ def run(**kwargs):
 
           <H3>איך זה עובד</H3>
           <UL>
-            <li>הוא משתמש ב-<strong>מפתח ובמודל של הסוכן עצמו</strong>, בלי כלים ובלי בסיס הידע</li>
+            <li>הוא משתמש ב-<strong>מפתח ובמודל של ה-AI Chatbot עצמו</strong>, בלי כלים ובלי בסיס הידע</li>
             <li>כל תשובה שמכילה קוד או פרומפט מוחלת מיד, עם כפתור <strong>Undo</strong> שמחזיר בדיוק את מה שהיה</li>
             <li>השיחה נשמרת כשעוברים לשונית, ומתאפסת כשעוברים לכלי או לסקיל אחר</li>
             <li>שאלה בלי בקשת שינוי מקבלת תשובה בלי לגעת בעורך</li>
           </UL>
 
-          <H3>מה הוא יודע על הסוכן שלך</H3>
+          <H3>מה הוא יודע על ה-AI Chatbot שלך</H3>
           <UL>
             <li><strong>בכלי:</strong> השם, התיאור, הפרמטרים המוצהרים, ה-Packages, <em>שמות</em> ה-Secrets, והקוד הנוכחי — כולל עריכות שעשית ידנית בין הודעה להודעה</li>
-            <li><strong>בסקיל:</strong> השם, התיאור, הפרומפט הנוכחי, הפרומפט הבסיס של הסוכן, ורשימת הכלים והסקילים האמיתיים שלו — כדי שכל <Code>@tool</Code> ו-<Code>#Skill</Code> שהוא כותב יצביע על משהו שקיים</li>
+            <li><strong>בסקיל:</strong> השם, התיאור, הפרומפט הנוכחי, הפרומפט הבסיס של ה-AI Chatbot, ורשימת הכלים והסקילים האמיתיים שלו — כדי שכל <Code>@tool</Code> ו-<Code>#Skill</Code> שהוא כותב יצביע על משהו שקיים</li>
           </UL>
 
           <H3>מה הוא ממלא</H3>
-          <P>בכלי הוא כותב את הקוד וגם את השם, התיאור, הפרמטרים וה-Packages. בסקיל הוא כותב את הפרומפט וגם את השם והתיאור. הפרומפט של סקיל נכתב <strong>תמיד באנגלית</strong>, חוץ ממשפטים שהסוכן אמור לומר למשתמש מילה-במילה בשפה אחרת.</P>
+          <P>בכלי הוא כותב את הקוד וגם את השם, התיאור, הפרמטרים וה-Packages. בסקיל הוא כותב את הפרומפט וגם את השם והתיאור. הפרומפט של סקיל נכתב <strong>תמיד באנגלית</strong>, חוץ ממשפטים שה-AI Chatbot אמור לומר למשתמש מילה-במילה בשפה אחרת.</P>
           <P>רשימת הפרמטרים שהוא מחזיר מחליפה את הרשימה כולה, כך שההצהרה והקוד תמיד מסכימים על ה-<Code>kwargs</Code>.</P>
 
           <H3>הם רואים את השגיאות</H3>
-          <P>אסיסטנט הכלי מקבל אוטומטית את <strong>ההרצה האחרונה</strong> של הכלי — הקלטים, ההצלחה או הכשל, וטקסט השגיאה המלא — ואת הכשלים שנרשמו לכלי הזה בשיחות אמיתיות. אסיסטנט הסקיל מקבל את הכשלים של הסוכן. כלומר אחרי הרצה שנפלה אפשר לכתוב פשוט "תתקן" — בלי להעתיק traceback.</P>
+          <P>אסיסטנט הכלי מקבל אוטומטית את <strong>ההרצה האחרונה</strong> של הכלי — הקלטים, ההצלחה או הכשל, וטקסט השגיאה המלא — ואת הכשלים שנרשמו לכלי הזה בשיחות אמיתיות. אסיסטנט הסקיל מקבל את הכשלים של ה-AI Chatbot. כלומר אחרי הרצה שנפלה אפשר לכתוב פשוט "תתקן" — בלי להעתיק traceback.</P>
 
           <H3>קיצורי דרך</H3>
           <UL>
@@ -5683,7 +5683,7 @@ def run(**kwargs):
             <li><strong>Add error handling</strong> / <strong>Tighten it</strong> — חיסון הקוד, או צמצום הפרומפט</li>
             <li><strong>Review it</strong> — ביקורת ותיקון</li>
           </UL>
-          <Tip>תאר את המשימה בשפה חופשית ("כלי שמביא מזג אוויר לפי עיר") ותן לו למלא שם, תיאור, פרמטרים וקוד בבת אחת. מודל חזק יותר בהגדרות הסוכן נותן קוד טוב יותר.</Tip>
+          <Tip>תאר את המשימה בשפה חופשית ("כלי שמביא מזג אוויר לפי עיר") ותן לו למלא שם, תיאור, פרמטרים וקוד בבת אחת. מודל חזק יותר בהגדרות ה-AI Chatbot נותן קוד טוב יותר.</Tip>
         </div>
       ),
 
@@ -5697,9 +5697,9 @@ def run(**kwargs):
           <UL>
             <li>סינון לפי סוג האסיסטנט: מערכת, כלים, סקילים או הכל</li>
             <li>חיפוש בתוך כל תוכן השיחות</li>
-            <li>לכל שיחה: על איזה סוכן ואיזה כלי או סקיל היא הייתה, מספר הודעות ומתי</li>
+            <li>לכל שיחה: על איזה AI Chatbot ואיזה כלי או סקיל היא הייתה, מספר הודעות ומתי</li>
             <li>פתיחת שיחה מציגה את התמלול המלא — כולל <strong>כל קריאה לכלי</strong> עם הפרמטרים והתוצאה, וסימון על מה שנכתב לעורך</li>
-            <li>קפיצה לסוכן שהשיחה עסקה בו, ומחיקת שיחה מההיסטוריה</li>
+            <li>קפיצה ל-AI Chatbot שהשיחה עסקה בו, ומחיקת שיחה מההיסטוריה</li>
           </UL>
           <P>השיחה נשמרת אוטומטית אחרי כל תור. שיחה חדשה מתחילה כשלוחצים "שיחה חדשה" בדף הבית או בצ'אט הצף, או כשעוברים לכלי או לסקיל אחר.</P>
           <Tip>ההיסטוריה שימושית במיוחד כדי לחזור לקוד או לפרומפט שאסיסטנט כתב לך לפני שבוע, ולראות מה בדיוק הוא שינה ולמה.</Tip>
@@ -5710,7 +5710,7 @@ def run(**kwargs):
       knowledge: (
         <div dir="rtl">
           <H2>Knowledge (RAG)</H2>
-          <P>בסיס הידע הוא אוסף מסמכים שהסוכן שולף מהם קטעים רלוונטיים לכל הודעה, ומקבל אותם בפרומפט תחת <Code>## Relevant Context</Code>.</P>
+          <P>בסיס הידע הוא אוסף מסמכים שה-AI Chatbot שולף מהם קטעים רלוונטיים לכל הודעה, ומקבל אותם בפרומפט תחת <Code>## Relevant Context</Code>.</P>
 
           <H3>איך מוסיפים מסמכים</H3>
           <UL>
@@ -5720,7 +5720,7 @@ def run(**kwargs):
           </UL>
 
           <H3>ידע גלובלי מול ידע של סקיל</H3>
-          <P>מסמך יכול להיות משויך לכל הסוכן או לסקיל מסוים. בצ'אט הבדיקה השליפה מצטמצמת למסמכים הגלובליים ולאלה של הסקיל הפעיל. בווידג'ט וב-WhatsApp כל הסקילים פעילים במקביל, ולכן נשלפים שם המסמכים של כולם.</P>
+          <P>מסמך יכול להיות משויך לכל ה-AI Chatbot או לסקיל מסוים. בצ'אט הבדיקה השליפה מצטמצמת למסמכים הגלובליים ולאלה של הסקיל הפעיל. בווידג'ט וב-WhatsApp כל הסקילים פעילים במקביל, ולכן נשלפים שם המסמכים של כולם.</P>
 
           <H3>סידור אוטומטי בהעלאה</H3>
           <P>כשמוסיפים מסמך, הוא עובר פעם אחת דרך המודל של החשבון ונכתב מחדש לצורה שאפשר למצוא בה: סעיפים קצרים תחת כותרות, כל סעיף על נושא אחד, הפניות מפוענחות (<Code>הוא</Code>, <Code>החברה</Code> מוחלפים בשם עצמו), ובסוף כל סעיף שורת <strong>מילות מפתח בעברית ובאנגלית</strong>.</P>
@@ -5733,7 +5733,7 @@ def run(**kwargs):
           </UL>
 
           <H3>איך השליפה עובדת</H3>
-          <P>כל מסמך מחולק לקטעי חיפוש של כמה מאות תווים, עם חפיפה קלה ביניהם וכותרת הסעיף נגררת לתוך כל קטע. השליפה מחזירה קטעים, לא את המסמך כולו — כך הסוכן מקבל את מה שרלוונטי במקום קובץ שלם.</P>
+          <P>כל מסמך מחולק לקטעי חיפוש של כמה מאות תווים, עם חפיפה קלה ביניהם וכותרת הסעיף נגררת לתוך כל קטע. השליפה מחזירה קטעים, לא את המסמך כולו — כך ה-AI Chatbot מקבל את מה שרלוונטי במקום קובץ שלם.</P>
           <P>החיפוש הוא <Code>tsvector</Code> של PostgreSQL על ההודעה האחרונה. המילים בשאלה מחוברות ב-<strong>OR</strong> ולא ב-AND, והאינדקס מחזיק כל מסמך גם ב-<Code>simple</Code> (מילים כפי שנכתבו — מה שעברית צריכה) וגם ב-<Code>english</Code> (גזעי מילים — כך ש-<Code>experience</Code> מוצא <Code>experiences</Code>).</P>
           <Tip>עדיין שווה לתת למסמך כותרת תיאורית ולפצל לפי נושא. הסידור האוטומטי עושה הרבה, אבל מסמך שמאורגן היטב מלכתחילה תמיד יימצא טוב יותר.</Tip>
 
@@ -5752,27 +5752,27 @@ def run(**kwargs):
       /* ─────────────── TEST ─────────────── */
       test: (
         <div dir="rtl">
-          <H2>בדיקת הסוכן</H2>
-          <P>יש שתי דרכים לדבר עם סוכן, והן לא אותו דבר:</P>
+          <H2>בדיקת ה-AI Chatbot</H2>
+          <P>יש שתי דרכים לדבר עם AI Chatbot, והן לא אותו דבר:</P>
           <UL>
-            <li><strong>Test במסך הסוכנים</strong> — שיחה אמיתית. היא רצה בשרת דרך אותו ערוץ שהווידג'ט משתמש בו, מנותבת לבראנץ' לפי אחוזי התנועה, ונשמרת ב-<strong>Interactions</strong> ככל שיחה אחרת.</li>
-            <li><strong>Test בתוך עורך הסוכן</strong> — בדיקה ידנית מול ההגדרות שעל המסך, כולל הבראנץ' שאתה נמצא עליו כרגע, בלי לפרסם כלום. נשמרת ב-<strong>Manual tests</strong>.</li>
+            <li><strong>Test במסך ה-AI Chatbots</strong> — שיחה אמיתית. היא רצה בשרת דרך אותו ערוץ שהווידג'ט משתמש בו, מנותבת לבראנץ' לפי אחוזי התנועה, ונשמרת ב-<strong>Interactions</strong> ככל שיחה אחרת.</li>
+            <li><strong>Test בתוך עורך ה-AI Chatbot</strong> — בדיקה ידנית מול ההגדרות שעל המסך, כולל הבראנץ' שאתה נמצא עליו כרגע, בלי לפרסם כלום. נשמרת ב-<strong>Manual tests</strong>.</li>
           </UL>
           <P>הבדיקה הידנית היא זו שמראה קריאות לכלים, מעבר סקילים וזמני תגובה — היא רצה בדפדפן, ולכן היא יכולה להראות את מה שקורה בדרך.</P>
 
           <H3>מה רואים בצ'אט</H3>
           <UL>
             <li><strong>קריאות לכלים</strong> — כל קריאה מוצגת עם הפרמטרים שנשלחו והתוצאה שחזרה</li>
-            <li><strong>מעבר סקיל</strong> — כשהסוכן עובר לסקיל, מוצג כרטיס עם שמו והתיאור</li>
+            <li><strong>מעבר סקיל</strong> — כשה-AI Chatbot עובר לסקיל, מוצג כרטיס עם שמו והתיאור</li>
             <li><strong>זמני תגובה</strong> — משך כל תשובה במילישניות</li>
             <li><strong>מיסוך DLP</strong> — הודעה שמוסכה מסומנת ככזו</li>
           </UL>
 
           <H3>היסטוריה — לשונית Manual tests</H3>
-          <P>כל שיחת בדיקה נשמרת בשרת אוטומטית, אחרי כל תור, כך שסגירת טאב באמצע לא מאבדת את ההרצה. אייקון השעון בכותרת הצ'אט מציג אותן, ואותן שיחות בדיוק מופיעות בלשונית <strong>Manual tests</strong> של הסוכן — עם חיפוש בכל התמלילים, משך זמן, ומחיקה.</P>
-          <P>הן <strong>לא</strong> מופיעות ב-<strong>Interactions</strong>, ובכוונה: שם יושבות שיחות של משתמשי קצה אמיתיים דרך הווידג'ט או WhatsApp, ואלה השיחות שלך עם הסוכן שלך.</P>
-          <P><strong>כל האסיסטנטים קוראים אותן.</strong> האסיסטנטים של הכלים, הסקילים והבייס-פרומט מקבלים את ההרצות האחרונות כחלק מהקונטקסט, ואסיסטנט המערכת יכול לבקש אותן בעצמו דרך <Code>get_test_conversations</Code>. לכן אפשר לומר לאסיסטנט "הסוכן ענה לא נכון, תתקן" בלי להעתיק לו את השיחה.</P>
-          <Warn>כל שיחה מתחילה מאפס — הסוכן לא זוכר שיחות קודמות. מה שצריך שיהיה זמין תמיד צריך להיות בפרומפט או בבסיס הידע.</Warn>
+          <P>כל שיחת בדיקה נשמרת בשרת אוטומטית, אחרי כל תור, כך שסגירת טאב באמצע לא מאבדת את ההרצה. אייקון השעון בכותרת הצ'אט מציג אותן, ואותן שיחות בדיוק מופיעות בלשונית <strong>Manual tests</strong> של ה-AI Chatbot — עם חיפוש בכל התמלילים, משך זמן, ומחיקה.</P>
+          <P>הן <strong>לא</strong> מופיעות ב-<strong>Interactions</strong>, ובכוונה: שם יושבות שיחות של משתמשי קצה אמיתיים דרך הווידג'ט או WhatsApp, ואלה השיחות שלך עם ה-AI Chatbot שלך.</P>
+          <P><strong>כל האסיסטנטים קוראים אותן.</strong> האסיסטנטים של הכלים, הסקילים והבייס-פרומט מקבלים את ההרצות האחרונות כחלק מהקונטקסט, ואסיסטנט המערכת יכול לבקש אותן בעצמו דרך <Code>get_test_conversations</Code>. לכן אפשר לומר לאסיסטנט "ה-AI Chatbot ענה לא נכון, תתקן" בלי להעתיק לו את השיחה.</P>
+          <Warn>כל שיחה מתחילה מאפס — ה-AI Chatbot לא זוכר שיחות קודמות. מה שצריך שיהיה זמין תמיד צריך להיות בפרומפט או בבסיס הידע.</Warn>
         </div>
       ),
 
@@ -5780,7 +5780,7 @@ def run(**kwargs):
       cli: (
         <div dir="rtl">
           <H2>עריכה מ-IDE</H2>
-          <P>אותו סוכן שאתה עורך בממשק אפשר למשוך לתיקייה, לערוך בעורך שלך, ולדחוף בחזרה. לכל סוכן יש גם ריפו פרטי ב-GitHub, ו-<Code>git push</Code> אליו מופעל בדיוק כמו <Code>8legs push</Code>.</P>
+          <P>אותו AI Chatbot שאתה עורך בממשק אפשר למשוך לתיקייה, לערוך בעורך שלך, ולדחוף בחזרה. לכל AI Chatbot יש גם ריפו פרטי ב-GitHub, ו-<Code>git push</Code> אליו מופעל בדיוק כמו <Code>8legs push</Code>.</P>
 
           <H3>התקנה</H3>
           <Block>{`npm i -g @8legs/cli     # ואז 8legs <פקודה> מכל תיקייה
@@ -5798,16 +5798,16 @@ npx @8legs/cli <פקודה>   # בלי להתקין כלום`}</Block>
               {[
                 ['login', 'שומר טוקן. --token <t> מדלג על ההדבקה'],
                 ['logout', 'מוחק את הטוקן השמור'],
-                ['whoami', 'לאיזו התקנה אתה מחובר, וכמה סוכנים יש'],
-                ['list', 'הסוכנים שלך, עם ה-id של כל אחד'],
-                ['pull <סוכן>', 'מוריד סוכן לתיקייה. לפי id או לפי שם'],
+                ['whoami', 'לאיזו התקנה אתה מחובר, וכמה AI Chatbots יש'],
+                ['list', 'ה-AI Chatbots שלך, עם ה-id של כל אחד'],
+                ['pull <AI Chatbot>', 'מוריד AI Chatbot לתיקייה. לפי id או לפי שם'],
                 ['pull', 'מרענן את התיקייה שאתה בתוכה'],
-                ['status', 'מה שונה מקומית, ואם הסוכן זז בפלטפורמה'],
+                ['status', 'מה שונה מקומית, ואם ה-AI Chatbot זז בפלטפורמה'],
                 ['diff [קובץ]', 'השינויים עצמם, שורה-שורה'],
                 ['validate', 'בודק את התיקייה לפני דחיפה'],
                 ['push', 'שולח את השינויים'],
-                ['open', 'פותח את הסוכן בדפדפן'],
-                ['git', 'מכוון את ה-origin של התיקייה לריפו של הסוכן'],
+                ['open', 'פותח את ה-AI Chatbot בדפדפן'],
+                ['git', 'מכוון את ה-origin של התיקייה לריפו של ה-AI Chatbot'],
                 ['branches', 'הבראנצ׳ים, ואחוז השיחות של כל אחד'],
                 ['branch <שם>', 'פותח בראנץ׳ ומעביר אליו את התיקייה'],
                 ['checkout <שם>', 'מחליף את התיקייה לבראנץ׳ אחר'],
@@ -5840,7 +5840,7 @@ skills/<שם>/skill.json   למה הסקיל, ואילו כלים שלו
 skills/<שם>/prompts/skill.md   ההוראות שלו
 tools/<שם>/tool.json     פרמטרים, חבילות, שמות משתני סביבה
 tools/<שם>/run.py        הקוד
-AGENTS.md                איך לערוך את הסוכן — בשביל Claude Code
+AGENTS.md                איך לערוך את ה-AI Chatbot — בשביל Claude Code
 .8legs/lock.json         id, בראנץ׳, גרסה`}</Block>
 
           <Warn>אל תשנה <Code>id</Code> באף קובץ. זה איך שהפלטפורמה מזהה את הדבר שכבר קיים אצלה — שינוי שלו מוחק סקיל ויוצר אחר במקומו.</Warn>
@@ -5853,10 +5853,10 @@ AGENTS.md                איך לערוך את הסוכן — בשביל Claude
 
           <H3>עבודה עם git</H3>
           <Block>{`8legs pull <id>
-8legs git                # מכוון את origin לריפו של הסוכן
+8legs git                # מכוון את origin לריפו של ה-AI Chatbot
 # ערוך, ואז
 git add -A && git commit -m "…" && git push`}</Block>
-          <P>הריפו נוצר ב-pull הראשון. קומיט שעובר ולידציה מסומן ✓ ב-GitHub והופך לחי; קומיט שנופל מסומן ✗ עם הסיבה, <strong>והסוכן החי לא זז</strong>. git כבר קיבל את הדחיפה, אז אי אפשר לדחות אותה — רק לא להפעיל אותה.</P>
+          <P>הריפו נוצר ב-pull הראשון. קומיט שעובר ולידציה מסומן ✓ ב-GitHub והופך לחי; קומיט שנופל מסומן ✗ עם הסיבה, <strong>וה-AI Chatbot החי לא זז</strong>. git כבר קיבל את הדחיפה, אז אי אפשר לדחות אותה — רק לא להפעיל אותה.</P>
 
           <H3>בראנצ׳ים וניתוב שיחות</H3>
           <Block>{`8legs branch warmer-tone      # פותח בראנץ׳ ועובר אליו
@@ -5865,15 +5865,15 @@ git add -A && git commit -m "…" && git push`}</Block>
 8legs branches                # לראות את החלוקה
 8legs merge warmer-tone       # להפעיל אותו על כולם
 8legs traffic --stop          # או להחזיר הכל ל-main`}</Block>
-          <P>הבראנץ׳ של שיחה מוגרל פעם אחת, בהודעה הראשונה, ונשמר עליה. אף אחד לא רואה את הסוכן מתחלף באמצע שיחה.</P>
+          <P>הבראנץ׳ של שיחה מוגרל פעם אחת, בהודעה הראשונה, ונשמר עליה. אף אחד לא רואה את ה-AI Chatbot מתחלף באמצע שיחה.</P>
 
           <H3>כשדחיפה נדחית</H3>
           <UL>
-            <li><strong>"The agent changed on the platform"</strong> — מישהו ערך בממשק. <Code>8legs pull</Code> לוקח את הגרסה שלו, ואז תחזור על העריכה ותדחוף שוב. שום דבר לא נכתב.</li>
-            <li><strong>קובץ שלא נפרס</strong> — גם כאן שום דבר לא נכתב. דחיפה היא הכל-או-כלום: JSON שבור לא יכול להשאיר סוכן חי מעודכן בחצי.</li>
+            <li><strong>"The AI Chatbot changed on the platform"</strong> — מישהו ערך בממשק. <Code>8legs pull</Code> לוקח את הגרסה שלו, ואז תחזור על העריכה ותדחוף שוב. שום דבר לא נכתב.</li>
+            <li><strong>קובץ שלא נפרס</strong> — גם כאן שום דבר לא נכתב. דחיפה היא הכל-או-כלום: JSON שבור לא יכול להשאיר AI Chatbot חי מעודכן בחצי.</li>
           </UL>
 
-          <Tip>עריכה בממשק נכנסת ל<strong>טיוטה</strong>, לא לסוכן החי — הפס בראש עורך הסוכן הוא מה שמפרסם אותה. ב-CLI הטיוטה היא בראנץ׳ בשם <Code>draft</Code>.</Tip>
+          <Tip>עריכה בממשק נכנסת ל<strong>טיוטה</strong>, לא ל-AI Chatbot החי — הפס בראש עורך ה-AI Chatbot הוא מה שמפרסם אותה. ב-CLI הטיוטה היא בראנץ׳ בשם <Code>draft</Code>.</Tip>
         </div>
       ),
 
@@ -5893,12 +5893,12 @@ git add -A && git commit -m "…" && git push`}</Block>
           <H3>שתי דרכי הטמעה</H3>
           <UL>
             <li><strong>iframe</strong> — הטמעה קבועה בתוך הדף</li>
-            <li><strong>כפתור צף</strong> — קטע script שמוסיף בועה בפינה שנפתחת ונסגרת, עם האווטאר של הסוכן</li>
+            <li><strong>כפתור צף</strong> — קטע script שמוסיף בועה בפינה שנפתחת ונסגרת, עם האווטאר של ה-AI Chatbot</li>
           </UL>
 
           <H3>מה קורה מאחורי הקלעים</H3>
-          <P>הווידג'ט מדבר עם נקודת קצה ציבורית של הסוכן. היא מחזירה רק את מה שדרוש לתצוגה — שם, אווטאר והודעת פתיחה — ולא את המפתחות או ההגדרות. הסוכן עונה בצד השרת עם המפתח שלו, כולל כלים, בסיס ידע ו-DLP, וכל שיחה נשמרת ומופיעה ב-Interactions כערוץ <Code>Widget</Code>.</P>
-          <Warn>הווידג'ט פתוח לכל מי שמגיע לדף שבו הטמעת אותו, וכל שיחה מחויבת למפתח ה-API של הסוכן. אל תטמיע סוכן יקר בדף ציבורי בלי מעקב ב-Interactions.</Warn>
+          <P>הווידג'ט מדבר עם נקודת קצה ציבורית של ה-AI Chatbot. היא מחזירה רק את מה שדרוש לתצוגה — שם, אווטאר והודעת פתיחה — ולא את המפתחות או ההגדרות. ה-AI Chatbot עונה בצד השרת עם המפתח שלו, כולל כלים, בסיס ידע ו-DLP, וכל שיחה נשמרת ומופיעה ב-Interactions כערוץ <Code>Widget</Code>.</P>
+          <Warn>הווידג'ט פתוח לכל מי שמגיע לדף שבו הטמעת אותו, וכל שיחה מחויבת למפתח ה-API של ה-AI Chatbot. אל תטמיע AI Chatbot יקר בדף ציבורי בלי מעקב ב-Interactions.</Warn>
         </div>
       ),
 
@@ -5906,7 +5906,7 @@ git add -A && git commit -m "…" && git push`}</Block>
       whatsapp: (
         <div dir="rtl">
           <H2>ערוץ WhatsApp</H2>
-          <P>לשונית <strong>Whatsapp</strong> מחברת את הסוכן למספר WhatsApp Business דרך Meta Cloud API. אנשים כותבים למספר, והסוכן עונה עם אותו פרומפט, כלים וידע.</P>
+          <P>לשונית <strong>Whatsapp</strong> מחברת את ה-AI Chatbot למספר WhatsApp Business דרך Meta Cloud API. אנשים כותבים למספר, וה-AI Chatbot עונה עם אותו פרומפט, כלים וידע.</P>
 
           <H3>מה צריך מ-Meta</H3>
           <UL>
@@ -5930,7 +5930,7 @@ git add -A && git commit -m "…" && git push`}</Block>
             <li>ההיסטוריה נשמרת פר שולח, ועשרים ההודעות האחרונות נשלחות למודל כהקשר</li>
             <li>תשובה ארוכה מפוצלת לכמה הודעות; הודעות שאינן טקסט מקבלות תשובה מנומסת</li>
           </UL>
-          <Warn>מספר WhatsApp יכול להיות מחובר לסוכן אחד בלבד. אם תזין מספר שכבר מחובר לסוכן אחר, השמירה תידחה עם הודעה.</Warn>
+          <Warn>מספר WhatsApp יכול להיות מחובר ל-AI Chatbot אחד בלבד. אם תזין מספר שכבר מחובר ל-AI Chatbot אחר, השמירה תידחה עם הודעה.</Warn>
         </div>
       ),
 
@@ -5938,11 +5938,11 @@ git add -A && git commit -m "…" && git push`}</Block>
       interactions: (
         <div dir="rtl">
           <H2>Interactions</H2>
-          <P>לשונית בסייד-בר שמרכזת כל השיחות שנוהלו עם הסוכנים שלך, בכל הערוצים.</P>
+          <P>לשונית בסייד-בר שמרכזת כל השיחות שנוהלו עם ה-AI Chatbots שלך, בכל הערוצים.</P>
 
           <H3>העמודות</H3>
           <UL>
-            <li><strong>Agent</strong> — הסוכן שענה</li>
+            <li><strong>AI Chatbot</strong> — ה-AI Chatbot שענה</li>
             <li><strong>Channel</strong> — Widget, WhatsApp או Test chat</li>
             <li><strong>Started</strong> — מתי השיחה התחילה</li>
             <li><strong>Duration</strong> — מהפעילות הראשונה עד האחרונה בשיחה</li>
@@ -5951,7 +5951,7 @@ git add -A && git commit -m "…" && git push`}</Block>
           </UL>
 
           <H3>סינון וחיפוש</H3>
-          <P>מתחת לכל כותרת יש פילטר: בחירת סוכן, ערוץ, טווח תאריכים, מינימום ומקסימום שניות, ומינימום הודעות. תיבת החיפוש בעמודת Conversation מחפשת בתוך <strong>כל תוכן ההודעות</strong>, לא רק בתצוגה המקדימה. Started, Duration ו-Messages ניתנים למיון בלחיצה, ו-Clear filters מאפס הכול.</P>
+          <P>מתחת לכל כותרת יש פילטר: בחירת AI Chatbot, ערוץ, טווח תאריכים, מינימום ומקסימום שניות, ומינימום הודעות. תיבת החיפוש בעמודת Conversation מחפשת בתוך <strong>כל תוכן ההודעות</strong>, לא רק בתצוגה המקדימה. Started, Duration ו-Messages ניתנים למיון בלחיצה, ו-Clear filters מאפס הכול.</P>
           <P>לאדמין יש כפתור נוסף שמרחיב את הרשימה לכל המשתמשים ומוסיף עמודת Owner.</P>
         </div>
       ),
@@ -5964,12 +5964,12 @@ git add -A && git commit -m "…" && git push`}</Block>
 
           <H3>משתמשים</H3>
           <UL>
-            <li>טבלה עם שם משתמש, טלפון, הרשאה, מספר סוכנים והתחברות אחרונה</li>
-            <li><strong>View Agents</strong> — צפייה ועריכה של הסוכנים של אותו משתמש, כולל שכפול סוכן משלך אליו</li>
+            <li>טבלה עם שם משתמש, טלפון, הרשאה, מספר AI Chatbots והתחברות אחרונה</li>
+            <li><strong>View AI Chatbots</strong> — צפייה ועריכה של ה-AI Chatbots של אותו משתמש, כולל שכפול AI Chatbot משלך אליו</li>
             <li><strong>Reset Password</strong> — מגריל סיסמה זמנית ומציג אותה פעם אחת</li>
-            <li><strong>Delete User</strong> — מוחק את המשתמש, הסוכנים שלו, השיחות והמסמכים. דורש הקלדת שם המשתמש לאישור, ואי אפשר למחוק את עצמך</li>
+            <li><strong>Delete User</strong> — מוחק את המשתמש, ה-AI Chatbots שלו, השיחות והמסמכים. דורש הקלדת שם המשתמש לאישור, ואי אפשר למחוק את עצמך</li>
           </UL>
-          <Warn>שכפול סוכן למשתמש אחר לא מעביר את חיבור ה-Gmail ואת הגדרות ה-WhatsApp — הן מתאפסות בכוונה, כדי שלא יעברו טוקנים ומספרים בין משתמשים.</Warn>
+          <Warn>שכפול AI Chatbot למשתמש אחר לא מעביר את חיבור ה-Gmail ואת הגדרות ה-WhatsApp — הן מתאפסות בכוונה, כדי שלא יעברו טוקנים ומספרים בין משתמשים.</Warn>
 
           <H3>Chat History</H3>
           <P>תצוגת כל השיחות בכל המערכת, עם תמלול מלא. Interactions נוח יותר לסינון; זה נוח יותר לסקירה כללית.</P>
@@ -5997,7 +5997,7 @@ npm run migrate            # הרצה בפועל`}</Block>
           <P>הריצה קוראת <Code>DATABASE_URL</Code> מהסביבה או מקובץ <Code>.env</Code>, מריצה כל קובץ פעם אחת ורושמת אותו בטבלת <Code>schema_migrations</Code>. הקבצים כתובים כך שהרצה חוזרת לא מזיקה.</P>
 
           <H3>משימות מתוזמנות</H3>
-          <P>סריקת האתרים של כל הסוכנים רצה פעמיים ביום דרך Vercel Cron. ל-webhook של WhatsApp ולסריקות יש חלונות זמן ארוכים יותר מברירת המחדל.</P>
+          <P>סריקת האתרים של כל ה-AI Chatbots רצה פעמיים ביום דרך Vercel Cron. ל-webhook של WhatsApp ולסריקות יש חלונות זמן ארוכים יותר מברירת המחדל.</P>
         </div>
       ),
 
@@ -6008,14 +6008,14 @@ npm run migrate            # הרצה בפועל`}</Block>
 
           <H3>מה מופרד בין משתמשים</H3>
           <UL>
-            <li>סוכן שייך למשתמש, וכל קריאה לשרת מאמתת בעלות לפני שהיא מחזירה או משנה משהו</li>
-            <li>חיבור Gmail הוא פר סוכן, וניתן לגישה רק לבעל הסוכן</li>
-            <li>מספר WhatsApp הוא בלעדי לסוכן אחד, וניתוב הודעה נקבע לפי הוכחת ה-App Secret — לא לפי מי שהזין את המספר אחרון</li>
+            <li>AI Chatbot שייך למשתמש, וכל קריאה לשרת מאמתת בעלות לפני שהיא מחזירה או משנה משהו</li>
+            <li>חיבור Gmail הוא פר AI Chatbot, וניתן לגישה רק לבעל ה-AI Chatbot</li>
+            <li>מספר WhatsApp הוא בלעדי ל-AI Chatbot אחד, וניתוב הודעה נקבע לפי הוכחת ה-App Secret — לא לפי מי שהזין את המספר אחרון</li>
           </UL>
 
           <H3>מה חשוב לדעת על סודות</H3>
           <UL>
-            <li>מפתחות ה-API, טוקני WhatsApp וה-Secrets של הכלים נשמרים בהגדרות הסוכן בבסיס הנתונים</li>
+            <li>מפתחות ה-API, טוקני WhatsApp וה-Secrets של הכלים נשמרים בהגדרות ה-AI Chatbot בבסיס הנתונים</li>
             <li>ערכי Secrets נחשפים לקוד הכלי שלך בזמן ריצה — כל מי שיכול לערוך את הכלי יכול לקרוא אותם</li>
             <li>האסיסטנט מקבל את שמות ה-Secrets בלבד, לא את הערכים</li>
           </UL>
@@ -6026,7 +6026,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             <li>בסיס הידע נשלף לתוך התשובות — אל תכניס אליו מה שלא מוכן להיאמר ללקוח</li>
             <li>DLP מסתיר תבניות של כרטיס אשראי ותעודת זהות, ולא כל מידע מזהה. הוא שכבת הגנה, לא ערובה</li>
           </UL>
-          <Tip>עקוב אחרי Interactions כדי לראות מה באמת נשאל ומה הסוכן ענה. זה הכלי הכי טוב לתפוס גם דליפות וגם תשובות שגויות.</Tip>
+          <Tip>עקוב אחרי Interactions כדי לראות מה באמת נשאל ומה ה-AI Chatbot ענה. זה הכלי הכי טוב לתפוס גם דליפות וגם תשובות שגויות.</Tip>
         </div>
       ),
     };
@@ -6696,28 +6696,28 @@ npm run migrate            # הרצה בפועל`}</Block>
   const PLATFORM_TOOLS = [
     {
       name: 'list_agents',
-      description: "Lists the account's agents with their id, name, description, and how many skills, tools and knowledge documents each has. Call this first when the user names an agent.",
+      description: "Lists the account's AI Chatbots with their id, name, description, and how many skills, tools and knowledge documents each has. Call this first when the user names an AI Chatbot.",
       input_schema: { type: 'object', properties: {}, required: [] },
     },
     {
       name: 'get_agent',
-      description: 'Returns one agent in full: prompt, opening message, skills, tools (with their code), DLP, crawl URLs and channel state. Always call this before changing an existing agent.',
-      input_schema: { type: 'object', properties: { agent_id: STR('The agent id from list_agents') }, required: ['agent_id'] },
+      description: 'Returns one AI Chatbot in full: prompt, opening message, skills, tools (with their code), DLP, crawl URLs and channel state. Always call this before changing an existing AI Chatbot.',
+      input_schema: { type: 'object', properties: { agent_id: STR('The AI Chatbot id from list_agents') }, required: ['agent_id'] },
     },
     {
       name: 'create_agent',
-      description: "Creates a new agent. Pass its skills and tools in the same call to build a complete agent at once — an agent whose whole behaviour was written into base_prompt, with a task procedure inside it and no skills, is built wrong.",
+      description: "Creates a new AI Chatbot. Pass its skills and tools in the same call to build a complete AI Chatbot at once — an AI Chatbot whose whole behaviour was written into base_prompt, with a task procedure inside it and no skills, is built wrong.",
       input_schema: {
         type: 'object',
         properties: {
           name: STR('Short display name'),
           avatar: STR('A single emoji'),
-          base_prompt: STR("Written in ENGLISH, always. Always-on instructions only: who the agent is, which language and tone it answers its users in, the rules that always hold, and when to hand off to its skills. Use ## sections. Must NOT contain the step-by-step procedure for a task — that is a skill."),
-          opening_message: STR("The first line the agent says to a user — in the language the agent serves them in, NOT English unless that is their language"),
+          base_prompt: STR("Written in ENGLISH, always. Always-on instructions only: who the AI Chatbot is, which language and tone it answers its users in, the rules that always hold, and when to hand off to its skills. Use ## sections. Must NOT contain the step-by-step procedure for a task — that is a skill."),
+          opening_message: STR("The first line the AI Chatbot says to a user — in the language the AI Chatbot serves them in, NOT English unless that is their language"),
           skills: {
             type: 'array',
-            description: "One per task the agent performs. This is where the step-by-step procedure lives. Leave empty only for an agent that answers from knowledge or persona alone, with no procedure at all.",
-            items: { type: 'object', properties: { name: STR('Skill name'), description: STR('When the agent should switch to it'), prompt: STR('The skill prompt, in English') }, required: ['name', 'description', 'prompt'] },
+            description: "One per task the AI Chatbot performs. This is where the step-by-step procedure lives. Leave empty only for an AI Chatbot that answers from knowledge or persona alone, with no procedure at all.",
+            items: { type: 'object', properties: { name: STR('Skill name'), description: STR('When the AI Chatbot should switch to it'), prompt: STR('The skill prompt, in English') }, required: ['name', 'description', 'prompt'] },
           },
           tools: {
             type: 'array',
@@ -6738,15 +6738,15 @@ npm run migrate            # הרצה בפועל`}</Block>
     },
     {
       name: 'update_agent',
-      description: 'Changes an existing agent. Only the fields you pass are touched. skills and tools replace the whole array, so call get_agent first and send the full list back with your edit applied.',
+      description: 'Changes an existing AI Chatbot. Only the fields you pass are touched. skills and tools replace the whole array, so call get_agent first and send the full list back with your edit applied.',
       input_schema: {
         type: 'object',
         properties: {
-          agent_id: STR('The agent id'),
+          agent_id: STR('The AI Chatbot id'),
           name: STR('New name'),
           avatar: STR('A single emoji'),
           base_prompt: STR('Replacement always-on instructions, in ENGLISH. A task procedure belongs in a skill, not here.'),
-          opening_message: STR('Replacement opening line, in the language the agent speaks to its users'),
+          opening_message: STR('Replacement opening line, in the language the AI Chatbot speaks to its users'),
           email_enabled: { type: 'boolean', description: 'Enable the built-in send_email tool' },
           dlp_credit_card: { type: 'boolean', description: 'Mask credit card numbers' },
           dlp_israeli_id: { type: 'boolean', description: 'Mask Israeli ID numbers' },
@@ -6768,16 +6768,16 @@ npm run migrate            # הרצה בפועל`}</Block>
     },
     {
       name: 'delete_agent',
-      description: 'Deletes an agent and everything it owns. The user is asked to confirm in the browser, and the call fails if they decline. Ask in chat before calling this.',
-      input_schema: { type: 'object', properties: { agent_id: STR('The agent id') }, required: ['agent_id'] },
+      description: 'Deletes an AI Chatbot and everything it owns. The user is asked to confirm in the browser, and the call fails if they decline. Ask in chat before calling this.',
+      input_schema: { type: 'object', properties: { agent_id: STR('The AI Chatbot id') }, required: ['agent_id'] },
     },
     {
       name: 'run_tool',
-      description: "Runs one of an agent's Python tools with the inputs you give and returns its output, so you can check a tool you wrote actually works.",
+      description: "Runs one of an AI Chatbot's Python tools with the inputs you give and returns its output, so you can check a tool you wrote actually works.",
       input_schema: {
         type: 'object',
         properties: {
-          agent_id: STR('The agent id'),
+          agent_id: STR('The AI Chatbot id'),
           tool_name: STR('The tool to run'),
           inputs: { type: 'object', description: 'Values for the declared parameters', properties: {} },
         },
@@ -6790,7 +6790,7 @@ npm run migrate            # הרצה בפועל`}</Block>
       input_schema: {
         type: 'object',
         properties: {
-          agent_id: STR('Only this agent'),
+          agent_id: STR('Only this AI Chatbot'),
           source: STR('Only this source: tool, widget, whatsapp, provider or save'),
           limit: { type: 'integer', description: 'How many (default 15, max 50)' },
         },
@@ -6799,11 +6799,11 @@ npm run migrate            # הרצה בפועל`}</Block>
     },
     {
       name: 'get_test_conversations',
-      description: "The builder's own manual test conversations with an agent, as full transcripts including the tools the agent called. This is what the agent actually said when it was tried — read it before changing an agent someone says is misbehaving. Separate from list_interactions, which is real end users.",
+      description: "The builder's own manual test conversations with an AI Chatbot, as full transcripts including the tools the AI Chatbot called. This is what the AI Chatbot actually said when it was tried — read it before changing an AI Chatbot someone says is misbehaving. Separate from list_interactions, which is real end users.",
       input_schema: {
         type: 'object',
         properties: {
-          agent_id: STR('Which agent'),
+          agent_id: STR('Which AI Chatbot'),
           search: STR('Only conversations containing this text'),
           limit: { type: 'integer', description: 'How many (default 5, max 20)' },
         },
@@ -6812,11 +6812,11 @@ npm run migrate            # הרצה בפועל`}</Block>
     },
     {
       name: 'list_interactions',
-      description: 'Recent conversations with the account\'s agents: agent, channel, when, duration, message count and the first user message. Use it to answer questions about usage.',
+      description: 'Recent conversations with the account\'s AI Chatbots: AI Chatbot, channel, when, duration, message count and the first user message. Use it to answer questions about usage.',
       input_schema: {
         type: 'object',
         properties: {
-          agent_id: STR('Only this agent'),
+          agent_id: STR('Only this AI Chatbot'),
           search: STR('Only conversations containing this text'),
           limit: { type: 'integer', description: 'How many (default 10, max 50)' },
         },
@@ -6827,41 +6827,41 @@ npm run migrate            # הרצה בפועל`}</Block>
 
   const PLATFORM_REFERENCE = [
     'The platform (8Legs.ai) — what you are operating:',
-    '- An AGENT has: a name and avatar, an opening message, a base prompt, skills, Python tools, a knowledge base, and channels.',
-    "- BASE PROMPT vs SKILL is the split that matters when you build one. The base prompt is always active, on every turn of every channel: who the agent is, the language and tone it answers in, the rules that always hold, and a short statement of what it can do and when to hand off. A SKILL holds the procedure for ONE task — the steps, what to collect, what to say at each stage. A numbered procedure for a particular task does NOT belong in the base prompt.",
-    '- Why it matters mechanically: a skill\'s prompt is only loaded once the agent switches to it, so the always-on prompt stays small; knowledge retrieval is scoped to that skill\'s own documents; and the skill can be rewritten later without touching the agent\'s identity.',
-    '- The API key, provider and model are ACCOUNT-WIDE, set once in Settings. They are not per agent, so never ask the user for a key per agent.',
-    '- A SKILL is a focused mode with its own prompt. The agent reads a skill\'s description to decide when to switch to it, by calling an internal switch_skill tool with skill_name. In prompt text the convention is #SkillName. Skill prompts are written in English.',
+    '- An AI CHATBOT has: a name and avatar, an opening message, a base prompt, skills, Python tools, a knowledge base, and channels.',
+    "- BASE PROMPT vs SKILL is the split that matters when you build one. The base prompt is always active, on every turn of every channel: who the AI Chatbot is, the language and tone it answers in, the rules that always hold, and a short statement of what it can do and when to hand off. A SKILL holds the procedure for ONE task — the steps, what to collect, what to say at each stage. A numbered procedure for a particular task does NOT belong in the base prompt.",
+    '- Why it matters mechanically: a skill\'s prompt is only loaded once the AI Chatbot switches to it, so the always-on prompt stays small; knowledge retrieval is scoped to that skill\'s own documents; and the skill can be rewritten later without touching the AI Chatbot\'s identity.',
+    '- The API key, provider and model are ACCOUNT-WIDE, set once in Settings. They are not per AI Chatbot, so never ask the user for a key per AI Chatbot.',
+    '- A SKILL is a focused mode with its own prompt. The AI Chatbot reads a skill\'s description to decide when to switch to it, by calling an internal switch_skill tool with skill_name. In prompt text the convention is #SkillName. Skill prompts are written in English.',
     '- A TOOL is Python that must define `def run(**kwargs)`. Declared parameters arrive in kwargs; secrets come from os.environ; only the standard library plus the packages listed on the tool are available; there is no persistent disk; outbound HTTPS works; return a string, and return a readable error string instead of raising. Reference a tool from a prompt as @tool_name.',
     '- Parameter types are string, number, integer or boolean.',
-    '- send_email is a built-in tool, switched on per agent, that sends from a Gmail account connected on that agent (Tools tab). You cannot connect Gmail for the user — say where to do it.',
+    '- send_email is a built-in tool, switched on per AI Chatbot, that sends from a Gmail account connected on that AI Chatbot (Tools tab). You cannot connect Gmail for the user — say where to do it.',
     "- KNOWLEDGE is documents (pasted, PDF/DOCX upload, or crawled sites). On upload each one is rewritten by the model into short titled sections with a bilingual keyword line, then split into chunks; a question retrieves chunks by full-text search into the prompt. The search is LEXICAL, not semantic — it matches words, so a document only answers questions phrased with words it contains. You cannot upload files for the user, but you can tell them to press the tidy button on a document to have it reorganised.",
-    '- CHANNELS: the in-app test chat, an embeddable website widget (Export tab), and WhatsApp via Meta Cloud API (Whatsapp tab, needs a phone number id, access token, app secret and verify token from Meta). A WhatsApp number belongs to one agent only.',
+    '- CHANNELS: the in-app test chat, an embeddable website widget (Export tab), and WhatsApp via Meta Cloud API (Whatsapp tab, needs a phone number id, access token, app secret and verify token from Meta). A WhatsApp number belongs to one AI Chatbot only.',
     '- DLP can mask credit-card and Israeli-ID numbers before they reach the model and before history is stored.',
     '- INTERACTIONS lists every conversation real end users had across channels, filterable and searchable.',
-    "- MANUAL TESTS are the builder's own conversations with an agent in the test chat, kept on the agent's Manual tests tab and deliberately NOT in Interactions. Read them with get_test_conversations when someone reports an agent behaving wrongly.",
+    "- MANUAL TESTS are the builder's own conversations with an AI Chatbot in the test chat, kept on the AI Chatbot's Manual tests tab and deliberately NOT in Interactions. Read them with get_test_conversations when someone reports an AI Chatbot behaving wrongly.",
     '- Everything the user edits is saved automatically; there is no save button.',
   ].join('\n');
 
   function buildPlatformAssistantPrompt(agents, language) {
     const inventory = (agents || []).length
       ? (agents || []).map(a => `- ${a.name} (id ${a.id}) — ${(a.skills || []).length} skills, ${(a.tools || []).length} tools`).join('\n')
-      : '(the account has no agents yet)';
+      : '(the account has no AI Chatbots yet)';
     const cfg = accountApi();
 
     return [
-      'You are the assistant built into the 8Legs.ai builder. You operate the platform on the user\'s behalf: you answer questions about it, and you create and change their agents through the tools you have.',
+      'You are the assistant built into the 8Legs.ai builder. You operate the platform on the user\'s behalf: you answer questions about it, and you create and change their AI Chatbots through the tools you have.',
       '',
       PLATFORM_REFERENCE,
       '',
       'How to work:',
       '- Do the work with your tools rather than describing what the user should click. Only explain where to click for the things you cannot do: connecting Gmail, uploading files, WhatsApp credentials, and the account API key.',
-      '- Before changing an existing agent, call get_agent. When you send skills or tools you are replacing the whole list, so include the ones you are keeping.',
+      '- Before changing an existing AI Chatbot, call get_agent. When you send skills or tools you are replacing the whole list, so include the ones you are keeping.',
       '- Write tool code that satisfies the runtime contract, and declare exactly the parameters the code reads. Offer to run_tool it afterwards.',
-      "- When you build an agent, split the work: identity and always-on rules go in base_prompt, and EVERY task procedure becomes a skill passed in the same create_agent call. Apply this test to each ## section you are about to write into a base prompt — if it is a sequence of steps for one task ('ask X, then collect Y, then send Z'), it is a skill, not base prompt. An agent that performs one task still gets one skill for it; the base prompt then says who it is and when to switch to that skill.",
+      "- When you build an AI Chatbot, split the work: identity and always-on rules go in base_prompt, and EVERY task procedure becomes a skill passed in the same create_agent call. Apply this test to each ## section you are about to write into a base prompt — if it is a sequence of steps for one task ('ask X, then collect Y, then send Z'), it is a skill, not base prompt. An AI Chatbot that performs one task still gets one skill for it; the base prompt then says who it is and when to switch to that skill.",
       "- Do not build a skill for something that is not a procedure: tone, language, a refusal rule or a single fact belongs in the base prompt.",
-      "- EVERY prompt you write is in English — the base prompt and every skill prompt — whatever language you and the user are speaking. The one exception is a sentence the agent must say to its users verbatim in another language: that stays in that language, quoted, and the prompt states which language the agent replies in.",
-      "- What is NOT in English: the agent's name, its opening_message, and anything the agent says to end users. Those are in the language the agent serves its users in — so a Hebrew-speaking agent gets an English prompt that instructs it to answer in Hebrew, and a Hebrew opening message.",
+      "- EVERY prompt you write is in English — the base prompt and every skill prompt — whatever language you and the user are speaking. The one exception is a sentence the AI Chatbot must say to its users verbatim in another language: that stays in that language, quoted, and the prompt states which language the AI Chatbot replies in.",
+      "- What is NOT in English: the AI Chatbot's name, its opening_message, and anything the AI Chatbot says to end users. Those are in the language the AI Chatbot serves its users in — so a Hebrew-speaking AI Chatbot gets an English prompt that instructs it to answer in Hebrew, and a Hebrew opening message.",
       '- Never delete anything without asking in chat first.',
       '- When you have changed something, say in one line what changed and where to see it.',
       '- If a tool call fails, explain what failed and what you need in order to retry — do not silently give up.',
@@ -6872,7 +6872,7 @@ npm run migrate            # הרצה בפועל`}</Block>
         : 'ענה בעברית, בקצרה ולעניין, בלי הקדמות. מונחי הממשק (Tools, Skills, Settings, Interactions) נשארים באנגלית.',
       '',
       `The account runs on ${cfg.provider} · ${cfg.model}.`,
-      'Its agents right now:',
+      'Its AI Chatbots right now:',
       inventory,
     ].join('\n');
   }
@@ -7442,21 +7442,21 @@ npm run migrate            # הרצה בפועל`}</Block>
       '',
       'Which of these two the turn is decides everything about how you answer:',
       '',
-      'A NEW AGENT is wanted — the user asks you to build, create or set up an agent, however they word it, whether it is their first or their tenth. Run the interview:',
-      '- Ask ONE question per message, short, and never more than five questions before the agent exists.',
-      '- Start from what the agent should do and who it serves. Then cover, in this order and only as far as they matter: the language it speaks to its users, where its answers come from (an API, documents the user will upload, or nothing yet), and the channel it will live on (the website widget, WhatsApp, or email).',
+      'A NEW AI CHATBOT is wanted — the user asks you to build, create or set up an AI Chatbot, however they word it, whether it is their first or their tenth. Run the interview:',
+      '- Ask ONE question per message, short, and never more than five questions before the AI Chatbot exists.',
+      '- Start from what the AI Chatbot should do and who it serves. Then cover, in this order and only as far as they matter: the language it speaks to its users, where its answers come from (an API, documents the user will upload, or nothing yet), and the channel it will live on (the website widget, WhatsApp, or email).',
       '- Do not wait for every answer. As soon as you know the job and the language, call create_agent and say in one line what you built; keep refining it with update_agent as the remaining answers come in.',
       '- Never open with a menu of what you can do. Ask the next question.',
       '',
-      'ANYTHING ELSE — a question about the platform, or a change to an agent that already exists. Do NOT interview:',
+      'ANYTHING ELSE — a question about the platform, or a change to an AI Chatbot that already exists. Do NOT interview:',
       '- Answer it, or make the change with your tools, in one turn.',
       '- Ask a question back only when you genuinely cannot proceed without the answer, and then only that one.',
-      '- Never turn a change into a questionnaire. "Make it friendlier" is a change, not a new agent.',
+      '- Never turn a change into a questionnaire. "Make it friendlier" is a change, not a new AI Chatbot.',
     ];
     if (firstAgent) {
       lines.push(
         '',
-        'This account has no agents at all yet, so the user is new here: no jargon without a half-sentence of explanation the first time it appears.',
+        'This account has no AI Chatbots at all yet, so the user is new here: no jargon without a half-sentence of explanation the first time it appears.',
       );
     }
     lines.push('', language === 'en' ? 'Speak English.' : 'דבר עברית.');

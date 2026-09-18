@@ -7,11 +7,13 @@ The in-app **Documentation** tab is the user-facing guide, and is written in Heb
 covers running and maintaining the deployment.
 
 **What the product calls things.** The interface calls an agent an **AI Chatbot** (plural
-*AI Chatbots*). That is a label, not a rename of the thing: the table is still `agents`, the
-routes are still `/api/agents`, the assistant's tools are still `create_agent` and friends, and
-the CLI still pulls an agent folder. This file uses the code's word throughout. Two places
-still say "agent" to a person on purpose — the assistants' own system prompts, where the word
-is part of instructions that have been tuned against it, and the Documentation tab.
+*AI Chatbots*), everywhere a person reads: the interface in both languages, the Documentation
+tab, the assistants' system prompts and their tool descriptions. That is a label, not a rename
+of the thing: the table is still `agents`, the routes are still `/api/agents`, the assistant's
+tools are still `create_agent` and friends, and the CLI still pulls an agent folder — renaming
+any of those would break the data, the widget and every installed CLI. This file uses the
+code's word throughout, and so does the manual wherever it is naming code rather than the
+product.
 
 ## Stack
 

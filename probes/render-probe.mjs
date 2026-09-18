@@ -149,7 +149,7 @@ if (homeBack && !homeBack.includes('Build a new AI Chatbot, change one you have'
    account has: both prompts must carry both branches. */
 for (const [label, first] of [['a new account', true], ['an account with agents', false]]) {
   const extra = probe.homeSystemExtra(first, 'en');
-  for (const needle of ['A NEW AGENT is wanted', 'ANYTHING ELSE', 'Do NOT interview']) {
+  for (const needle of ['A NEW AI CHATBOT is wanted', 'ANYTHING ELSE', 'Do NOT interview']) {
     if (!extra.includes(needle)) { console.log(`✗ the home prompt for ${label} is missing: ${needle}`); failed++; }
   }
 }
