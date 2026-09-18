@@ -92,7 +92,7 @@ const bar = render('BranchBar on a draft', React.createElement(probe.BranchBar, 
   agent: { id: 'a-1', _branch: 'draft' }, branch: null, onSwitch() {}, onChanged() {},
 }));
 if (bar && !bar.includes('Publish')) { console.log('✗ the draft bar has no publish button'); failed++; }
-if (bar && !bar.includes('live CS AI Chatbot')) { console.log('✗ the draft bar does not say the live agent is unchanged'); failed++; }
+if (bar && !bar.includes('live AI Chatbot')) { console.log('✗ the draft bar does not say the live agent is unchanged'); failed++; }
 
 const live = render('BranchBar on main', React.createElement(probe.BranchBar, {
   agent: { id: 'a-1', _branch: 'main' }, branch: null, onSwitch() {}, onChanged() {},
@@ -141,7 +141,7 @@ const homeBack = render('HomeChatView with agents', React.createElement(probe.Ho
   onAgentsChanged: async () => {}, language: 'en',
   onOpenAgent() {}, onTestAgent() {}, onSaved() {}, newChatNonce: 0,
 }));
-if (homeBack && !homeBack.includes('Build a new CS AI Chatbot, change one you have')) {
+if (homeBack && !homeBack.includes('Build a new AI Chatbot, change one you have')) {
   console.log('✗ a returning account gets the wrong subtitle'); failed++;
 }
 
@@ -174,7 +174,7 @@ const side = render('Sidebar with recent chats', React.createElement(probe.Sideb
   activeSessionId: 's-1',
   onPickRecent() {}, onNewChat() {}, language: 'en',
 }));
-for (const needle of ['Home', 'CS AI Chatbots', 'סוכן למעקב הזמנות']) {
+for (const needle of ['Home', 'AI Chatbots', 'סוכן למעקב הזמנות']) {
   if (side && !side.includes(needle)) { console.log(`✗ the sidebar is missing: ${needle}`); failed++; }
 }
 if (side && side.includes('>Assistant<')) { console.log('✗ the sidebar still carries the Assistant tab'); failed++; }

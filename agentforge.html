@@ -721,7 +721,7 @@
   function makeAgent(overrides = {}) {
     return {
       id: uid(),
-      name: 'New CS AI Chatbot',
+      name: 'New AI Chatbot',
       avatar: DEFAULT_AVATAR,
       openingMessage: 'Hello! How can I help you today?',
       basePrompt: '',
@@ -1482,14 +1482,14 @@
             </div>
             <div style={{ flex: 1, minWidth: 200, display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div>
-                <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>CS AI Chatbot Name</label>
+                <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>AI Chatbot Name</label>
                 <input value={agent.name} onChange={e => update(['name'], e.target.value)} dir="auto" />
               </div>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Opening Message</label>
                 <GrowField value={agent.openingMessage} onChange={v => update(['openingMessage'], v)}
                            minRows={1} maxRows={8}
-                           placeholder="The first thing the CS AI Chatbot says" />
+                           placeholder="The first thing the AI Chatbot says" />
               </div>
             </div>
           </div>
@@ -1502,10 +1502,10 @@
             <div style={{ fontWeight: 700, fontSize: 14 }}>Model &amp; API key</div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.6 }}>
               {accountApiUsable()
-                ? L(`Every CS AI Chatbot in this account runs on ${accountApi().provider} · ${accountApi().model}. Change it in Settings.`,
-                    `כל ה-CS AI Chatbots בחשבון רצים על ${accountApi().provider} · ${accountApi().model}. להחלפה — מסך Settings.`)
-                : L('No API key set for this account yet. Until one is set in Settings, no CS AI Chatbot will answer.',
-                    'עדיין לא הוגדר מפתח API לחשבון. עד שיוגדר במסך Settings, אף CS AI Chatbot לא יענה.')}
+                ? L(`Every AI Chatbot in this account runs on ${accountApi().provider} · ${accountApi().model}. Change it in Settings.`,
+                    `כל ה-AI Chatbots בחשבון רצים על ${accountApi().provider} · ${accountApi().model}. להחלפה — מסך Settings.`)
+                : L('No API key set for this account yet. Until one is set in Settings, no AI Chatbot will answer.',
+                    'עדיין לא הוגדר מפתח API לחשבון. עד שיוגדר במסך Settings, אף AI Chatbot לא יענה.')}
             </div>
           </div>
           <span style={{
@@ -1683,7 +1683,7 @@
     if (!selected) {
       return (
         <div style={{ maxWidth: 720 }}>
-          <EmptyState icon={Icons.target} title="No skills yet" subtitle="Skills give the CS AI Chatbot focused modes it can switch into" />
+          <EmptyState icon={Icons.target} title="No skills yet" subtitle="Skills give the AI Chatbot focused modes it can switch into" />
           <button onClick={addSkill}
             style={{ marginTop: 14, background: 'var(--primary)', color: '#0a0a0a', padding: '9px 18px', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 13 }}>
             ＋ New skill
@@ -1697,7 +1697,7 @@
         <WorkspaceHeader
           badge="#"
           name={selected.name || 'untitled skill'}
-          subtitle={selected.description || 'No description — the CS AI Chatbot uses it to decide when to switch'}
+          subtitle={selected.description || 'No description — the AI Chatbot uses it to decide when to switch'}
           actions={
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
               <span style={{ fontSize: 11, color: 'var(--success)' }}>saved automatically</span>
@@ -1741,10 +1741,10 @@
               </div>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Description</label>
-                <input value={selected.description} onChange={e => patch({ description: e.target.value })} dir="auto" placeholder="When should the CS AI Chatbot use this skill?" />
+                <input value={selected.description} onChange={e => patch({ description: e.target.value })} dir="auto" placeholder="When should the AI Chatbot use this skill?" />
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6, background: 'var(--bg-hover)', borderRadius: 'var(--r-sm)', padding: '8px 10px' }}>
-                💡 The CS AI Chatbot reads the description to decide when to invoke this skill. Type <span style={{ color: 'var(--teal)' }}>#{(selected.name || 'SkillName').replace(/\s+/g, '')}</span> in chat to force-switch, and <span style={{ color: 'var(--primary)' }}>@toolName</span> in the prompt to call a tool.
+                💡 The AI Chatbot reads the description to decide when to invoke this skill. Type <span style={{ color: 'var(--teal)' }}>#{(selected.name || 'SkillName').replace(/\s+/g, '')}</span> in chat to force-switch, and <span style={{ color: 'var(--primary)' }}>@toolName</span> in the prompt to call a tool.
               </div>
             </div>
 
@@ -2270,8 +2270,8 @@
     },
     agent: {
       hint: 'Writes straight into the base prompt',
-      placeholder: 'Describe what this CS AI Chatbot should be…',
-      empty: 'Ask for this CS AI Chatbot\'s base prompt and it is written straight into the editor on the left. It can set the name and opening message too, and it knows which tools and skills this agent actually has.',
+      placeholder: 'Describe what this AI Chatbot should be…',
+      empty: 'Ask for this AI Chatbot\'s base prompt and it is written straight into the editor on the left. It can set the name and opening message too, and it knows which tools and skills this agent actually has.',
       buildPrompt: (agent, subject, diagnostics) => buildAgentAssistantPrompt(agent, subject, diagnostics),
       parse: (reply, current) => {
         const fields = {};
@@ -2285,10 +2285,10 @@
         return fields;
       },
       quickPrompts: [
-        { label: 'Write it for me', prompt: 'Write the full base prompt for this CS AI Chatbot, and set its name and opening message.' },
-        { label: 'Add guardrails', prompt: 'Add a Constraints section: what this CS AI Chatbot must never do, what it must always ask for, and how it behaves when it does not know something or a tool fails.' },
-        { label: 'Wire up the skills', prompt: 'Update the base prompt so it says what this CS AI Chatbot can do and when to hand off to each of its skills and tools, using their exact names.' },
-        { label: 'Review it', prompt: 'Review the current base prompt: what would the CS AI Chatbot get wrong, what is missing, and is anything in here that really belongs in a skill? Then fix it.' },
+        { label: 'Write it for me', prompt: 'Write the full base prompt for this AI Chatbot, and set its name and opening message.' },
+        { label: 'Add guardrails', prompt: 'Add a Constraints section: what this AI Chatbot must never do, what it must always ask for, and how it behaves when it does not know something or a tool fails.' },
+        { label: 'Wire up the skills', prompt: 'Update the base prompt so it says what this AI Chatbot can do and when to hand off to each of its skills and tools, using their exact names.' },
+        { label: 'Review it', prompt: 'Review the current base prompt: what would the AI Chatbot get wrong, what is missing, and is anything in here that really belongs in a skill? Then fix it.' },
       ],
     },
     skill: {
@@ -2311,7 +2311,7 @@
         { label: 'Write it for me', prompt: 'Write the full prompt for this skill, and set its name and description.' },
         { label: 'Add steps', prompt: 'Restructure the current prompt into clear ## sections with numbered steps.' },
         { label: 'Tighten it', prompt: 'Tighten the current prompt: cut repetition and ambiguity, keep every instruction that matters.' },
-        { label: 'Review it', prompt: 'Review the current prompt: what would the CS AI Chatbot get wrong, and what is missing? Then fix it.' },
+        { label: 'Review it', prompt: 'Review the current prompt: what would the AI Chatbot get wrong, and what is missing? Then fix it.' },
       ],
     },
   };
@@ -2598,7 +2598,7 @@
             badge="✉"
             mono
             name="send_email"
-            subtitle="Built-in tool · sends from this CS AI Chatbot's own Gmail account"
+            subtitle="Built-in tool · sends from this AI Chatbot's own Gmail account"
           />
           <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12 }}>
             <div style={{ ...WORKSPACE_PANEL, flex: 1, minWidth: 0, maxWidth: 720 }}>
@@ -2609,7 +2609,7 @@
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--bg-panel)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--teal)' }}>{Icons.email}</div>
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>Available to the CS AI Chatbot</div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>Available to the AI Chatbot</div>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Works in the test chat, the widget and WhatsApp</div>
                   </div>
                 </div>
@@ -3713,7 +3713,7 @@
                       {doc.normalized
                         ? <span title={L('Tidied by the model: split into short sections with a keyword line in Hebrew and English', 'סודר על ידי מודל: חולק לסעיפים קצרים עם מילות מפתח בעברית ובאנגלית')}
                             style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 6, background: 'var(--teal-dim)', color: 'var(--teal)' }}>{L('tidied', 'מסודר')}</span>
-                        : <span title={L('Stored as it came — not necessarily easy for the CS AI Chatbot to find things in', 'נשמר כמו שהוא — לא בהכרח קל ל-CS AI Chatbot למצוא בו')}
+                        : <span title={L('Stored as it came — not necessarily easy for the AI Chatbot to find things in', 'נשמר כמו שהוא — לא בהכרח קל ל-AI Chatbot למצוא בו')}
                             style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 6, background: 'var(--bg-hover)', color: 'var(--text-muted)' }}>{L('raw', 'גולמי')}</span>}
                       {doc.chunks > 0 && <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>{doc.chunks} {L('search chunks', 'קטעי חיפוש')}</span>}
                     </div>
@@ -3724,7 +3724,7 @@
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                     <IconBtn onClick={() => reorganizeDoc(doc.id)} disabled={busyDoc === doc.id}
-                      title={doc.normalized ? L('Tidy again from the original', 'לסדר מחדש מהמקור') : L('Tidy the document for the CS AI Chatbot to read', 'לסדר את המסמך לקריאה של ה-CS AI Chatbot')}>{Icons.tidy}</IconBtn>
+                      title={doc.normalized ? L('Tidy again from the original', 'לסדר מחדש מהמקור') : L('Tidy the document for the AI Chatbot to read', 'לסדר את המסמך לקריאה של ה-AI Chatbot')}>{Icons.tidy}</IconBtn>
                     {doc.has_original && (
                       <IconBtn onClick={() => restoreDoc(doc.id)} disabled={busyDoc === doc.id} title={L('Restore the original text', 'להחזיר את הטקסט המקורי')}>↩</IconBtn>
                     )}
@@ -3941,7 +3941,7 @@
             <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--bg-panel)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>💬</div>
             <div>
               <div style={{ fontSize: 13, fontWeight: 600 }}>WhatsApp Channel</div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Let people chat with this CS AI Chatbot over WhatsApp</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Let people chat with this AI Chatbot over WhatsApp</div>
             </div>
           </div>
           <button
@@ -4045,7 +4045,7 @@
             <li>Enable the toggle above, then message the number from WhatsApp.</li>
           </ol>
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 12 }}>
-            Note: the access token and app secret are stored as-is in the database, same as the CS AI Chatbot's API key.
+            Note: the access token and app secret are stored as-is in the database, same as the AI Chatbot's API key.
           </div>
         </div>
       </div>
@@ -4381,7 +4381,7 @@
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: fullScreen ? 'center' : 'start' }}>
               {live
-                ? L('The CS AI Chatbot answers here exactly as it would a real user', 'ה-CS AI Chatbot עונה כאן בדיוק כמו למשתמש אמיתי')
+                ? L('The AI Chatbot answers here exactly as it would a real user', 'ה-AI Chatbot עונה כאן בדיוק כמו למשתמש אמיתי')
                 : <React.Fragment>Use #SkillName to switch skills &nbsp;•&nbsp; @toolName to call tools</React.Fragment>}
             </div>
           </div>
@@ -4422,7 +4422,7 @@
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 12, fontWeight: 600 }}>Gmail account</div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {!state.loaded ? 'Checking…' : state.connected ? `Connected as ${state.email}` : 'Not connected — this CS AI Chatbot cannot send email yet'}
+              {!state.loaded ? 'Checking…' : state.connected ? `Connected as ${state.email}` : 'Not connected — this AI Chatbot cannot send email yet'}
             </div>
           </div>
         </div>
@@ -4522,7 +4522,7 @@
           <div style={{ flex: 1, minWidth: 200 }}>
             <div style={{ fontWeight: 700, fontSize: 15 }}>Manual tests</div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>
-              {L('Your own conversations with this CS AI Chatbot in the test chat. They never appear in Interactions, and every assistant can read them.', "השיחות שלך עם ה-CS AI Chatbot בצ'אט הבדיקה. לא מופיעות ב-Interactions, וכל האסיסטנטים רואים אותן.")}
+              {L('Your own conversations with this AI Chatbot in the test chat. They never appear in Interactions, and every assistant can read them.', "השיחות שלך עם ה-AI Chatbot בצ'אט הבדיקה. לא מופיעות ב-Interactions, וכל האסיסטנטים רואים אותן.")}
             </div>
           </div>
           {onTest && (
@@ -4547,7 +4547,7 @@
         ) : sessions.length === 0 ? (
           <div style={{ padding: '40px 24px', textAlign: 'center', background: 'var(--bg-card)', border: '1px dashed var(--border)', borderRadius: 'var(--r-lg)' }}>
             <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>
-              {query ? L('No test conversation matches that search', 'אין שיחת בדיקה שתואמת את החיפוש') : L('You have not tested this CS AI Chatbot yet', 'עוד לא בדקת את ה-CS AI Chatbot הזה')}
+              {query ? L('No test conversation matches that search', 'אין שיחת בדיקה שתואמת את החיפוש') : L('You have not tested this AI Chatbot yet', 'עוד לא בדקת את ה-AI Chatbot הזה')}
             </div>
             <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
               {query ? L('Try another word.', 'נסה מילה אחרת.') : L('Every conversation in the test chat is saved here automatically.', "כל שיחה בצ'אט הבדיקה נשמרת כאן אוטומטית.")}
@@ -4627,7 +4627,7 @@
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 800, fontSize: 17 }}>Build on local IDE</div>
               <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.6 }}>
-                {L('This CS AI Chatbot is files. Pull it into a folder, edit it in your own editor, and push it back.', 'ה-CS AI Chatbot הזה הוא קבצים. משוך אותו לתיקייה, ערוך בעורך שלך, ודחוף בחזרה.')}
+                {L('This AI Chatbot is files. Pull it into a folder, edit it in your own editor, and push it back.', 'ה-AI Chatbot הזה הוא קבצים. משוך אותו לתיקייה, ערוך בעורך שלך, ודחוף בחזרה.')}
               </div>
             </div>
             <IconBtn onClick={onClose} title={L('Close', 'סגור')}>✕</IconBtn>
@@ -4648,7 +4648,7 @@
             </div>
 
             <div>
-              {step(3, L('Pull the CS AI Chatbot', 'משיכת ה-CS AI Chatbot'), L('You get a folder with the prompt, the skills and the tools. 8legs push sends them back.', 'נוצרת תיקייה עם הפרומפט, הסקילים והכלים. 8legs push מחזיר אותם.'))}
+              {step(3, L('Pull the AI Chatbot', 'משיכת ה-AI Chatbot'), L('You get a folder with the prompt, the skills and the tools. 8legs push sends them back.', 'נוצרת תיקייה עם הפרומפט, הסקילים והכלים. 8legs push מחזיר אותם.'))}
               <CopyableCommand command={`npx @8legs/cli pull ${agentId}`} />
             </div>
           </div>
@@ -4662,7 +4662,7 @@
     return (
       <React.Fragment>
         <Btn icon={Icons.terminal} onClick={() => setOpen(true)}
-             title={L('Install the CLI, log in and pull this CS AI Chatbot', 'להתקין את ה-CLI, להתחבר ולמשוך את ה-CS AI Chatbot')}>
+             title={L('Install the CLI, log in and pull this AI Chatbot', 'להתקין את ה-CLI, להתחבר ולמשוך את ה-AI Chatbot')}>
           Build on local IDE
         </Btn>
         {open && <LocalIdePanel agentId={agentId} onClose={() => setOpen(false)} />}
@@ -4730,7 +4730,7 @@
       if (b.kind === 'draft') {
         return {
           title: L('Delete the draft?', 'למחוק את הטיוטה?'),
-          body: L('The unpublished changes are deleted and the live CS AI Chatbot stays as it is. This cannot be undone.', 'השינויים שלא פורסמו יימחקו, וה-CS AI Chatbot החי יישאר כפי שהוא. אין ביטול.'),
+          body: L('The unpublished changes are deleted and the live AI Chatbot stays as it is. This cannot be undone.', 'השינויים שלא פורסמו יימחקו, וה-AI Chatbot החי יישאר כפי שהוא. אין ביטול.'),
           confirmLabel: L('Delete draft', 'מחק טיוטה'),
         };
       }
@@ -4844,7 +4844,7 @@
           border: '1px solid rgba(250,204,21,0.35)', background: 'rgba(250,204,21,0.08)',
         }}>
           <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>
-            {L('Unpublished changes. The live CS AI Chatbot still answers from the previous version.', 'שינויים שלא פורסמו. ה-CS AI Chatbot החי עדיין עונה מהגרסה הקודמת.')}
+            {L('Unpublished changes. The live AI Chatbot still answers from the previous version.', 'שינויים שלא פורסמו. ה-AI Chatbot החי עדיין עונה מהגרסה הקודמת.')}
           </span>
           <div style={{ marginInlineStart: 'auto', display: 'flex', gap: 8 }}>
             <Btn size="sm" onClick={discard} disabled={busy}>{L('Discard draft', 'בטל טיוטה')}</Btn>
@@ -4890,7 +4890,7 @@
             {L('Merging', 'מיזוג')} <span dir="ltr" style={{ fontFamily: 'monospace' }}>{branch}</span> {L('into main', 'ל-main')}
           </div>
           <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 16 }}>
-            {L('After the merge the live CS AI Chatbot answers from this version. The WhatsApp number and the key stay as they are on main.', 'אחרי המיזוג ה-CS AI Chatbot החי עונה מהגרסה הזאת. מספר ה-WhatsApp והמפתח נשארים כפי שהם ב-main.')}
+            {L('After the merge the live AI Chatbot answers from this version. The WhatsApp number and the key stay as they are on main.', 'אחרי המיזוג ה-AI Chatbot החי עונה מהגרסה הזאת. מספר ה-WhatsApp והמפתח נשארים כפי שהם ב-main.')}
           </div>
 
           {error && <div style={{ fontSize: 12.5, color: 'var(--danger)', marginBottom: 12 }}>{error}</div>}
@@ -5033,7 +5033,7 @@
     const navLabel = (AGENT_NAV.find(n => n.id === tab) || {}).label;
     useEffect(() => {
       if (!onCrumbs) return;
-      onCrumbs(['CS AI Chatbots', fromApp.name, navLabel]);
+      onCrumbs(['AI Chatbots', fromApp.name, navLabel]);
       return () => onCrumbs(null);
     }, [onCrumbs, fromApp.name, navLabel]);
 
@@ -5077,7 +5077,7 @@
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
         {/* Who you are editing, on which branch, and what you can do to it */}
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 20, flexWrap: 'wrap' }}>
-          <button onClick={onBack} title="Back to CS AI Chatbots" aria-label="Back to CS AI Chatbots"
+          <button onClick={onBack} title="Back to AI Chatbots" aria-label="Back to AI Chatbots"
             style={{
               width: 34, height: 34, borderRadius: 10, flexShrink: 0, marginTop: 8, cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -5151,7 +5151,7 @@
             background: 'var(--bg-card)', border: '1px solid var(--border)',
             borderRadius: 'var(--r-lg)', padding: '14px 10px',
           }}>
-            <Eyebrow style={{ padding: '0 10px', marginBottom: 10 }}>CS AI Chatbot</Eyebrow>
+            <Eyebrow style={{ padding: '0 10px', marginBottom: 10 }}>AI Chatbot</Eyebrow>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {AGENT_NAV.map(n => {
                 const on = tab === n.id;
@@ -5243,7 +5243,7 @@
           transform: hot ? 'translateY(-1px)' : 'none', transition: 'all 0.18s ease',
         }}>{Icons.plus}</div>
         <div>
-          <div style={{ fontWeight: 700, fontSize: 14.5, color: 'var(--text)' }}>New CS AI Chatbot</div>
+          <div style={{ fontWeight: 700, fontSize: 14.5, color: 'var(--text)' }}>New AI Chatbot</div>
           <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 5, lineHeight: 1.55 }}>
             Start blank, or{' '}
             <span onClick={e => { e.stopPropagation(); onAssistant(); }}
@@ -6112,25 +6112,25 @@ npm run migrate            # הרצה בפועל`}</Block>
     return (
       <div style={{ position: 'relative', height: '100%' }}>
         <PageHeader
-          eyebrow="CS AI Chatbot studio"
-          title="CS AI Chatbots"
+          eyebrow="AI Chatbot studio"
+          title="AI Chatbots"
           actions={
             <React.Fragment>
               {/* The moment someone wants an agent is the moment to mention
                   that something here can build one for them. */}
               <Btn icon={Icons.sparkle}
-                title="Let the assistant build a CS AI Chatbot for you"
+                title="Let the assistant build an AI Chatbot for you"
                 onClick={() => onBuildInChat(NEW_AGENT_ASK())}>
                 Build with the assistant
               </Btn>
-              <Btn variant="primary" icon={Icons.plus} onClick={onNew}>New CS AI Chatbot</Btn>
+              <Btn variant="primary" icon={Icons.plus} onClick={onNew}>New AI Chatbot</Btn>
             </React.Fragment>
           }
         />
 
         {agents.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
-            <SearchField value={query} onChange={setQuery} placeholder="Search CS AI Chatbots" style={{ maxWidth: 300 }} />
+            <SearchField value={query} onChange={setQuery} placeholder="Search AI Chatbots" style={{ maxWidth: 300 }} />
             <SelectPill value={branch} onChange={setBranch} icon={Icons.branch}
               placeholder="All branches" width={172}
               options={branches.map(b => ({ value: b, label: b }))} />
@@ -6138,7 +6138,7 @@ npm run migrate            # הרצה בפועל`}</Block>
               placeholder="All channels" width={168}
               options={channels.map(c => ({ value: c, label: c }))} />
             <div style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'center', gap: 14 }}>
-              <CountLabel n={shown.length} noun="CS AI CHATBOT" />
+              <CountLabel n={shown.length} noun="AI CHATBOT" />
               <div style={{ display: 'flex', gap: 2, padding: 3, borderRadius: 10, background: 'var(--bg-panel)', border: '1px solid var(--border)' }}>
                 {viewBtn('grid', Icons.grid, 'Grid')}
                 {viewBtn('rows', Icons.rows, 'List')}
@@ -6153,7 +6153,7 @@ npm run migrate            # הרצה בפועל`}</Block>
               {Icons.bot}
             </div>
             <div>
-              <div style={{ color: 'var(--text)', fontWeight: 700, fontSize: 15, textAlign: 'center', marginBottom: 6 }}>No CS AI Chatbots yet</div>
+              <div style={{ color: 'var(--text)', fontWeight: 700, fontSize: 15, textAlign: 'center', marginBottom: 6 }}>No AI Chatbots yet</div>
               <div style={{ color: 'var(--text-muted)', fontSize: 13, textAlign: 'center', lineHeight: 1.6 }}>
                 Not sure where to start? Describe what you want in plain words<br />and the assistant will build the agent for you.
               </div>
@@ -6162,7 +6162,7 @@ npm run migrate            # הרצה בפועל`}</Block>
               onClick={() => onBuildInChat(FIRST_AGENT_ASK())}>
               Build my first agent with the assistant
             </Btn>
-            <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>or press “New CS AI Chatbot” to build it yourself</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>or press “New AI Chatbot” to build it yourself</div>
           </div>
         ) : view === 'grid' ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(358px,1fr))', gap: 16 }}>
@@ -6324,14 +6324,14 @@ npm run migrate            # הרצה בפועל`}</Block>
             <CountLabel n={total} noun="CHAT" />
           </div>
           {user?.isAdmin && (
-            <div>{chip(scopeAll ? 'All users' : 'My CS AI Chatbots', scopeAll, () => { setScopeAll(v => !v); setOffset(0); })}</div>
+            <div>{chip(scopeAll ? 'All users' : 'My AI Chatbots', scopeAll, () => { setScopeAll(v => !v); setOffset(0); })}</div>
           )}
 
           <SearchField value={filters.q} onChange={v => set('q', v)} placeholder="Search every message" style={{ height: 48, flex: 'none' }} />
 
           <div className="m-scroll-x" style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
             {chip(`⚙ Filters${activeFilters ? ` (${activeFilters})` : ''}`, activeFilters > 0, () => setFiltersOpen(true))}
-            {chip(agentName ? agentName : 'All CS AI Chatbots ▾', !!filters.agentId, () => setFiltersOpen(true))}
+            {chip(agentName ? agentName : 'All AI Chatbots ▾', !!filters.agentId, () => setFiltersOpen(true))}
             {sourceOptions.map(sx => chip(SOURCE_LABELS[sx] || sx, filters.source === sx, () => set('source', filters.source === sx ? '' : sx)))}
             {activeFilters > 0 && chip('✕ Clear', false, () => { setFilters(EMPTY_FILTERS); setOffset(0); })}
           </div>
@@ -6391,7 +6391,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             <div style={{ padding: '14px 16px 20px', display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto' }}>
               {sheetField('Agent',
                 <select value={filters.agentId} onChange={e => set('agentId', e.target.value)} style={selStyle}>
-                  <option value="">All CS AI Chatbots</option>
+                  <option value="">All AI Chatbots</option>
                   {agentOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
                 </select>)}
               {sheetField('Channel',
@@ -6497,7 +6497,7 @@ npm run migrate            # הרצה בפועל`}</Block>
                 <Btn onClick={() => { setScopeAll(v => !v); setOffset(0); }}
                      title="Admins can list conversations across every user"
                      style={scopeAll ? { borderColor: 'rgba(239,159,39,0.35)', color: 'var(--primary)' } : undefined}>
-                  {scopeAll ? 'All users' : 'My CS AI Chatbots'}
+                  {scopeAll ? 'All users' : 'My AI Chatbots'}
                 </Btn>
               )}
             </React.Fragment>
@@ -6506,7 +6506,7 @@ npm run migrate            # הרצה בפועל`}</Block>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
           <SearchField value={filters.q} onChange={v => set('q', v)} placeholder="Search every message" style={{ maxWidth: 300 }} />
-          <SelectPill value={filters.agentId} onChange={v => set('agentId', v)} placeholder="All CS AI Chatbots" width={170}
+          <SelectPill value={filters.agentId} onChange={v => set('agentId', v)} placeholder="All AI Chatbots" width={170}
             options={agentOptions.map(o => ({ value: o.id, label: o.name }))} />
           <SelectPill value={filters.source} onChange={v => set('source', v)} icon={Icons.filter} placeholder="All channels" width={168}
             options={sourceOptions.map(sx => ({ value: sx, label: SOURCE_LABELS[sx] || sx }))} />
@@ -6545,7 +6545,7 @@ npm run migrate            # הרצה בפועל`}</Block>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                    <th style={{ ...th, paddingTop: 15 }}><Eyebrow>CS AI Chatbot</Eyebrow></th>
+                    <th style={{ ...th, paddingTop: 15 }}><Eyebrow>AI Chatbot</Eyebrow></th>
                     {scopeAll && <th style={{ ...th, paddingTop: 15 }}><Eyebrow>Owner</Eyebrow></th>}
                     <th style={{ ...th, paddingTop: 15 }}><Eyebrow>Channel</Eyebrow></th>
                     {colHead('started', 'Started')}
@@ -6882,33 +6882,33 @@ npm run migrate            # הרצה בפועל`}</Block>
       'שלום! אני האסיסטנט של המערכת — אני יכול לתפעל אותה בשבילך, לא רק להסביר.',
       '',
       '**מה אני יכול לעשות**',
-      '· לבנות CS AI Chatbot חדש מאפס — פרומפט, סקילים, כלי Python, הודעת פתיחה',
-      '· לשנות CS AI Chatbot קיים — לשפר פרומפט, להוסיף או לתקן סקיל, לכתוב כלי ולהריץ אותו כדי לבדוק',
+      '· לבנות AI Chatbot חדש מאפס — פרומפט, סקילים, כלי Python, הודעת פתיחה',
+      '· לשנות AI Chatbot קיים — לשפר פרומפט, להוסיף או לתקן סקיל, לכתוב כלי ולהריץ אותו כדי לבדוק',
       '· להדליק send_email, להגדיר מיסוך DLP, לשנות שם ואווטאר',
       '· לענות על שאלות על הפלטפורמה — איך סקילים עובדים, מה החוזה של כלי, איך מחברים WhatsApp',
-      '· להראות מה קרה בשיחות — לפי CS AI Chatbot, ערוץ או מילת חיפוש',
-      '· לקרוא את שיחות הבדיקה שלך עם CS AI Chatbot (הטאב Manual tests) ולראות מה הוא בפועל ענה',
-      '· למחוק CS AI Chatbot (אשאל אותך לפני)',
+      '· להראות מה קרה בשיחות — לפי AI Chatbot, ערוץ או מילת חיפוש',
+      '· לקרוא את שיחות הבדיקה שלך עם AI Chatbot (הטאב Manual tests) ולראות מה הוא בפועל ענה',
+      '· למחוק AI Chatbot (אשאל אותך לפני)',
       '',
       '**מה אני לא יכול**: לחבר Gmail, להעלות קבצים לבסיס הידע, ולהזין את מפתח ה-API — אלה דברים שצריך לעשות בממשק, ואגיד לך בדיוק איפה.',
       '',
-      'אפשר להתחיל עם משהו כמו: "בנה לי CS AI Chatbot שירות לקוחות לחברת ביטוח" או "תוסיף ל-CS AI Chatbot weather כלי שמביא תחזית לחמישה ימים".',
+      'אפשר להתחיל עם משהו כמו: "בנה לי AI Chatbot שירות לקוחות לחברת ביטוח" או "תוסיף ל-AI Chatbot weather כלי שמביא תחזית לחמישה ימים".',
     ].join('\n'),
     en: [
       "Hi! I'm the platform assistant — I can operate the system for you, not just explain it.",
       '',
       '**What I can do**',
-      '· Build a new CS AI Chatbot from scratch — prompt, skills, Python tools, opening message',
-      '· Change an existing CS AI Chatbot — improve a prompt, add or fix a skill, write a tool and run it to check',
+      '· Build a new AI Chatbot from scratch — prompt, skills, Python tools, opening message',
+      '· Change an existing AI Chatbot — improve a prompt, add or fix a skill, write a tool and run it to check',
       '· Turn on send_email, set up DLP masking, change the name and avatar',
       '· Answer questions about the platform — how skills switch, the tool runtime contract, connecting WhatsApp',
-      '· Show what happened in conversations — by CS AI Chatbot, channel or keyword',
-      "· Read your own test conversations with a CS AI Chatbot (its Manual tests tab) and see what it actually answered",
-      '· Delete a CS AI Chatbot (I will ask first)',
+      '· Show what happened in conversations — by AI Chatbot, channel or keyword',
+      "· Read your own test conversations with an AI Chatbot (its Manual tests tab) and see what it actually answered",
+      '· Delete an AI Chatbot (I will ask first)',
       '',
       "**What I can't**: connect Gmail, upload knowledge files, or enter the API key — those are done in the UI, and I'll tell you exactly where.",
       '',
-      'Try something like: "build me a customer support CS AI Chatbot for an insurance company" or "add a tool to the weather CS AI Chatbot that fetches a five-day forecast".',
+      'Try something like: "build me a customer support AI Chatbot for an insurance company" or "add a tool to the weather AI Chatbot that fetches a five-day forecast".',
     ].join('\n'),
   };
 
@@ -7037,7 +7037,7 @@ npm run migrate            # הרצה בפועל`}</Block>
 
         if (name === 'create_agent') {
           const created = makeAgent({
-            name: input.name || 'New CS AI Chatbot',
+            name: input.name || 'New AI Chatbot',
             avatar: input.avatar || DEFAULT_AVATAR,
             basePrompt: input.base_prompt || '',
             openingMessage: input.opening_message || 'Hello! How can I help you today?',
@@ -7091,7 +7091,7 @@ npm run migrate            # הרצה בפועל`}</Block>
         if (name === 'delete_agent') {
           const agent = findAgent(input.agent_id);
           if (!agent) return done(`No agent with id ${input.agent_id}.`);
-          const ok = window.confirm(L(`Delete the CS AI Chatbot "${agent.name}" and everything it owns?`, `למחוק את ה-CS AI Chatbot "${agent.name}" וכל מה ששייך לו?`));
+          const ok = window.confirm(L(`Delete the AI Chatbot "${agent.name}" and everything it owns?`, `למחוק את ה-AI Chatbot "${agent.name}" וכל מה ששייך לו?`));
           if (!ok) return done('The user declined the deletion. Nothing was deleted.');
           await apiDelete(agent.id);
           await onAgentsChanged();
@@ -7296,7 +7296,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             dir="auto"
             rows={2}
             disabled={pending || noKey}
-            placeholder={L('Ask for anything — build a CS AI Chatbot, change one, or ask how something works…', 'בקש כל דבר — לבנות CS AI Chatbot, לשנות CS AI Chatbot, או לשאול איך משהו עובד…')}
+            placeholder={L('Ask for anything — build an AI Chatbot, change one, or ask how something works…', 'בקש כל דבר — לבנות AI Chatbot, לשנות AI Chatbot, או לשאול איך משהו עובד…')}
             style={{ flex: 1, resize: 'none', fontSize: 13.5, padding: '10px 14px', borderRadius: 'var(--r-md)' }}
           />
           <button onClick={() => send(input)} disabled={pending || noKey || !input.trim()}
@@ -7315,10 +7315,10 @@ npm run migrate            # הרצה בפועל`}</Block>
    */
 
   /** What "build it for me" asks, in the language the interface is in. */
-  const FIRST_ASK = { en: 'Build me my first CS AI Chatbot. Ask me what it needs to do.',
-                      he: 'בנה לי CS AI Chatbot ראשון. שאל אותי מה הוא צריך לעשות.' };
-  const NEW_ASK   = { en: 'Build me a new CS AI Chatbot. Ask me what it needs to do.',
-                      he: 'בנה לי CS AI Chatbot חדש. שאל אותי מה הוא צריך לעשות.' };
+  const FIRST_ASK = { en: 'Build me my first AI Chatbot. Ask me what it needs to do.',
+                      he: 'בנה לי AI Chatbot ראשון. שאל אותי מה הוא צריך לעשות.' };
+  const NEW_ASK   = { en: 'Build me a new AI Chatbot. Ask me what it needs to do.',
+                      he: 'בנה לי AI Chatbot חדש. שאל אותי מה הוא צריך לעשות.' };
   function FIRST_AGENT_ASK() { return L(FIRST_ASK.en, FIRST_ASK.he); }
   function NEW_AGENT_ASK()   { return L(NEW_ASK.en, NEW_ASK.he); }
   /* Conversations are recognised by these words rather than by a flag, which
@@ -7348,32 +7348,32 @@ npm run migrate            # הרצה בפועל`}</Block>
 
   const HOME_COPY = {
     he: {
-      firstSub: 'ספר לי מה ה-CS AI Chatbot שלך צריך לעשות — אשאל כמה שאלות ואבנה אותו איתך.',
-      backSub: 'אפשר לבנות CS AI Chatbot חדש, לשנות קיים, או לשאול איך משהו עובד.',
+      firstSub: 'ספר לי מה ה-AI Chatbot שלך צריך לעשות — אשאל כמה שאלות ואבנה אותו איתך.',
+      backSub: 'אפשר לבנות AI Chatbot חדש, לשנות קיים, או לשאול איך משהו עובד.',
       placeholder: 'למשל: מענה ללקוחות בוואטסאפ על מצב הזמנה…',
       /* a phone forces the field to 16px, where the long one wraps out of it */
       placeholderShort: 'למשל: מענה ללקוחות בוואטסאפ…',
       answer: 'כתוב תשובה…',
-      buildingFirst: 'בונים את ה-CS AI Chatbot הראשון',
-      building: 'בונים CS AI Chatbot',
+      buildingFirst: 'בונים את ה-AI Chatbot הראשון',
+      building: 'בונים AI Chatbot',
       talking: 'שיחה עם האסיסטנט',
       newChat: 'שיחה חדשה',
       thinking: 'חושב…',
       noKey: 'כדי להתחיל צריך להגדיר מפתח API במסך Settings.',
-      foot: '8Legs.ai בונה את ה-CS AI Chatbot בפועל — פרומפט, סקילים וכלים — ולא רק מסביר איך.',
+      foot: '8Legs.ai בונה את ה-AI Chatbot בפועל — פרומפט, סקילים וכלים — ולא רק מסביר איך.',
       firstChips: [
-        'CS AI Chatbot שירות לקוחות',
-        'CS AI Chatbot שמתאם פגישות',
-        'CS AI Chatbot שעונה מתוך המסמכים שלי',
+        'AI Chatbot שירות לקוחות',
+        'AI Chatbot שמתאם פגישות',
+        'AI Chatbot שעונה מתוך המסמכים שלי',
         'מה זה Skill?',
       ],
       backChips: [
-        'בנה לי CS AI Chatbot חדש',
+        'בנה לי AI Chatbot חדש',
         'מה קרה בשיחות מאתמול?',
-        'שפר לי את הפרומפט של CS AI Chatbot',
+        'שפר לי את הפרומפט של AI Chatbot',
       ],
       card: {
-        head: 'ה-CS AI Chatbot שנבנה',
+        head: 'ה-AI Chatbot שנבנה',
         draft: 'טיוטה · נשמר אוטומטית',
         waiting: 'עוד לא התחלנו',
         pendingName: 'ייקבע בשיחה',
@@ -7384,35 +7384,35 @@ npm run migrate            # הרצה בפועל`}</Block>
         widget: 'Widget באתר',
         open: 'פתח בעורך',
         test: 'בדוק בצ׳אט',
-        note: 'אפשר לפתוח אותו ב־CS AI Chatbots בכל רגע — השיחה ממשיכה מאיפה שהפסקת.',
+        note: 'אפשר לפתוח אותו ב־AI Chatbots בכל רגע — השיחה ממשיכה מאיפה שהפסקת.',
       },
     },
     en: {
-      firstSub: 'Tell me what your CS AI Chatbot needs to do — I will ask a few questions and build it with you.',
-      backSub: 'Build a new CS AI Chatbot, change one you have, or ask how something works.',
+      firstSub: 'Tell me what your AI Chatbot needs to do — I will ask a few questions and build it with you.',
+      backSub: 'Build a new AI Chatbot, change one you have, or ask how something works.',
       placeholder: 'e.g. answering customers on WhatsApp about their order…',
       placeholderShort: 'e.g. answering customers on WhatsApp…',
       answer: 'Type your answer…',
-      buildingFirst: 'Building your first CS AI Chatbot',
-      building: 'Building a CS AI Chatbot',
+      buildingFirst: 'Building your first AI Chatbot',
+      building: 'Building an AI Chatbot',
       talking: 'Talking to the assistant',
       newChat: 'New chat',
       thinking: 'Thinking…',
       noKey: 'Set an API key in Settings to get started.',
-      foot: '8Legs.ai builds the CS AI Chatbot for real — prompt, skills and tools — not just explains how.',
+      foot: '8Legs.ai builds the AI Chatbot for real — prompt, skills and tools — not just explains how.',
       firstChips: [
-        'A customer support CS AI Chatbot',
-        'A CS AI Chatbot that books meetings',
-        'A CS AI Chatbot that answers from my documents',
+        'A customer support AI Chatbot',
+        'An AI Chatbot that books meetings',
+        'An AI Chatbot that answers from my documents',
         'What is a Skill?',
       ],
       backChips: [
-        'Build me a new CS AI Chatbot',
+        'Build me a new AI Chatbot',
         'What happened in yesterday’s conversations?',
-        'Improve a CS AI Chatbot’s prompt',
+        'Improve an AI Chatbot’s prompt',
       ],
       card: {
-        head: 'The CS AI Chatbot being built',
+        head: 'The AI Chatbot being built',
         draft: 'Draft · saved automatically',
         waiting: 'Not started yet',
         pendingName: 'decided in the chat',
@@ -7423,7 +7423,7 @@ npm run migrate            # הרצה בפועל`}</Block>
         widget: 'Website widget',
         open: 'Open in editor',
         test: 'Test in chat',
-        note: 'You can open it under CS AI Chatbots at any time — this chat picks up where it left off.',
+        note: 'You can open it under AI Chatbots at any time — this chat picks up where it left off.',
       },
     },
   };
@@ -7888,22 +7888,22 @@ npm run migrate            # הרצה בפועל`}</Block>
       label: 'שאל את האסיסטנט',
       title: 'האסיסטנט מתפעל את המערכת בשבילך',
       lines: [
-        'בונה CS AI Chatbot שלם מאפס — פרומפט, סקילים וכלים',
-        'משנה CS AI Chatbot קיים, כותב כלי Python ומריץ אותו כדי לבדוק',
+        'בונה AI Chatbot שלם מאפס — פרומפט, סקילים וכלים',
+        'משנה AI Chatbot קיים, כותב כלי Python ומריץ אותו כדי לבדוק',
         'עונה על כל שאלה על הפלטפורמה ומראה מה קרה בשיחות',
       ],
-      examples: ['בנה לי CS AI Chatbot שירות לקוחות', 'איך מחברים WhatsApp?'],
+      examples: ['בנה לי AI Chatbot שירות לקוחות', 'איך מחברים WhatsApp?'],
       dismiss: 'הבנתי',
     },
     en: {
       label: 'Ask the assistant',
       title: 'The assistant operates the platform for you',
       lines: [
-        'Builds a whole CS AI Chatbot from scratch — prompt, skills and tools',
-        'Changes an existing CS AI Chatbot, writes a Python tool and runs it to check',
+        'Builds a whole AI Chatbot from scratch — prompt, skills and tools',
+        'Changes an existing AI Chatbot, writes a Python tool and runs it to check',
         'Answers any question about the platform and shows what happened in conversations',
       ],
-      examples: ['Build me a customer support CS AI Chatbot', 'How do I connect WhatsApp?'],
+      examples: ['Build me a customer support AI Chatbot', 'How do I connect WhatsApp?'],
       dismiss: 'Got it',
     },
   };
@@ -8283,11 +8283,11 @@ npm run migrate            # הרצה בפועל`}</Block>
     };
     const body = {
       he: missing
-        ? 'הגדירו מפתח אחד במסך Settings — הוא משמש את כל ה-CS AI Chatbots, כל הערוצים והאסיסטנט. עד אז שום דבר לא יענה.'
-        : 'המפתח מוגדר פעם אחת במסך Settings ומשמש את כל ה-CS AI Chatbots, כל הערוצים והאסיסטנט.',
+        ? 'הגדירו מפתח אחד במסך Settings — הוא משמש את כל ה-AI Chatbots, כל הערוצים והאסיסטנט. עד אז שום דבר לא יענה.'
+        : 'המפתח מוגדר פעם אחת במסך Settings ומשמש את כל ה-AI Chatbots, כל הערוצים והאסיסטנט.',
       en: missing
-        ? 'Set one key in Settings — it drives every CS AI Chatbot, every channel and the assistant. Nothing answers until you do.'
-        : 'The key is set once in Settings and drives every CS AI Chatbot, every channel and the assistant.',
+        ? 'Set one key in Settings — it drives every AI Chatbot, every channel and the assistant. Nothing answers until you do.'
+        : 'The key is set once in Settings and drives every AI Chatbot, every channel and the assistant.',
     };
     const strongStyle = { color: missing ? 'var(--warning)' : 'var(--text)' };
 
@@ -8360,7 +8360,7 @@ npm run migrate            # הרצה בפועל`}</Block>
           }}>{ready ? cfg.model : 'No API key'}</span>
         </div>
         <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.5 }}>
-          {ready ? 'One key drives every CS AI Chatbot and channel.' : 'Nothing answers until a key is set.'}
+          {ready ? 'One key drives every AI Chatbot and channel.' : 'Nothing answers until a key is set.'}
         </div>
       </button>
     );
@@ -8369,7 +8369,7 @@ npm run migrate            # הרצה בפועל`}</Block>
   function Sidebar({ activeNav, onNav, user, onLogout, settings, recents, activeSessionId, onPickRecent, onNewChat, language }) {
     const items = [
       { id: 'home',         label: 'Home',          icon: Icons.home },
-      { id: 'agents',       label: 'CS AI Chatbots', icon: Icons.agents },
+      { id: 'agents',       label: 'AI Chatbots', icon: Icons.agents },
       { id: 'interactions', label: 'Interactions',  icon: Icons.interactions },
       { id: 'docs',         label: 'Documentation', icon: Icons.docs },
       { id: 'settings',     label: 'Settings',      icon: Icons.settings },
@@ -8615,8 +8615,8 @@ npm run migrate            # הרצה בפועל`}</Block>
               </text>
             </svg>
             <div style={{ marginTop: 28 }}>
-              <div style={{ fontSize: 20, fontWeight: 800, color: HERO_INK, letterSpacing: '-0.02em', marginBottom: 10 }}>Your CS AI Chatbots. Your Rules.</div>
-              <div style={{ fontSize: 14, color: HERO_INK_DIM, maxWidth: 280, lineHeight: 1.7 }}>Build, configure and deploy CS AI Chatbots in minutes — no code required.</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: HERO_INK, letterSpacing: '-0.02em', marginBottom: 10 }}>Your AI Chatbots. Your Rules.</div>
+              <div style={{ fontSize: 14, color: HERO_INK_DIM, maxWidth: 280, lineHeight: 1.7 }}>Build, configure and deploy AI Chatbots in minutes — no code required.</div>
             </div>
             {/* Feature pills */}
             <div style={{ display: 'flex', gap: 8, marginTop: 32, flexWrap: 'wrap', justifyContent: 'center' }}>
@@ -8638,7 +8638,7 @@ npm run migrate            # הרצה בפועל`}</Block>
                 {isLogin ? 'Welcome back' : 'Create account'}
               </div>
               <div style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500 }}>
-                {isLogin ? 'Sign in to access your CS AI Chatbots' : 'Get started for free'}
+                {isLogin ? 'Sign in to access your AI Chatbots' : 'Get started for free'}
               </div>
             </div>
 
@@ -8893,7 +8893,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             border: `1px solid ${starter.allFound ? 'var(--border)' : 'rgba(245,158,11,0.35)'}`,
           }}>
             <div style={{ minWidth: 190 }}>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>Starter CS AI Chatbots</div>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>Starter AI Chatbots</div>
               <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>
                 Copied into every new account on sign-up
               </div>
@@ -8905,7 +8905,7 @@ npm run migrate            # הרצה בפועל`}</Block>
                 <span style={{ color: 'var(--text-muted)', fontSize: 11.5 }}>
                   {t.found
                     ? `${t.skills} skills · ${t.tools} tools`
-                    : `${t.reason} — name a CS AI Chatbot of yours exactly this to fix it.`}
+                    : `${t.reason} — name an AI Chatbot of yours exactly this to fix it.`}
                 </span>
               </div>
             ))}
@@ -8917,7 +8917,7 @@ npm run migrate            # הרצה בפועל`}</Block>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 880 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                {['User', 'Phone', 'Role', 'CS AI Chatbots', 'Last login', 'Actions'].map(h => (
+                {['User', 'Phone', 'Role', 'AI Chatbots', 'Last login', 'Actions'].map(h => (
                   <th key={h} style={th}><Eyebrow>{h}</Eyebrow></th>
                 ))}
               </tr>
@@ -8951,7 +8951,7 @@ npm run migrate            # הרצה בפועל`}</Block>
                   </td>
                   <td style={td}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <Btn size="sm" onClick={() => onSelectUser(u)}>View CS AI Chatbots</Btn>
+                      <Btn size="sm" onClick={() => onSelectUser(u)}>View AI Chatbots</Btn>
                       <Btn size="sm" onClick={() => handleReset(u.id)} disabled={resetting === u.id}>
                         {resetting === u.id ? '…' : 'Reset password'}
                       </Btn>
@@ -8974,7 +8974,7 @@ npm run migrate            # הרצה בפועל`}</Block>
                         </div>
                       ) : (
                         <Btn size="sm" danger
-                          title={`Delete ${u.username} with all their CS AI Chatbots and conversations`}
+                          title={`Delete ${u.username} with all their AI Chatbots and conversations`}
                           onClick={() => { setDeleting(u.id); setConfirmText(''); setDeleteError(e => ({ ...e, [u.id]: null })); }}>
                           Delete
                         </Btn>
@@ -9045,7 +9045,7 @@ npm run migrate            # הרצה בפועל`}</Block>
         await adminDuplicateTo(sourceAgentId, targetUser.id);
         reload();
       } catch {
-        alert('Failed to duplicate CS AI Chatbot.');
+        alert('Failed to duplicate AI Chatbot.');
       } finally {
         setDuplicating(false);
       }
@@ -9081,12 +9081,12 @@ npm run migrate            # הרצה בפועל`}</Block>
           <div style={{ marginLeft: 'auto', position: 'relative' }}>
             <button onClick={() => setShowDupPicker(v => !v)} disabled={duplicating}
               style={{ background: 'var(--primary)', color: '#fff', padding: '8px 16px', borderRadius: 'var(--r-md)', fontWeight: 600, fontSize: 13 }}>
-              {duplicating ? 'Duplicating…' : '＋ Duplicate My CS AI Chatbot Here'}
+              {duplicating ? 'Duplicating…' : '＋ Duplicate My AI Chatbot Here'}
             </button>
             {showDupPicker && (
               <div style={{ position: 'absolute', right: 0, top: '110%', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 8, minWidth: 220, zIndex: 100, boxShadow: 'var(--shadow)' }}>
-                <div style={{ fontSize: 12, color: 'var(--text-2)', padding: '4px 8px 8px' }}>Pick one of your CS AI Chatbots to copy:</div>
-                {myAgents.length === 0 && <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: '8px' }}>No CS AI Chatbots to copy</div>}
+                <div style={{ fontSize: 12, color: 'var(--text-2)', padding: '4px 8px 8px' }}>Pick one of your AI Chatbots to copy:</div>
+                {myAgents.length === 0 && <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: '8px' }}>No AI Chatbots to copy</div>}
                 {myAgents.map(a => (
                   <button key={a.id} onClick={() => handleDuplicateTo(a.id)}
                     style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', borderRadius: 'var(--r-md)', fontSize: 13, background: 'transparent', color: 'var(--text)' }}
@@ -9104,7 +9104,7 @@ npm run migrate            # הרצה בפועל`}</Block>
         {!agents ? (
           <div style={{ color: 'var(--text-2)' }}>Loading…</div>
         ) : agents.length === 0 ? (
-          <EmptyState icon="🤖" title="No CS AI Chatbots" subtitle="This user has no CS AI Chatbots yet" />
+          <EmptyState icon="🤖" title="No AI Chatbots" subtitle="This user has no AI Chatbots yet" />
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 16 }}>
             {agents.map(a => (
@@ -9134,8 +9134,8 @@ npm run migrate            # הרצה בפועל`}</Block>
         {deleting && (
           <ConfirmDialog
             title={L(`Delete "${deleting.name}"?`, `למחוק את "${deleting.name}"?`)}
-            body={L(`${targetUser.username}'s CS AI Chatbot goes, and with it every document, conversation and channel it owns. This cannot be undone.`, `ה-CS AI Chatbot של ${targetUser.username} יימחק על כל המסמכים, השיחות והערוצים שלו. אין ביטול.`)}
-            confirmLabel={L('Delete CS AI Chatbot', 'מחק CS AI Chatbot')}
+            body={L(`${targetUser.username}'s AI Chatbot goes, and with it every document, conversation and channel it owns. This cannot be undone.`, `ה-AI Chatbot של ${targetUser.username} יימחק על כל המסמכים, השיחות והערוצים שלו. אין ביטול.`)}
+            confirmLabel={L('Delete AI Chatbot', 'מחק AI Chatbot')}
             busy={deleteBusy}
             onConfirm={() => reallyDelete(deleting)}
             onCancel={() => setDeleting(null)} />
@@ -9422,7 +9422,7 @@ npm run migrate            # הרצה בפועל`}</Block>
           <div style={sectionHeader}>AI · Model &amp; API key</div>
           <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-              {L('This key drives every CS AI Chatbot in the account, every channel and the assistant. There is no key to set on each one.', 'המפתח הזה משמש את כל ה-CS AI Chatbots בחשבון, את כל הערוצים ואת האסיסטנט. אין צורך להגדיר מפתח לכל אחד בנפרד.')}
+              {L('This key drives every AI Chatbot in the account, every channel and the assistant. There is no key to set on each one.', 'המפתח הזה משמש את כל ה-AI Chatbots בחשבון, את כל הערוצים ואת האסיסטנט. אין צורך להגדיר מפתח לכל אחד בנפרד.')}
             </div>
 
             <div>
@@ -9475,8 +9475,8 @@ npm run migrate            # הרצה בפועל`}</Block>
               {error && <span style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</span>}
               {!usable && <span style={{ fontSize: 12, color: 'var(--warning)' }}>
                 {draft.provider === 'ollama'
-                  ? L('Without a host address no CS AI Chatbot will answer', 'בלי כתובת שרת שום CS AI Chatbot לא יענה')
-                  : L('Without a key no CS AI Chatbot will answer', 'בלי מפתח שום CS AI Chatbot לא יענה')}
+                  ? L('Without a host address no AI Chatbot will answer', 'בלי כתובת שרת שום AI Chatbot לא יענה')
+                  : L('Without a key no AI Chatbot will answer', 'בלי מפתח שום AI Chatbot לא יענה')}
               </span>}
               <div style={{ marginInlineStart: 'auto', display: 'flex', gap: 10, paddingTop: 10 }}>
                 <Btn size="sm" onClick={() => setDraft(settings || accountApi())} disabled={!dirty}>{L('Discard changes', 'בטל שינויים')}</Btn>
@@ -9616,7 +9616,7 @@ npm run migrate            # הרצה בפועל`}</Block>
   function MobileBottomNav({ active, onNav }) {
     const items = [
       { id: 'home',         label: 'Home',         icon: Icons.home },
-      { id: 'agents',       label: 'CS AI Chatbots', icon: Icons.agents },
+      { id: 'agents',       label: 'AI Chatbots', icon: Icons.agents },
       { id: 'interactions', label: 'Interactions', icon: Icons.interactions },
       { id: 'settings',     label: 'Settings',     icon: Icons.settings },
     ];
@@ -9733,22 +9733,22 @@ npm run migrate            # הרצה בפועל`}</Block>
     return (
       <div style={{ padding: '10px 16px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-          <div style={{ fontWeight: 800, fontSize: 34, letterSpacing: '-0.035em' }}>CS AI Chatbots</div>
+          <div style={{ fontWeight: 800, fontSize: 34, letterSpacing: '-0.035em' }}>AI Chatbots</div>
           <Btn variant="primary" icon={Icons.plus} onClick={onNew} style={{ height: 46, padding: '0 18px', fontSize: 14 }}>New</Btn>
         </div>
 
         {agents.length > 0 && (
-          <SearchField value={query} onChange={setQuery} placeholder="Search CS AI Chatbots" style={{ height: 50, flex: 'none' }} />
+          <SearchField value={query} onChange={setQuery} placeholder="Search AI Chatbots" style={{ height: 50, flex: 'none' }} />
         )}
 
         {agents.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '40px 20px', background: 'var(--bg-card)', borderRadius: 'var(--r-xl)', border: '1px dashed var(--border)', textAlign: 'center' }}>
-            <div style={{ color: 'var(--text)', fontWeight: 700, fontSize: 15 }}>No CS AI Chatbots yet</div>
-            <div style={{ color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.6 }}>Describe what you want in plain words and the assistant will build the CS AI Chatbot for you.</div>
+            <div style={{ color: 'var(--text)', fontWeight: 700, fontSize: 15 }}>No AI Chatbots yet</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.6 }}>Describe what you want in plain words and the assistant will build the AI Chatbot for you.</div>
             <Btn variant="primary" icon={Icons.sparkle} onClick={() => onBuildInChat(FIRST_AGENT_ASK())}>
               Build it with the assistant
             </Btn>
-            <Btn onClick={onNew} icon={Icons.plus}>New CS AI Chatbot</Btn>
+            <Btn onClick={onNew} icon={Icons.plus}>New AI Chatbot</Btn>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -9789,7 +9789,7 @@ npm run migrate            # הרצה בפועל`}</Block>
           <RuntimeCard settings={accountApi()} onOpenSettings={() => onOpen('settings')} />
         </div>
         <Row icon={Icons.docs} label="Documentation" hint={L('How every part of this works', 'איך כל חלק במערכת עובד')} onClick={() => onOpen('docs')} />
-        {user.isAdmin && <Row icon={Icons.admin} label="Admin" hint={L('Users and the template CS AI Chatbots', 'משתמשים וCS AI Chatbots של התבנית')} onClick={() => onOpen('admin')} />}
+        {user.isAdmin && <Row icon={Icons.admin} label="Admin" hint={L('Users and the template AI Chatbots', 'משתמשים וAI Chatbots של התבנית')} onClick={() => onOpen('admin')} />}
         <div style={{ height: 6 }} />
         <Row icon={Icons.logout} label="Log out" onClick={onLogout} danger />
       </div>
@@ -9873,7 +9873,7 @@ npm run migrate            # הרצה בפועל`}</Block>
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-            <div><div style={{ fontWeight: 800, fontSize: 18 }}>Skills</div><div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{skills.length ? `${skills.length} focused modes the CS AI Chatbot can switch into` : 'Focused modes the CS AI Chatbot can switch into'}</div></div>
+            <div><div style={{ fontWeight: 800, fontSize: 18 }}>Skills</div><div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{skills.length ? `${skills.length} focused modes the AI Chatbot can switch into` : 'Focused modes the AI Chatbot can switch into'}</div></div>
             <button onClick={addSkill} style={{ height: 38, padding: '0 14px', background: 'var(--primary)', color: '#0a0a0a', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 13 }}>＋ New</button>
           </div>
           {skills.length === 0 && <EmptyState icon={Icons.target} title="No skills yet" subtitle="Tap New — or ask the assistant to build one" />}
@@ -9895,9 +9895,9 @@ npm run migrate            # הרצה בפועל`}</Block>
         {seg === 'config' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 14 }}>
             <div><label style={M_FIELD_LABEL}>Name</label><input value={selected.name} onChange={e => patch({ name: e.target.value })} dir="auto" placeholder="e.g. Code Reviewer" /></div>
-            <div><label style={M_FIELD_LABEL}>Description</label><input value={selected.description} onChange={e => patch({ description: e.target.value })} dir="auto" placeholder="When should the CS AI Chatbot use this skill?" /></div>
+            <div><label style={M_FIELD_LABEL}>Description</label><input value={selected.description} onChange={e => patch({ description: e.target.value })} dir="auto" placeholder="When should the AI Chatbot use this skill?" /></div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6, background: 'var(--bg-hover)', borderRadius: 'var(--r-sm)', padding: '9px 11px' }}>
-              💡 The CS AI Chatbot reads the description to decide when to switch. In chat, <span style={{ color: 'var(--teal)' }}>#{(selected.name || 'SkillName').replace(/\s+/g, '')}</span> forces it; in a prompt, <span style={{ color: 'var(--primary)' }}>@toolName</span> calls a tool.
+              💡 The AI Chatbot reads the description to decide when to switch. In chat, <span style={{ color: 'var(--teal)' }}>#{(selected.name || 'SkillName').replace(/\s+/g, '')}</span> forces it; in a prompt, <span style={{ color: 'var(--primary)' }}>@toolName</span> calls a tool.
             </div>
           </div>
         )}
@@ -9942,7 +9942,7 @@ npm run migrate            # הרצה בפועל`}</Block>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                 <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--bg-panel)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--teal)', flexShrink: 0 }}>{Icons.email}</div>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 600 }}>Available to the CS AI Chatbot</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 600 }}>Available to the AI Chatbot</div>
                   <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>Test chat, widget and WhatsApp</div>
                 </div>
               </div>
@@ -9964,11 +9964,11 @@ npm run migrate            # הרצה בפועל`}</Block>
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-            <div><div style={{ fontWeight: 800, fontSize: 18 }}>Tools</div><div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Python the CS AI Chatbot can call at runtime</div></div>
+            <div><div style={{ fontWeight: 800, fontSize: 18 }}>Tools</div><div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Python the AI Chatbot can call at runtime</div></div>
             <button onClick={addTool} style={{ height: 38, padding: '0 14px', background: 'var(--primary)', color: '#0a0a0a', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 13 }}>＋ New</button>
           </div>
           <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-muted)', textTransform: 'uppercase', padding: '6px 2px 0' }}>Built-in</div>
-          <MobileListRow badge="✉" mono label="send_email" note={agent.emailEnabled ? 'on — sends from this CS AI Chatbot\'s Gmail' : 'off'} onClick={() => setOpen('builtin')} />
+          <MobileListRow badge="✉" mono label="send_email" note={agent.emailEnabled ? 'on — sends from this AI Chatbot\'s Gmail' : 'off'} onClick={() => setOpen('builtin')} />
           <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-muted)', textTransform: 'uppercase', padding: '10px 2px 0' }}>Python tools</div>
           {tools.length === 0 && <div style={{ padding: '14px 4px', fontSize: 13, color: 'var(--text-muted)' }}>None yet — tap New, or ask the assistant to write one.</div>}
           {tools.map(t => <MobileListRow key={t.id} badge="py" mono label={t.name || 'untitled'} note={t.description || 'No description yet'} onClick={() => { setOpen(t.id); setSeg('code'); }} />)}
@@ -10043,7 +10043,7 @@ npm run migrate            # הרצה בפועל`}</Block>
       <div style={{ flexShrink: 0, padding: '10px 12px', borderBottom: '1px solid var(--border)',
                     background: 'rgba(250,204,21,0.08)' }}>
         <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 8 }}>
-          {L('Unpublished changes. The live CS AI Chatbot answers from the previous version.', 'שינויים שלא פורסמו. ה-CS AI Chatbot החי עונה מהגרסה הקודמת.')}
+          {L('Unpublished changes. The live AI Chatbot answers from the previous version.', 'שינויים שלא פורסמו. ה-AI Chatbot החי עונה מהגרסה הקודמת.')}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => act(() => apiBranchAction(agent.id, { action: 'publish' }))} disabled={busy}
@@ -10142,11 +10142,11 @@ npm run migrate            # הרצה בפועל`}</Block>
           <div style={{ padding: '10px 16px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
             {onDuplicate && (
               <Btn icon={Icons.copy} style={{ height: 50, justifyContent: 'flex-start' }}
-                   onClick={() => { setMenu(false); onDuplicate(agent.id); }}>Duplicate CS AI Chatbot</Btn>
+                   onClick={() => { setMenu(false); onDuplicate(agent.id); }}>Duplicate AI Chatbot</Btn>
             )}
             {onDelete && (
               <Btn danger icon={Icons.trash} style={{ height: 50, justifyContent: 'flex-start' }}
-                   onClick={() => { setMenu(false); onDelete(agent.id); }}>Delete CS AI Chatbot</Btn>
+                   onClick={() => { setMenu(false); onDelete(agent.id); }}>Delete AI Chatbot</Btn>
             )}
           </div>
         </MobileSheet>
@@ -10252,7 +10252,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     } else if (nav === 'agents') {
       screen = (
         <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-          <MobileTopBar left={burger} title="CS AI Chatbots" center />
+          <MobileTopBar left={burger} title="AI Chatbots" center />
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
             <MobileHome agents={state.agents} onNew={onCreate}
               onBuildInChat={text => { setHomeSeed({ text, nonce: uid(), fresh: true }); go('home'); }}
@@ -10462,8 +10462,8 @@ npm run migrate            # הרצה בפועל`}</Block>
     const deleteDialog = doomed && (
       <ConfirmDialog
         title={L(`Delete "${doomed.name}"?`, `למחוק את "${doomed.name}"?`)}
-        body={L("Its documents, its test conversations and its conversations go too, and its widget and WhatsApp stop answering. This cannot be undone.", "נמחקים גם המסמכים, שיחות הבדיקה והשיחות של ה-CS AI Chatbot, והווידג'ט ו-WhatsApp שלו מפסיקים לענות. אין ביטול.")}
-        confirmLabel={L('Delete CS AI Chatbot', 'מחק CS AI Chatbot')}
+        body={L("Its documents, its test conversations and its conversations go too, and its widget and WhatsApp stop answering. This cannot be undone.", "נמחקים גם המסמכים, שיחות הבדיקה והשיחות של ה-AI Chatbot, והווידג'ט ו-WhatsApp שלו מפסיקים לענות. אין ביטול.")}
+        confirmLabel={L('Delete AI Chatbot', 'מחק AI Chatbot')}
         busy={deleteBusy}
         onConfirm={() => reallyDelete(doomed.id)}
         onCancel={() => setPendingDelete(null)} />
@@ -10472,7 +10472,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     if (loading) return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 'calc(100vh / var(--ui-zoom))', background: 'var(--bg-app)', flexDirection: 'column', gap: 14 }}>
         <div style={{ width: 36, height: 36, border: '2.5px solid var(--border)', borderTop: '2.5px solid var(--primary)', borderRadius: '50%', animation: 'spin 0.75s linear infinite' }} />
-        <div style={{ color: 'var(--text-muted)', fontSize: 13, fontWeight: 500 }}>Loading CS AI Chatbots…</div>
+        <div style={{ color: 'var(--text-muted)', fontSize: 13, fontWeight: 500 }}>Loading AI Chatbots…</div>
       </div>
     );
 
@@ -10528,7 +10528,7 @@ npm run migrate            # הרצה בפועל`}</Block>
 
     const NAV_CRUMBS = {
       home: ['Workspace', 'Home'],
-      agents: ['Workspace', 'CS AI Chatbots'],
+      agents: ['Workspace', 'AI Chatbots'],
       assistant: ['Workspace', 'Assistant'],
       interactions: ['Workspace', 'Interactions'],
       docs: ['Workspace', 'Documentation'],
