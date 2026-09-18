@@ -91,6 +91,25 @@
       100% { box-shadow: 0 6px 22px var(--primary-glow), 0 0 0 0 rgba(239,159,39,0); }
     }
 
+    /* ── the mark, alive ──
+       The home screen's spider breathes: the body drifts, the legs step in
+       opposite phase, and a halo behind it swells. `.spider-busy` is the same
+       motion at speed, which is how the screen says the model is thinking.
+       Nothing here runs unless an ancestor carries `.spider-anim`, so the
+       sidebar mark and the watermark are untouched. */
+    @keyframes spiderFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
+    @keyframes spiderLegL  { 0%, 100% { transform: rotate(0deg); } 35% { transform: rotate(2.6deg); }  70% { transform: rotate(-1.6deg); } }
+    @keyframes spiderLegR  { 0%, 100% { transform: rotate(0deg); } 35% { transform: rotate(-2.6deg); } 70% { transform: rotate(1.6deg); } }
+    @keyframes spiderHalo  { 0%, 100% { transform: scale(0.92); opacity: 0.5; } 50% { transform: scale(1.1); opacity: 0.95; } }
+
+    .sp-legs-l, .sp-legs-r { transform-origin: 340px 110px; transform-box: view-box; }
+    .spider-anim .sp-body  { animation: spiderFloat 5.2s ease-in-out infinite; }
+    .spider-anim .sp-legs-l { animation: spiderLegL 3.4s ease-in-out infinite; }
+    .spider-anim .sp-legs-r { animation: spiderLegR 3.4s ease-in-out infinite; }
+    .spider-anim .sp-halo   { animation: spiderHalo 4.2s ease-in-out infinite; }
+    .spider-busy .sp-legs-l, .spider-busy .sp-legs-r { animation-duration: 1.05s; }
+    .spider-busy .sp-halo { animation-duration: 1.4s; }
+
     .fade-in { animation: fadeIn 0.25s ease both; }
     .slide-in-right { animation: slideInRight 0.3s cubic-bezier(0.16,1,0.3,1) both; }
     .card-highlight { animation: cardHighlight 1.2s ease-out; }
@@ -206,14 +225,20 @@
       <circle cx="345" cy="70" r="3.5" fill="#854F0B"/>
       <path d="M345,136 C372,138 390,122 390,98 C390,72 374,56 379,38" fill="none" stroke="#EF9F27" strokeWidth="8" strokeLinecap="round"/>
       <polygon points="375,40 382,24 389,40" fill="#D85A30"/>
-      <polyline points="319,95 293,80 278,72" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
-      <polyline points="319,105 291,102 276,100" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
-      <polyline points="319,115 291,119 276,124" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
-      <polyline points="319,125 293,136 281,146" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
-      <polyline points="361,95 387,80 402,72" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
-      <polyline points="361,105 389,102 404,100" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
-      <polyline points="361,115 389,119 404,124" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
-      <polyline points="361,125 387,136 399,146" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+      {/* Grouped per side so the home screen can step them; a plain <g> changes
+          nothing for the callers that draw the mark still. */}
+      <g className="sp-legs-l">
+        <polyline points="319,95 293,80 278,72" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+        <polyline points="319,105 291,102 276,100" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+        <polyline points="319,115 291,119 276,124" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+        <polyline points="319,125 293,136 281,146" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+      </g>
+      <g className="sp-legs-r">
+        <polyline points="361,95 387,80 402,72" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+        <polyline points="361,105 389,102 404,100" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+        <polyline points="361,115 389,119 404,124" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+        <polyline points="361,125 387,136 399,146" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+      </g>
       <path d="M328,62 L313,48" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round"/>
       <path d="M313,48 L304,40" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
       <path d="M313,48 L309,57" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
@@ -243,9 +268,38 @@
     );
   }
 
+  /**
+   * The mark at full size, breathing. `busy` speeds it up while a turn is in
+   * flight; `still` is the same drawing with no motion at all.
+   * prefers-reduced-motion flattens every animation in this file, so this one
+   * needs no separate escape hatch.
+   */
+  function SpiderLogo({ size = 168, busy, still, style }) {
+    const cls = ['spider-stage', still ? '' : 'spider-anim', busy ? 'spider-busy' : ''].filter(Boolean).join(' ');
+    return (
+      <div className={cls} style={{
+        position: 'relative', width: size, height: size, flexShrink: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', ...style,
+      }}>
+        <div className="sp-halo" style={{
+          position: 'absolute', inset: 0, borderRadius: '50%', pointerEvents: 'none',
+          background: 'radial-gradient(circle, rgba(239,159,39,0.30) 0%, rgba(239,159,39,0.10) 42%, rgba(239,159,39,0) 68%)',
+        }} />
+        <div className="sp-body" style={{ display: 'flex' }}>
+          <svg viewBox="285 18 115 140" width={Math.round(size * 0.8)} height={Math.round(size * 0.8)}
+               aria-hidden="true" style={{ overflow: 'visible' }}>
+            {spiderSvgPaths}
+          </svg>
+        </div>
+      </div>
+    );
+  }
+
   /* ─────────────────── SVG ICONS ─────────────────── */
   const Icons = {
     home: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
+    agents: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>,
+    plusCircle: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>,
     docs: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>,
     settings: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
     admin: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
@@ -391,9 +445,25 @@
   const MODELS_BY_PROVIDER = { claude: CLAUDE_MODELS, openai: OPENAI_MODELS, ollama: OLLAMA_MODELS };
   const DEFAULT_MODEL = { claude: CLAUDE_MODELS[1], openai: OPENAI_MODELS[0], ollama: OLLAMA_MODELS[0] };
 
-  let ACCOUNT_API = { provider: 'claude', apiKey: '', model: DEFAULT_MODEL.claude, ollamaHost: '', assistantLanguage: 'he' };
+  let ACCOUNT_API = { provider: 'claude', apiKey: '', model: DEFAULT_MODEL.claude, ollamaHost: '', assistantLanguage: 'en' };
   function accountApi() { return ACCOUNT_API; }
-  function setAccountApi(cfg) { ACCOUNT_API = { ...ACCOUNT_API, ...(cfg || {}) }; }
+  function setAccountApi(cfg) {
+    ACCOUNT_API = { ...ACCOUNT_API, ...(cfg || {}) };
+    UI_LANG = ACCOUNT_API.assistantLanguage === 'he' ? 'he' : 'en';
+  }
+
+  /* ── the interface's language ──
+     English unless the account switched it in Settings. Mirrored in a module
+     variable rather than passed down: every string a person reads goes through
+     L(), and the setting is read in hundreds of places that have no business
+     taking a prop for it. Changing it re-renders the tree, because the same
+     save that changes it also sets the settings state in App. */
+  let UI_LANG = 'en';
+  function uiLang() { return UI_LANG; }
+  function uiHe() { return UI_LANG === 'he'; }
+  /** L('Delete', 'מחק') — the English first, because that is the default. */
+  function L(en, he) { return UI_LANG === 'he' ? he : en; }
+  function uiDir() { return UI_LANG === 'he' ? 'rtl' : 'ltr'; }
   function accountApiUsable(cfg) {
     const c = cfg || ACCOUNT_API;
     return c.provider === 'ollama' ? !!c.ollamaHost : !!c.apiKey;
@@ -955,7 +1025,9 @@
    * It states what is about to disappear rather than asking "are you sure",
    * because that is the question the person actually needs answered.
    */
-  function ConfirmDialog({ title, body, confirmLabel = 'מחק', cancelLabel = 'ביטול', busy, onConfirm, onCancel }) {
+  function ConfirmDialog({ title, body, confirmLabel, cancelLabel, busy, onConfirm, onCancel }) {
+    confirmLabel = confirmLabel || L('Delete', 'מחק');
+    cancelLabel = cancelLabel || L('Cancel', 'ביטול');
     useEffect(() => {
       function onKey(e) {
         if (e.key === 'Escape') onCancel();
@@ -1184,6 +1256,9 @@
   function MonacoPython({ value, onChange, height = 420, bare }) {
     const containerRef = useRef(null);
     const editorRef = useRef(null);
+    // A minimap of forty lines of Python, on a phone, is a stripe of noise
+    // taking width the code needs.
+    const phone = useIsMobile();
     // The editor is created once and outlives every re-render, so the change
     // handler has to reach the *current* onChange. Capturing the first one made
     // it write into a stale agent, which could undo edits made since — such as
@@ -1205,8 +1280,9 @@
           fontSize: 14,
           fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
           lineNumbers: 'on',
-          minimap: { enabled: true },
+          minimap: { enabled: !phone },
           automaticLayout: true,
+          wordWrap: phone ? 'on' : 'off',
           bracketPairColorization: { enabled: true },
           scrollBeyondLastLine: false,
           padding: { top: 12, bottom: 12 },
@@ -1388,8 +1464,10 @@
             <div style={{ fontWeight: 700, fontSize: 14 }}>Model &amp; API key</div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.6 }}>
               {accountApiUsable()
-                ? `כל הסוכנים בחשבון רצים על ${accountApi().provider} · ${accountApi().model}. להחלפה — מסך Settings.`
-                : 'עדיין לא הוגדר מפתח API לחשבון. עד שיוגדר במסך Settings, אף סוכן לא יענה.'}
+                ? L(`Every agent in this account runs on ${accountApi().provider} · ${accountApi().model}. Change it in Settings.`,
+                    `כל הסוכנים בחשבון רצים על ${accountApi().provider} · ${accountApi().model}. להחלפה — מסך Settings.`)
+                : L('No API key set for this account yet. Until one is set in Settings, no agent will answer.',
+                    'עדיין לא הוגדר מפתח API לחשבון. עד שיוגדר במסך Settings, אף סוכן לא יענה.')}
             </div>
           </div>
           <span style={{
@@ -1397,7 +1475,7 @@
             background: accountApiUsable() ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.14)',
             color: accountApiUsable() ? 'var(--success)' : 'var(--warning)',
           }}>
-            {accountApiUsable() ? 'מוגדר' : 'חסר מפתח'}
+            {accountApiUsable() ? L('Set', 'מוגדר') : L('No key', 'חסר מפתח')}
           </span>
         </div>
 
@@ -1405,13 +1483,13 @@
         {(() => {
           const dlp = agent.dlp || {};
           const rules = [
-            { key: 'creditCard', label: 'כרטיס אשראי', desc: '1234-5678-9012-3456 / 1234567890123456' },
-            { key: 'israeliId',  label: 'תעודת זהות',  desc: '9 ספרות' },
+            { key: 'creditCard', label: L('Credit card', 'כרטיס אשראי'), desc: '1234-5678-9012-3456 / 1234567890123456' },
+            { key: 'israeliId',  label: L('Israeli ID', 'תעודת זהות'),  desc: L('9 digits', '9 ספרות') },
           ];
           return (
             <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 24, border: '1px solid var(--border)' }}>
-              <div style={{ fontWeight: 700, marginBottom: 4, fontSize: 15 }}>DLP — מניעת דליפת מידע</div>
-              <div style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 16 }}>מידע שיסומן יוחלף ב-[MASKED] לפני שנשלח ל-AI</div>
+              <div style={{ fontWeight: 700, marginBottom: 4, fontSize: 15 }}>{L('DLP — data loss prevention', 'DLP — מניעת דליפת מידע')}</div>
+              <div style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 16 }}>{L('Anything matched is replaced with [MASKED] before it reaches the model', 'מידע שיסומן יוחלף ב-[MASKED] לפני שנשלח ל-AI')}</div>
               {rules.map(r => (
                 <div key={r.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
                   <div>
@@ -2778,7 +2856,7 @@
       return (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
           <div style={{ maxWidth: '75%', background: accent || 'var(--primary)', color: '#fff', padding: '10px 14px', borderRadius: '18px 18px 4px 18px', fontSize: 14, lineHeight: 1.5 }} dir={dir}>{msg.content}</div>
-          {msg.dlpMasked && <div style={{ fontSize: 11, color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 4 }}>🔒 נא לא לחשוף מידע רגיש</div>}
+          {msg.dlpMasked && <div style={{ fontSize: 11, color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 4 }}>🔒 {L('Please do not share sensitive details', 'נא לא לחשוף מידע רגיש')}</div>}
         </div>
       );
     }
@@ -3149,7 +3227,7 @@
       const url = crawlUrlInput.trim();
       if (!url) return;
       try { new URL(url); } catch {
-        setCrawlUrlError('כתובת URL לא תקינה');
+        setCrawlUrlError(L('Not a valid URL', 'כתובת URL לא תקינה'));
         return;
       }
       setCrawlUrlError('');
@@ -3241,7 +3319,7 @@
       try {
         const r = await apiFetch(`/api/documents/${docId}`, { method: 'POST', body: JSON.stringify({ action: 'normalize' }) });
         const d = await r.json().catch(() => ({}));
-        if (!r.ok) { setDocError(d.error || `לא הצליח לסדר את המסמך (${r.status})`); return; }
+        if (!r.ok) { setDocError(d.error || L(`Could not tidy the document (${r.status})`, `לא הצליח לסדר את המסמך (${r.status})`)); return; }
         setDocs(list => list.map(x => x.id === docId ? { ...x, content: d.content, normalized: true, has_original: true, chunks: d.chunks } : x));
       } catch (err) {
         setDocError(err.message);
@@ -3251,7 +3329,7 @@
     }
 
     async function restoreDoc(docId) {
-      if (!window.confirm('להחזיר את הטקסט המקורי?\n\nRestore the original text?')) return;
+      if (!window.confirm(L('Restore the original text?', 'להחזיר את הטקסט המקורי?'))) return;
       setBusyDoc(docId); setDocError('');
       try {
         const r = await apiFetch(`/api/documents/${docId}`, { method: 'POST', body: JSON.stringify({ action: 'restore' }) });
@@ -3301,7 +3379,7 @@
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        setUploadProgress(`מעבד ${file.name} (${i + 1}/${files.length})…`);
+        setUploadProgress(L(`Processing ${file.name} (${i + 1}/${files.length})…`, `מעבד ${file.name} (${i + 1}/${files.length})…`));
 
         try {
           // Read file as base64
@@ -3328,7 +3406,7 @@
 
           const text = (data.text || '').trim();
           if (!text) {
-            errors.push(`${file.name}: לא נמצא טקסט בקובץ`);
+            errors.push(`${file.name}: ` + L('no text found in the file', 'לא נמצא טקסט בקובץ'));
             continue;
           }
 
@@ -3344,7 +3422,7 @@
             saved.push(doc);
           } else {
             const err = await saveResp.json().catch(() => ({}));
-            errors.push(`${file.name}: ${err.error || 'שגיאה בשמירה'}`);
+            errors.push(`${file.name}: ${err.error || L('could not be saved', 'שגיאה בשמירה')}`);
           }
         } catch (err) {
           errors.push(`${file.name}: ${err.message}`);
@@ -3415,9 +3493,9 @@
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
-              title="העלה קבצי PDF או Word (ניתן לבחור מספר קבצים)"
+              title={L('Upload PDF or Word files (several at once)', 'העלה קבצי PDF או Word (ניתן לבחור מספר קבצים)')}
               style={{ background: 'var(--bg-panel)', color: 'var(--teal)', border: '1px solid var(--teal)', padding: '8px 14px', borderRadius: 'var(--r-xl)', fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
-              {uploading ? (uploadProgress || '⏳ מעבד…') : '📎 העלה מסמך'}
+              {uploading ? (uploadProgress || L('⏳ Processing…', '⏳ מעבד…')) : L('📎 Upload a document', '📎 העלה מסמך')}
             </button>
             <button onClick={() => setAddOpen(v => !v)}
               style={{ background: 'var(--primary)', color: '#fff', padding: '8px 16px', borderRadius: 'var(--r-xl)', fontWeight: 600, fontSize: 13 }}>
@@ -3469,7 +3547,7 @@
           <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
             🌐 Web Crawler
             <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)', background: 'var(--bg-hover)', padding: '2px 8px', borderRadius: 'var(--r-xl)' }}>
-              סריקה אוטומטית 07:00 + 13:00
+              {L('Crawled automatically at 07:00 and 13:00', 'סריקה אוטומטית 07:00 + 13:00')}
             </span>
           </div>
 
@@ -3488,7 +3566,7 @@
               onClick={addCrawlUrl}
               disabled={crawlConfig.status === 'running' || !crawlUrlInput.trim()}
               style={{ background: 'var(--primary)', color: '#fff', padding: '8px 16px', borderRadius: 'var(--r-md)', fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}>
-              {crawlConfig.status === 'running' ? '⏳ סורק…' : '＋ הוסף וסרוק'}
+              {crawlConfig.status === 'running' ? L('⏳ Crawling…', '⏳ סורק…') : L('＋ Add and crawl', '＋ הוסף וסרוק')}
             </button>
           </div>
 
@@ -3505,11 +3583,11 @@
                   <button
                     onClick={() => startCrawl(url)}
                     disabled={crawlConfig.status === 'running'}
-                    title="סרוק עכשיו"
+                    title={L('Crawl now', 'סרוק עכשיו')}
                     style={{ background: 'var(--bg-hover)', color: 'var(--primary)', border: '1px solid var(--primary)', padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 600 }}>
-                    {crawlConfig.status === 'running' ? '⏳' : '↺ סרוק'}
+                    {crawlConfig.status === 'running' ? '⏳' : L('↺ Crawl', '↺ סרוק')}
                   </button>
-                  <IconBtn onClick={() => removeCrawlUrl(url)} danger title="הסר URL">{Icons.trash}</IconBtn>
+                  <IconBtn onClick={() => removeCrawlUrl(url)} danger title={L('Remove URL', 'הסר URL')}>{Icons.trash}</IconBtn>
                 </div>
               ))}
             </div>
@@ -3519,32 +3597,32 @@
           <div style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             {crawlConfig.status === 'running' && (
               <span style={{ color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⏳</span> סורק…
+                <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⏳</span> {L('Crawling…', 'סורק…')}
               </span>
             )}
             {crawlConfig.status === 'done' && (
               <React.Fragment>
-                <span style={{ color: 'var(--teal)' }}>✓ סריקה אחרונה: {formatCrawlTime(crawlConfig.lastCrawledAt)} | {crawlConfig.pagesCrawled || 0} עמודים</span>
+                <span style={{ color: 'var(--teal)' }}>✓ {L('Last crawl:', 'סריקה אחרונה:')} {formatCrawlTime(crawlConfig.lastCrawledAt)} | {crawlConfig.pagesCrawled || 0} {L('pages', 'עמודים')}</span>
                 {/* A crawl that ran out of time, or a site that needs JavaScript,
                     both look like "it worked" otherwise. */}
                 {crawlConfig.stoppedEarly && (
-                  <span style={{ color: 'var(--warning)' }} title="נעצר לפני שהספיק את כל האתר. אפשר להריץ שוב כדי להמשיך">⏱ נעצר מוקדם</span>
+                  <span style={{ color: 'var(--warning)' }} title={L('Stopped before it reached the whole site. Run it again to continue.', 'נעצר לפני שהספיק את כל האתר. אפשר להריץ שוב כדי להמשיך')}>⏱ {L('stopped early', 'נעצר מוקדם')}</span>
                 )}
                 {crawlConfig.thinPages > 0 && (
-                  <span style={{ color: 'var(--warning)' }} title="הסורק קורא את ה-HTML שהשרת מחזיר ולא מריץ JavaScript, אז דפים שנבנים בדפדפן חוזרים ריקים">
-                    ⚠ {crawlConfig.thinPages} דפים כמעט ריקים
+                  <span style={{ color: 'var(--warning)' }} title={L('The crawler reads the HTML the server returns and does not run JavaScript, so pages built in the browser come back empty', 'הסורק קורא את ה-HTML שהשרת מחזיר ולא מריץ JavaScript, אז דפים שנבנים בדפדפן חוזרים ריקים')}>
+                    ⚠ {crawlConfig.thinPages} {L('near-empty pages', 'דפים כמעט ריקים')}
                   </span>
                 )}
               </React.Fragment>
             )}
             {crawlConfig.status === 'error' && (
-              <span style={{ color: 'var(--danger)' }}>✗ שגיאה: {crawlConfig.errorMessage}</span>
+              <span style={{ color: 'var(--danger)' }}>✗ {L('Error:', 'שגיאה:')} {crawlConfig.errorMessage}</span>
             )}
             {(!crawlConfig.status || crawlConfig.status === 'idle') && (crawlConfig.urls || []).length === 0 && (
-              <span>הוסף URL לסריקה אוטומטית של אתר שלם</span>
+              <span>{L('Add a URL to crawl a whole site automatically', 'הוסף URL לסריקה אוטומטית של אתר שלם')}</span>
             )}
             {crawlConfig.status !== 'running' && (crawlConfig.urls || []).length > 0 && !crawlConfig.lastCrawledAt && (
-              <span>ממתין לסריקה ראשונה</span>
+              <span>{L('Waiting for the first crawl', 'ממתין לסריקה ראשונה')}</span>
             )}
           </div>
         </div>
@@ -3595,22 +3673,22 @@
                       {doc.source_type === 'crawl' && <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>web</span>}
                       {/* Says whether this document is in a shape the agent can retrieve from */}
                       {doc.normalized
-                        ? <span title="סודר על ידי מודל: חולק לסעיפים קצרים עם מילות מפתח בעברית ובאנגלית"
-                            style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 6, background: 'var(--teal-dim)', color: 'var(--teal)' }}>מסודר</span>
-                        : <span title="נשמר כמו שהוא — לא בהכרח קל לסוכן למצוא בו"
-                            style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 6, background: 'var(--bg-hover)', color: 'var(--text-muted)' }}>גולמי</span>}
-                      {doc.chunks > 0 && <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>{doc.chunks} קטעי חיפוש</span>}
+                        ? <span title={L('Tidied by the model: split into short sections with a keyword line in Hebrew and English', 'סודר על ידי מודל: חולק לסעיפים קצרים עם מילות מפתח בעברית ובאנגלית')}
+                            style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 6, background: 'var(--teal-dim)', color: 'var(--teal)' }}>{L('tidied', 'מסודר')}</span>
+                        : <span title={L('Stored as it came — not necessarily easy for the agent to find things in', 'נשמר כמו שהוא — לא בהכרח קל לסוכן למצוא בו')}
+                            style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 6, background: 'var(--bg-hover)', color: 'var(--text-muted)' }}>{L('raw', 'גולמי')}</span>}
+                      {doc.chunks > 0 && <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>{doc.chunks} {L('search chunks', 'קטעי חיפוש')}</span>}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6, maxHeight: 64, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>
                       {doc.content}
                     </div>
-                    {busyDoc === doc.id && <div style={{ fontSize: 11.5, color: 'var(--teal)', marginTop: 6 }}>מסדר את המסמך…</div>}
+                    {busyDoc === doc.id && <div style={{ fontSize: 11.5, color: 'var(--teal)', marginTop: 6 }}>{L('Tidying the document…', 'מסדר את המסמך…')}</div>}
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                     <IconBtn onClick={() => reorganizeDoc(doc.id)} disabled={busyDoc === doc.id}
-                      title={doc.normalized ? 'לסדר מחדש מהמקור' : 'לסדר את המסמך לקריאה של הסוכן'}>{Icons.tidy}</IconBtn>
+                      title={doc.normalized ? L('Tidy again from the original', 'לסדר מחדש מהמקור') : L('Tidy the document for the agent to read', 'לסדר את המסמך לקריאה של הסוכן')}>{Icons.tidy}</IconBtn>
                     {doc.has_original && (
-                      <IconBtn onClick={() => restoreDoc(doc.id)} disabled={busyDoc === doc.id} title="להחזיר את הטקסט המקורי">↩</IconBtn>
+                      <IconBtn onClick={() => restoreDoc(doc.id)} disabled={busyDoc === doc.id} title={L('Restore the original text', 'להחזיר את הטקסט המקורי')}>↩</IconBtn>
                     )}
                     <IconBtn onClick={() => { setEditingDocId(doc.id); setEditDoc({ title: doc.title, content: doc.content }); }} title="Edit document">{Icons.edit}</IconBtn>
                     <IconBtn onClick={() => deleteDoc(doc.id)} danger title="Delete document">{Icons.trash}</IconBtn>
@@ -4095,11 +4173,13 @@
       <>
         {/* Backdrop */}
         <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 200 }} />
-        {/* Drawer */}
+        {/* Drawer. On a phone it is the whole screen, and the panel's desktop
+            proportions — a 420px column drawn at 80% — have to be re-cut: a
+            shorter header, tighter padding, and a composer sized for a thumb. */}
         <div className="slide-in-right" style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: fullScreen ? '100vw' : 420, background: 'var(--bg-sidebar)', borderLeft: fullScreen ? 'none' : '1px solid var(--border)', zIndex: 201, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
           {/* Header */}
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--bg-panel)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}><AvatarDisplay value={agent.avatar} size={40} /></div>
+          <div style={{ padding: fullScreen ? '9px 10px 9px 14px' : '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+            <div style={{ width: fullScreen ? 34 : 40, height: fullScreen ? 34 : 40, borderRadius: '50%', background: 'var(--bg-panel)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}><AvatarDisplay value={agent.avatar} size={fullScreen ? 34 : 40} /></div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
                 <span dir="auto" style={{ fontWeight: 700, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agent.name}</span>
@@ -4113,11 +4193,15 @@
                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: hasKey ? 'var(--success)' : 'var(--danger)', display: 'inline-block' }} />
                 {hasKey ? (accountApi().provider === 'ollama' ? `Ollama · ${accountApi().ollamaHost}` : accountApi().model) : (accountApi().provider === 'ollama' ? 'No Ollama host set' : 'No API key in Settings')}
               </div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                {live
-                  ? 'שיחה אמיתית — עוברת דרך הערוץ החי ונשמרת ב-Interactions'
-                  : `בדיקה ידנית${branch && branch !== 'main' ? ` על ${branch}` : ''} — נשמרת ב-Manual tests`}
-              </div>
+              {/* One line of explanation is a desktop luxury; the phone needs
+                  the rows below it more than it needs the sentence. */}
+              {!fullScreen && (
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                  {live
+                    ? L('A real conversation — it goes through the live channel and is saved to Interactions', 'שיחה אמיתית — עוברת דרך הערוץ החי ונשמרת ב-Interactions')
+                    : L(`A manual test${branch && branch !== 'main' ? ` on ${branch}` : ''} — saved to Manual tests`, `בדיקה ידנית${branch && branch !== 'main' ? ` על ${branch}` : ''} — נשמרת ב-Manual tests`)}
+                </div>
+              )}
             </div>
             {!live && (
               <IconBtn onClick={() => setShowHistory(h => !h)} title="Chat history" style={{ background: showHistory ? 'var(--bg-hover)' : undefined }}>🕐</IconBtn>
@@ -4129,7 +4213,7 @@
           {showHistory && (() => {
             const sessions = history.map(asDrawerSession);
             return (
-              <div style={{ position: 'absolute', top: 73, right: 0, width: fullScreen ? '100%' : 420, bottom: 0, background: 'var(--bg-app)', zIndex: 10, display: 'flex', flexDirection: 'column', borderLeft: '1px solid var(--border)' }}>
+              <div style={{ position: 'absolute', top: fullScreen ? 53 : 73, right: 0, width: fullScreen ? '100%' : 420, bottom: 0, background: 'var(--bg-app)', zIndex: 10, display: 'flex', flexDirection: 'column', borderLeft: '1px solid var(--border)' }}>
                 <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   {viewingSession
                     ? <><button onClick={() => setViewingSession(null)} style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: 13, padding: 0 }}>← Back</button>
@@ -4186,7 +4270,7 @@
           })()}
 
           {/* Messages */}
-          <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div ref={listRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: fullScreen ? '12px 14px' : '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
             {messages.map(msg => {
               if (msg.role === 'typing') return (
                 <div key={msg.id} style={{ display: 'flex', gap: 6 }}>
@@ -4210,7 +4294,7 @@
                 return (
                   <div key={msg.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                     <div style={{ maxWidth: '78%', background: 'var(--primary)', color: '#fff', padding: '10px 14px', borderRadius: '18px 18px 4px 18px', fontSize: 14, lineHeight: 1.5 }} dir={dir}>{msg.content}</div>
-                    {msg.dlpMasked && <div style={{ fontSize: 11, color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 4 }}>🔒 נא לא לחשוף מידע רגיש</div>}
+                    {msg.dlpMasked && <div style={{ fontSize: 11, color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 4 }}>🔒 {L('Please do not share sensitive details', 'נא לא לחשוף מידע רגיש')}</div>}
                   </div>
                 );
               }
@@ -4233,9 +4317,12 @@
             })}
           </div>
 
-          {/* Input */}
-          <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', background: 'var(--bg-app)' }}>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+          {/* Input. The phone gets a round send button beside a pill, because
+              iOS forces the field to 16px and a rectangular button beside it
+              comes out squashed. */}
+          <div className={fullScreen ? 'm-sheet' : undefined}
+            style={{ padding: fullScreen ? '10px 12px' : '12px 16px', borderTop: '1px solid var(--border)', background: 'var(--bg-app)', flexShrink: 0 }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: fullScreen ? 4 : 6, alignItems: 'flex-end' }}>
               <textarea
                 ref={inputRef}
                 value={input}
@@ -4244,14 +4331,17 @@
                 dir="auto"
                 rows={1}
                 disabled={pending}
-                placeholder="Message…"
-                style={{ flex: 1, resize: 'none', fontSize: 14 }}
+                placeholder={L('Message…', 'הודעה…')}
+                style={{ flex: 1, resize: 'none', fontSize: 14, borderRadius: fullScreen ? 22 : 'var(--r-md)', padding: fullScreen ? '11px 16px' : undefined, maxHeight: 120 }}
               />
-              <button onClick={sendMessage} disabled={pending || !input.trim()} style={{ background: 'var(--primary)', color: '#fff', padding: '0 14px', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 18 }}>➤</button>
+              <button onClick={sendMessage} disabled={pending || !input.trim()}
+                style={fullScreen
+                  ? { background: 'var(--primary)', color: '#0a0a0a', width: 44, height: 44, flexShrink: 0, borderRadius: '50%', fontWeight: 700, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }
+                  : { background: 'var(--primary)', color: '#fff', padding: '0 14px', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 18 }}>➤</button>
             </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: fullScreen ? 'center' : 'start' }}>
               {live
-                ? 'הסוכן עונה כאן בדיוק כמו למשתמש אמיתי'
+                ? L('The agent answers here exactly as it would a real user', 'הסוכן עונה כאן בדיוק כמו למשתמש אמיתי')
                 : <React.Fragment>Use #SkillName to switch skills &nbsp;•&nbsp; @toolName to call tools</React.Fragment>}
             </div>
           </div>
@@ -4339,7 +4429,7 @@
     }, [agent.id, query, tick]);
 
     async function remove(id) {
-      if (!window.confirm('למחוק את שיחת הבדיקה הזאת?\n\nDelete this test conversation?')) return;
+      if (!window.confirm(L('Delete this test conversation?', 'למחוק את שיחת הבדיקה הזאת?'))) return;
       await deleteChatSession(id).catch(() => {});
       if (open && open.id === id) setOpen(null);
       setTick(t => t + 1);
@@ -4392,7 +4482,7 @@
           <div style={{ flex: 1, minWidth: 200 }}>
             <div style={{ fontWeight: 700, fontSize: 15 }}>Manual tests</div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>
-              השיחות שלך עם הסוכן בצ'אט הבדיקה. לא מופיעות ב-Interactions, וכל האסיסטנטים רואים אותן.
+              {L('Your own conversations with this agent in the test chat. They never appear in Interactions, and every assistant can read them.', "השיחות שלך עם הסוכן בצ'אט הבדיקה. לא מופיעות ב-Interactions, וכל האסיסטנטים רואים אותן.")}
             </div>
           </div>
           {onTest && (
@@ -4404,7 +4494,7 @@
         </div>
 
         <input value={query} onChange={e => setQuery(e.target.value)} dir="auto"
-          placeholder="חיפוש בכל שיחות הבדיקה…" style={{ width: '100%', marginBottom: 14 }} />
+          placeholder={L('Search every test conversation…', 'חיפוש בכל שיחות הבדיקה…')} style={{ width: '100%', marginBottom: 14 }} />
 
         {error && (
           <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--danger)', padding: '9px 13px', borderRadius: 'var(--r-md)', fontSize: 12.5, marginBottom: 12 }}>
@@ -4413,14 +4503,14 @@
         )}
 
         {sessions === null ? (
-          <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>טוען…</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{L('Loading…', 'טוען…')}</div>
         ) : sessions.length === 0 ? (
           <div style={{ padding: '40px 24px', textAlign: 'center', background: 'var(--bg-card)', border: '1px dashed var(--border)', borderRadius: 'var(--r-lg)' }}>
             <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>
-              {query ? 'אין שיחת בדיקה שתואמת את החיפוש' : 'עוד לא בדקת את הסוכן הזה'}
+              {query ? L('No test conversation matches that search', 'אין שיחת בדיקה שתואמת את החיפוש') : L('You have not tested this agent yet', 'עוד לא בדקת את הסוכן הזה')}
             </div>
             <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
-              {query ? 'נסה מילה אחרת.' : 'כל שיחה בצ\'אט הבדיקה נשמרת כאן אוטומטית.'}
+              {query ? L('Try another word.', 'נסה מילה אחרת.') : L('Every conversation in the test chat is saved here automatically.', "כל שיחה בצ'אט הבדיקה נשמרת כאן אוטומטית.")}
             </div>
           </div>
         ) : (
@@ -4497,28 +4587,28 @@
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 800, fontSize: 17 }}>Build on local IDE</div>
               <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.6 }}>
-                הסוכן הזה הוא קבצים. משוך אותו לתיקייה, ערוך בעורך שלך, ודחוף בחזרה.
+                {L('This agent is files. Pull it into a folder, edit it in your own editor, and push it back.', 'הסוכן הזה הוא קבצים. משוך אותו לתיקייה, ערוך בעורך שלך, ודחוף בחזרה.')}
               </div>
             </div>
-            <IconBtn onClick={onClose} title="סגור">✕</IconBtn>
+            <IconBtn onClick={onClose} title={L('Close', 'סגור')}>✕</IconBtn>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             <div>
-              {step(1, 'התקנה', 'דורש Node 18 ומעלה. אפשר גם בלי להתקין — npx מוריד בכל הרצה.')}
+              {step(1, L('Install', 'התקנה'), L('Needs Node 18 or newer. You can skip the install — npx downloads it on every run.', 'דורש Node 18 ומעלה. אפשר גם בלי להתקין — npx מוריד בכל הרצה.'))}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <CopyableCommand command="npm i -g @8legs/cli" />
-                <CopyableCommand command="npx @8legs/cli login" note="הפקודה שמחברת את המחשב לחשבון." />
+                <CopyableCommand command="npx @8legs/cli login" note={L('The command that connects this machine to your account.', 'הפקודה שמחברת את המחשב לחשבון.')} />
               </div>
             </div>
 
             <div>
-              {step(2, 'טוקן', 'ה-login מבקש טוקן. צור אותו כאן — הוא מוצג פעם אחת בלבד.')}
+              {step(2, L('Token', 'טוקן'), L('The login asks for a token. Make one here — it is shown once and never again.', 'ה-login מבקש טוקן. צור אותו כאן — הוא מוצג פעם אחת בלבד.'))}
               <TokenMinter fieldWidth={220} />
             </div>
 
             <div>
-              {step(3, 'משיכת הסוכן', 'נוצרת תיקייה עם הפרומפט, הסקילים והכלים. 8legs push מחזיר אותם.')}
+              {step(3, L('Pull the agent', 'משיכת הסוכן'), L('You get a folder with the prompt, the skills and the tools. 8legs push sends them back.', 'נוצרת תיקייה עם הפרומפט, הסקילים והכלים. 8legs push מחזיר אותם.'))}
               <CopyableCommand command={`npx @8legs/cli pull ${agentId}`} />
             </div>
           </div>
@@ -4532,7 +4622,7 @@
     return (
       <React.Fragment>
         <Btn icon={Icons.terminal} onClick={() => setOpen(true)}
-             title="להתקין את ה-CLI, להתחבר ולמשוך את הסוכן">
+             title={L('Install the CLI, log in and pull this agent', 'להתקין את ה-CLI, להתחבר ולמשוך את הסוכן')}>
           Build on local IDE
         </Btn>
         {open && <LocalIdePanel agentId={agentId} onClose={() => setOpen(false)} />}
@@ -4577,7 +4667,7 @@
     }
 
     const newBranch = () => {
-      const name = prompt('שם הבראנץ׳ (למשל warmer-tone):');
+      const name = prompt(L('Branch name (e.g. warmer-tone):', 'שם הבראנץ׳ (למשל warmer-tone):'));
       if (!name) return;
       act(() => apiBranchAction(agent.id, { name, from: onMain || isDraft ? 'main' : current }),
           () => { setOpen(false); onSwitch(name); });
@@ -4599,23 +4689,23 @@
       if (!b) return {};
       if (b.kind === 'draft') {
         return {
-          title: 'למחוק את הטיוטה?',
-          body: 'השינויים שלא פורסמו יימחקו, והסוכן החי יישאר כפי שהוא. אין ביטול.',
-          confirmLabel: 'מחק טיוטה',
+          title: L('Delete the draft?', 'למחוק את הטיוטה?'),
+          body: L('The unpublished changes are deleted and the live agent stays as it is. This cannot be undone.', 'השינויים שלא פורסמו יימחקו, והסוכן החי יישאר כפי שהוא. אין ביטול.'),
+          confirmLabel: L('Delete draft', 'מחק טיוטה'),
         };
       }
       return {
-        title: `למחוק את הבראנץ׳ ${b.name}?`,
+        title: L(`Delete the branch ${b.name}?`, `למחוק את הבראנץ׳ ${b.name}?`),
         body: b.traffic_weight > 0
-          ? `הבראנץ׳ לוקח כרגע ${b.traffic_weight}% מהשיחות — הן יחזרו ל-main. הגרסה הזאת תימחק, ו-main לא מושפע. אין ביטול.`
-          : 'הגרסה הזאת תימחק, ו-main לא מושפע. אין ביטול.',
-        confirmLabel: 'מחק בראנץ׳',
+          ? L(`It is taking ${b.traffic_weight}% of the conversations right now — they go back to main. This version is deleted, main is untouched. This cannot be undone.`, `הבראנץ׳ לוקח כרגע ${b.traffic_weight}% מהשיחות — הן יחזרו ל-main. הגרסה הזאת תימחק, ו-main לא מושפע. אין ביטול.`)
+          : L('This version is deleted, main is untouched. This cannot be undone.', 'הגרסה הזאת תימחק, ו-main לא מושפע. אין ביטול.'),
+        confirmLabel: L('Delete branch', 'מחק בראנץ׳'),
       };
     }
 
     return (
       <div style={{ position: 'relative', display: 'inline-flex' }}>
-        <Chip mono onClick={() => setOpen(o => !o)} title="החלף בראנץ׳"
+        <Chip mono onClick={() => setOpen(o => !o)} title={L('Switch branch', 'החלף בראנץ׳')}
               tone={isDraft ? 'draft' : 'neutral'}>
           <span style={{ opacity: 0.7, display: 'flex' }}>{Icons.branch}</span>
           <span dir="ltr">{current}</span>
@@ -4638,8 +4728,8 @@
                   style={{ flex: 1, textAlign: 'start', background: 'none', border: 'none', cursor: 'pointer',
                            color: 'var(--text)', fontSize: 13, fontWeight: 600 }}>
                   <span dir="ltr" style={{ fontFamily: MONO }}>{b.name}</span>
-                  {b.kind === 'draft' && <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>  טיוטה</span>}
-                  {b.live && <span style={{ color: 'var(--success)', fontWeight: 500 }}>  חי</span>}
+                  {b.kind === 'draft' && <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>  {L('draft', 'טיוטה')}</span>}
+                  {b.live && <span style={{ color: 'var(--success)', fontWeight: 500 }}>  {L('live', 'חי')}</span>}
                 </button>
 
                 {/* A draft is a place to work, never something customers reach. */}
@@ -4652,21 +4742,21 @@
                       onBlur={e => { const v = Number(e.target.value);
                                      if (v !== b.traffic_weight) setWeight(b.name, v); }}
                       style={{ width: 58, fontSize: 12, padding: '3px 6px' }} />
-                    <span>% מהשיחות</span>
+                    <span>{L('% of conversations', '% מהשיחות')}</span>
                   </label>
                 )}
 
                 {/* main is the agent itself — there is nothing to delete. */}
                 {b.kind !== 'main' && (
-                  <IconBtn danger disabled={busy} title={`מחק את ${b.name}`}
+                  <IconBtn danger disabled={busy} title={L(`Delete ${b.name}`, `מחק את ${b.name}`)}
                     onClick={() => setDeleting(b)}>{Icons.trash}</IconBtn>
                 )}
               </div>
             ))}
             <div style={{ display: 'flex', gap: 8, padding: '10px 14px' }}>
-              <Btn size="sm" icon={Icons.plus} onClick={newBranch} disabled={busy}>בראנץ׳ חדש</Btn>
+              <Btn size="sm" icon={Icons.plus} onClick={newBranch} disabled={busy}>{L('New branch', 'בראנץ׳ חדש')}</Btn>
               <Btn size="sm" onClick={stopAll} disabled={busy}
-                   title="כל השיחות חוזרות ל-main. שיחות פעילות מסיימות היכן שהן.">עצור ניסויים</Btn>
+                   title={L('Every conversation goes back to main. Conversations already running finish where they are.', 'כל השיחות חוזרות ל-main. שיחות פעילות מסיימות היכן שהן.')}>{L('Stop experiments', 'עצור ניסויים')}</Btn>
             </div>
             {error && <div style={{ padding: '0 14px 10px', fontSize: 12, color: 'var(--danger)' }}>{error}</div>}
           </div>
@@ -4702,7 +4792,7 @@
 
     const publish = () => act(() => apiBranchAction(agent.id, { action: 'publish' }));
     const discard = () => {
-      if (!confirm('לבטל את הטיוטה ולחזור לגרסה החיה? השינויים שלא פורסמו יימחקו.')) return;
+      if (!confirm(L('Discard the draft and go back to the live version? The unpublished changes are deleted.', 'לבטל את הטיוטה ולחזור לגרסה החיה? השינויים שלא פורסמו יימחקו.'))) return;
       act(() => apiDeleteBranch(agent.id, 'draft'));
     };
 
@@ -4714,11 +4804,11 @@
           border: '1px solid rgba(250,204,21,0.35)', background: 'rgba(250,204,21,0.08)',
         }}>
           <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>
-            שינויים שלא פורסמו. הסוכן החי עדיין עונה מהגרסה הקודמת.
+            {L('Unpublished changes. The live agent still answers from the previous version.', 'שינויים שלא פורסמו. הסוכן החי עדיין עונה מהגרסה הקודמת.')}
           </span>
           <div style={{ marginInlineStart: 'auto', display: 'flex', gap: 8 }}>
-            <Btn size="sm" onClick={discard} disabled={busy}>בטל טיוטה</Btn>
-            <Btn size="sm" variant="primary" onClick={publish} disabled={busy}>{busy ? '…' : 'פרסם'}</Btn>
+            <Btn size="sm" onClick={discard} disabled={busy}>{L('Discard draft', 'בטל טיוטה')}</Btn>
+            <Btn size="sm" variant="primary" onClick={publish} disabled={busy}>{busy ? '…' : L('Publish', 'פרסם')}</Btn>
           </div>
         </div>
         {error && <div style={{ marginTop: 8, fontSize: 12, color: 'var(--danger)' }}>{error}</div>}
@@ -4745,7 +4835,7 @@
     const nothing = diff && !diff.fields.length && !diff.skills.length && !diff.tools.length;
     const short = (v) => {
       const text = typeof v === 'string' ? v : JSON.stringify(v);
-      return !text ? '(ריק)' : text.length > 160 ? text.slice(0, 160) + '…' : text;
+      return !text ? L('(empty)', '(ריק)') : text.length > 160 ? text.slice(0, 160) + '…' : text;
     };
 
     return (
@@ -4757,15 +4847,15 @@
           borderRadius: 'var(--r-lg)', padding: 22,
         }}>
           <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>
-            מיזוג <span dir="ltr" style={{ fontFamily: 'monospace' }}>{branch}</span> ל-main
+            {L('Merging', 'מיזוג')} <span dir="ltr" style={{ fontFamily: 'monospace' }}>{branch}</span> {L('into main', 'ל-main')}
           </div>
           <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 16 }}>
-            אחרי המיזוג הסוכן החי עונה מהגרסה הזאת. מספר ה-WhatsApp והמפתח נשארים כפי שהם ב-main.
+            {L('After the merge the live agent answers from this version. The WhatsApp number and the key stay as they are on main.', 'אחרי המיזוג הסוכן החי עונה מהגרסה הזאת. מספר ה-WhatsApp והמפתח נשארים כפי שהם ב-main.')}
           </div>
 
           {error && <div style={{ fontSize: 12.5, color: 'var(--danger)', marginBottom: 12 }}>{error}</div>}
-          {!diff && !error && <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>טוען…</div>}
-          {nothing && <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>אין הבדלים בין הבראנץ׳ ל-main.</div>}
+          {!diff && !error && <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{L('Loading…', 'טוען…')}</div>}
+          {nothing && <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{L('No differences between the branch and main.', 'אין הבדלים בין הבראנץ׳ ל-main.')}</div>}
 
           {diff && diff.fields.map(f => (
             <div key={f.key} style={{ marginBottom: 14 }}>
@@ -4777,7 +4867,7 @@
             </div>
           ))}
 
-          {diff && [['סקילים', diff.skills], ['כלים', diff.tools]].map(([label, items]) => items.length > 0 && (
+          {diff && [[L('Skills', 'סקילים'), diff.skills], [L('Tools', 'כלים'), diff.tools]].map(([label, items]) => items.length > 0 && (
             <div key={label} style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5 }}>{label}</div>
               {items.map(it => (
@@ -4785,7 +4875,7 @@
                   <span style={{ color: it.change === 'added' ? 'var(--success)'
                                        : it.change === 'removed' ? 'var(--danger)' : 'var(--warning)',
                                  fontWeight: 700, marginInlineEnd: 8 }}>
-                    {it.change === 'added' ? 'נוסף' : it.change === 'removed' ? 'נמחק' : 'שונה'}
+                    {it.change === 'added' ? L('added', 'נוסף') : it.change === 'removed' ? L('removed', 'נמחק') : L('changed', 'שונה')}
                   </span>
                   {it.name || it.id}
                 </div>
@@ -4798,12 +4888,12 @@
               style={{ padding: '9px 20px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                        background: 'var(--primary)', color: '#0a0a0a', fontWeight: 700, fontSize: 13,
                        opacity: busy || nothing ? 0.5 : 1 }}>
-              {busy ? 'ממזג…' : 'מזג והפעל'}
+              {busy ? L('Merging…', 'ממזג…') : L('Merge and go live', 'מזג והפעל')}
             </button>
             <button onClick={onClose}
               style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                        background: 'transparent', border: '1px solid var(--border)',
-                       color: 'var(--text-2)', fontWeight: 600, fontSize: 13 }}>ביטול</button>
+                       color: 'var(--text-2)', fontWeight: 600, fontSize: 13 }}>{L('Cancel', 'ביטול')}</button>
           </div>
         </div>
       </div>
@@ -4931,7 +5021,7 @@
     if (picked && !loaded) {
       return (
         <div style={{ padding: 40, color: 'var(--text-muted)', fontSize: 14 }}>
-          טוען את <span dir="ltr" style={{ fontFamily: MONO }}>{picked}</span>…
+          {L('Loading', 'טוען את')} <span dir="ltr" style={{ fontFamily: MONO }}>{picked}</span>…
         </div>
       );
     }
@@ -5239,7 +5329,8 @@
 
     const sections = [
       { id: 'intro',        label: 'מה זה 8Legs.ai' },
-      { id: 'agents',       label: 'סוכנים ועמוד הבית' },
+      { id: 'home',         label: 'דף הבית — צ׳אט' },
+      { id: 'agents',       label: 'סוכנים' },
       { id: 'config',       label: 'Configuration' },
       { id: 'skills',       label: 'Skills' },
       { id: 'tools',        label: 'Tools' },
@@ -5313,14 +5404,38 @@
           </UL>
 
           <H3>איפה כל דבר יושב</H3>
-          <P>בסייד-בר: <strong>Agents</strong> (הסוכנים שלך), <strong>Assistant</strong> (היסטוריית השיחות עם האסיסטנטים), <strong>Interactions</strong> (שיחות של משתמשי קצה), <strong>Documentation</strong> (הדף הזה), <strong>Settings</strong>, ו-<strong>Admin</strong> למשתמשי אדמין בלבד. הכפתור <strong>שאל את האסיסטנט</strong> בפינה הימנית התחתונה פותח את אסיסטנט המערכת מכל מסך.</P>
+          <P>בסייד-בר: <strong>Home</strong> (צ'אט — כאן בונים סוכן בשיחה), <strong>Agents</strong> (הסוכנים שלך), <strong>Interactions</strong> (שיחות של משתמשי קצה), <strong>Documentation</strong> (הדף הזה), <strong>Settings</strong>, ו-<strong>Admin</strong> למשתמשי אדמין בלבד. מתחת לפריטים האלה רשימת השיחות האחרונות ב-Home, ובתחתיתה <strong>כל השיחות →</strong> להיסטוריה המלאה של כל האסיסטנטים. הכפתור <strong>שאל את האסיסטנט</strong> בפינה הימנית התחתונה פותח את אסיסטנט המערכת מכל מסך חוץ מ-Home, שהוא כבר צ'אט.</P>
+        </div>
+      ),
+
+      /* ─────────────── HOME ─────────────── */
+      home: (
+        <div dir="rtl">
+          <H2>דף הבית — צ׳אט</H2>
+          <P>הדבר הראשון שרואים אחרי התחברות הוא שיחה, לא רשימה: הלוגו באמצע המסך, ברכה לפי השעה עם שם המשתמש, ושדה אחד מתחתיו. מה שכותבים שם הולך לאסיסטנט המערכת — אותו אסיסטנט שמתפעל את הפלטפורמה, עם כל הכלים שלו.</P>
+
+          <H3>ראיון — כשמבקשים סוכן חדש</H3>
+          <P>בכל פעם שמבקשים לבנות סוכן חדש, בכל ניסוח, השיחה הופכת לראיון: שאלה אחת בכל פעם — מה הסוכן צריך לעשות ולמי, באיזו שפה הוא מדבר, מאיפה מגיעות התשובות ובאיזה ערוץ הוא חי. ברגע שיש מספיק מידע הוא קורא ל-<Code>create_agent</Code> באמצע השיחה וממשיך לחדד משם, במקום לחכות לסוף. זה לא תלוי בכמה סוכנים כבר יש בחשבון — גם הסוכן העשירי מתחיל בראיון.</P>
+
+          <H3>בלי ראיון — שאלות ושינויים</H3>
+          <P>שאלת ידע על הפלטפורמה, או שינוי בסוכן שכבר קיים, לא מפעילים ראיון: הוא עונה או מבצע בתור אחד, ושואל שאלה חוזרת רק אם באמת אי אפשר בלעדיה. "תעשה אותו יותר ידידותי" הוא שינוי, לא סוכן חדש.</P>
+
+          <H3>כפתורי תשובה</H3>
+          <P>כששאלה של האסיסטנט יש לה כמה תשובות סבירות, הוא מסיים את ההודעה בשורת <Code>::options::</Code> והמסך הופך אותה לכפתורים. מודל שלא כותב את השורה הזאת פשוט מקבל הודעה בלי כפתורים — שום דבר לא נשבר.</P>
+
+          <H3>הכרטיס שמתמלא</H3>
+          <P>בצד המסך יושב כרטיס של הסוכן שנבנה בשיחה הזאת: שם ואווטאר, תפקיד, Skills, Tools וערוץ — כל שורה מסומנת כשהיא מתמלאת, עם פס התקדמות ושני כפתורים, <strong>פתח בעורך</strong> ו<strong>בדוק בצ׳אט</strong>. הכרטיס מופיע רק כשיש מה להראות: בראיון, או אחרי שהאסיסטנט יצר או שינה סוכן. במובייל הוא נוסע בתוך השיחה עצמה.</P>
+
+          <H3>שיחות קודמות</H3>
+          <P>כל שיחה נשמרת אוטומטית אחרי כל תור, ומופיעה ברשימה בסייד-בר מתחת לפריטי הניווט. לחיצה על שיחה פותחת אותה בדף הבית וממשיכה אותה; ה-<strong>+</strong> שליד הכותרת מתחיל שיחה חדשה.</P>
+          <Warn>בלי מפתח API במסך Settings אי אפשר לשלוח — השדה נעול והמסך אומר את זה.</Warn>
         </div>
       ),
 
       /* ─────────────── AGENTS ─────────────── */
       agents: (
         <div dir="rtl">
-          <H2>סוכנים ועמוד הבית</H2>
+          <H2>סוכנים</H2>
 
           <H3>חשבון והתחברות</H3>
           <P>ההרשמה דורשת שם משתמש, סיסמה וטלפון. כל סוכן שייך למשתמש שיצר אותו, ומשתמש רגיל רואה רק את הסוכנים שלו. ההתחברות מחזיקה טוקן ב-<Code>sessionStorage</Code>, כך שסגירת הדפדפן מנתקת.</P>
@@ -5331,7 +5446,7 @@
           <Warn>הסוכנים האלה לא יענו עד שיוגדר מפתח API לחשבון במסך Settings.</Warn>
 
           <H3>כרטיס סוכן</H3>
-          <P>כל סוכן בעמוד הבית מוצג בכרטיס עם האווטאר, השם, תאריך היצירה ומספר הסקילים והכלים. בתחתית הכרטיס חמש פעולות:</P>
+          <P>כל סוכן בטאב <strong>Agents</strong> מוצג בכרטיס עם האווטאר, השם, תאריך היצירה ומספר הסקילים והכלים. בתחתית הכרטיס חמש פעולות:</P>
           <UL>
             <li><strong>Edit</strong> — פתיחת עורך הסוכן (גם לחיצה על הכרטיס עצמו)</li>
             <li><strong>Test</strong> — שיחה אמיתית עם הסוכן, בדיוק כמו של משתמש קצה: רצה בשרת, מנותבת לפי אחוזי הבראנצ'ים, ונרשמת ב-Interactions</li>
@@ -5466,7 +5581,7 @@ def run(**kwargs):
       platform: (
         <div dir="rtl">
           <H2>אסיסטנט המערכת</H2>
-          <P>הכפתור <strong>שאל את האסיסטנט</strong> בפינה הימנית התחתונה, בכל מסך. אפשר להגיע אליו גם מ-<strong>Build with the assistant</strong> בראש עמוד הסוכנים. לחיצה פותחת צ'אט צף ולחיצה נוספת מקפלת אותו — כך שאפשר לבקש שינוי בזמן שרואים את מה שרוצים לשנות. זה לא סוכן שאתה בונה אלא אסיסטנט שמתפעל את המערכת בשבילך — הוא מבצע פעולות, לא רק מסביר איפה ללחוץ.</P>
+          <P>אותו אסיסטנט מופיע בשני מקומות: <strong>דף הבית</strong>, שהוא שיחה איתו על כל המסך, והכפתור <strong>שאל את האסיסטנט</strong> בפינה הימנית התחתונה בכל מסך אחר. <strong>Build with the assistant</strong> בראש טאב Agents מעביר לדף הבית עם השאלה כבר מוקלדת. לחיצה על הכפתור הצף פותחת צ'אט צף ולחיצה נוספת מקפלת אותו — כך שאפשר לבקש שינוי בזמן שרואים את מה שרוצים לשנות. זה לא סוכן שאתה בונה אלא אסיסטנט שמתפעל את המערכת בשבילך — הוא מבצע פעולות, לא רק מסביר איפה ללחוץ.</P>
 
           <H3>מה הוא עושה</H3>
           <UL>
@@ -5536,7 +5651,7 @@ def run(**kwargs):
       history: (
         <div dir="rtl">
           <H2>היסטוריית אסיסטנטים</H2>
-          <P>לשונית <strong>Assistant chats</strong> בסייד-בר שומרת כל שיחה עם כל אחד משלושת האסיסטנטים — של המערכת, של הכלים ושל הסקילים.</P>
+          <P><strong>כל השיחות →</strong>, מתחת לרשימת השיחות בסייד-בר, שומרת כל שיחה עם כל אחד משלושת האסיסטנטים — של המערכת, של הכלים ושל הסקילים. רשימת השיחות עצמה בסייד-בר מראה רק את האחרונות של אסיסטנט המערכת, אלה שנפתחות בדף הבית.</P>
 
           <H3>מה יש בה</H3>
           <UL>
@@ -5546,7 +5661,7 @@ def run(**kwargs):
             <li>פתיחת שיחה מציגה את התמלול המלא — כולל <strong>כל קריאה לכלי</strong> עם הפרמטרים והתוצאה, וסימון על מה שנכתב לעורך</li>
             <li>קפיצה לסוכן שהשיחה עסקה בו, ומחיקת שיחה מההיסטוריה</li>
           </UL>
-          <P>השיחה נשמרת אוטומטית אחרי כל תור. שיחה חדשה מתחילה כשלוחצים "שיחה חדשה" בצ'אט הצף, או כשעוברים לכלי או לסקיל אחר.</P>
+          <P>השיחה נשמרת אוטומטית אחרי כל תור. שיחה חדשה מתחילה כשלוחצים "שיחה חדשה" בדף הבית או בצ'אט הצף, או כשעוברים לכלי או לסקיל אחר.</P>
           <Tip>ההיסטוריה שימושית במיוחד כדי לחזור לקוד או לפרומפט שאסיסטנט כתב לך לפני שבוע, ולראות מה בדיוק הוא שינה ולמה.</Tip>
         </div>
       ),
@@ -5914,7 +6029,7 @@ npm run migrate            # הרצה בפועל`}</Block>
   }
 
   /* ─────────────────── AGENT LIST VIEW ─────────────────── */
-  function AgentListView({ agents, onNew, onEdit, onTest, onDuplicate, onDelete, onExport }) {
+  function AgentListView({ agents, onNew, onEdit, onTest, onDuplicate, onDelete, onExport, onBuildInChat }) {
     const [query, setQuery]   = useState('');
     const [branch, setBranch] = useState('');
     const [channel, setChannel] = useState('');
@@ -5965,7 +6080,7 @@ npm run migrate            # הרצה בפועל`}</Block>
                   that something here can build one for them. */}
               <Btn icon={Icons.sparkle}
                 title="Let the assistant build an agent for you"
-                onClick={() => askAssistant('בנה לי סוכן חדש. שאל אותי מה הוא צריך לעשות.')}>
+                onClick={() => onBuildInChat(NEW_AGENT_ASK())}>
                 Build with the assistant
               </Btn>
               <Btn variant="primary" icon={Icons.plus} onClick={onNew}>New agent</Btn>
@@ -6004,7 +6119,7 @@ npm run migrate            # הרצה בפועל`}</Block>
               </div>
             </div>
             <Btn variant="primary" icon={Icons.sparkle}
-              onClick={() => askAssistant('בנה לי סוכן ראשון. שאל אותי מה הוא צריך לעשות.')}>
+              onClick={() => onBuildInChat(FIRST_AGENT_ASK())}>
               Build my first agent with the assistant
             </Btn>
             <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>or press “New agent” to build it yourself</div>
@@ -6014,7 +6129,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             {/* Searching is looking for something that exists — the tile for
                 making a new one only gets in the way then. */}
             {!query && !branch && !channel && (
-              <NewAgentTile onNew={onNew} onAssistant={() => askAssistant('בנה לי סוכן חדש. שאל אותי מה הוא צריך לעשות.')} />
+              <NewAgentTile onNew={onNew} onAssistant={() => onBuildInChat(NEW_AGENT_ASK())} />
             )}
             {shown.map(a => <AgentCard {...cardProps(a)} />)}
           </div>
@@ -6501,7 +6616,7 @@ npm run migrate            # הרצה בפועל`}</Block>
         }
         msgs = [...msgs, { role: 'assistant', content: d.content }, { role: 'user', content: results }];
       }
-      throw new Error('יותר מדי סבבי כלים — נסה לפרק את הבקשה');
+      throw new Error(L('Too many tool rounds — try breaking the request up', 'יותר מדי סבבי כלים — נסה לפרק את הבקשה'));
     }
 
     // OpenAI and Ollama share the chat-completions shape.
@@ -6533,7 +6648,7 @@ npm run migrate            # הרצה בפועל`}</Block>
       }
       msgs = [...msgs, choice.message, ...toolMsgs];
     }
-    throw new Error('יותר מדי סבבי כלים — נסה לפרק את הבקשה');
+    throw new Error(L('Too many tool rounds — try breaking the request up', 'יותר מדי סבבי כלים — נסה לפרק את הבקשה'));
   }
 
   const STR = (desc) => ({ type: 'string', description: desc });
@@ -6757,12 +6872,23 @@ npm run migrate            # הרצה בפועל`}</Block>
     ].join('\n'),
   };
 
-  function PlatformAssistantView({ agents, onAgentsChanged, language, compact, seed }) {
+  /**
+   * The platform assistant as an engine: the conversation, the tool loop and
+   * the saving, with no opinion about how any of it looks. Two screens dress
+   * it — the Assistant chat and the home screen.
+   *
+   * `systemExtra` is appended to the system prompt (the home screen adds the
+   * first-agent interview), and `focusAgentId` is whichever agent this
+   * conversation last created or changed, so a screen can show it being built.
+   */
+  function usePlatformAssistant({ agents, onAgentsChanged, language, seed, systemExtra, onSaved }) {
     const [messages, setMessages] = useState([]);   // { id, role: user|assistant|tool|error, … }
     const [input, setInput] = useState('');
     const [pending, setPending] = useState(false);
+    const [focusAgentId, setFocusAgentId] = useState(null);
     const listRef = useRef(null);
     const sessionIdRef = useRef(uid());
+    const [sessionId, setSessionId] = useState(sessionIdRef.current);
     const agentsRef = useRef(agents);
     useEffect(() => { agentsRef.current = agents; }, [agents]);
 
@@ -6777,7 +6903,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     useEffect(() => {
       if (!seed || !seed.text || seed.nonce === seededRef.current) return;
       seededRef.current = seed.nonce;
-      if (accountApiUsable()) send(seed.text);
+      if (accountApiUsable()) send(seed.text, { fresh: seed.fresh });
       else setInput(seed.text);
     }, [seed]);
 
@@ -6795,12 +6921,28 @@ npm run migrate            # הרצה בפועל`}</Block>
           ? { role: 'tool', name: m.name, input: m.input, result: m.result }
           : { role: m.role, content: m.content }),
       });
+      if (onSaved) onSaved();
     }
 
     function startNewChat() {
       setMessages([]);
       setInput('');
+      setFocusAgentId(null);
       sessionIdRef.current = uid();
+      setSessionId(sessionIdRef.current);
+    }
+
+    /* Reopening a saved conversation: its rows become the same message shapes
+       the live chat uses, and further turns keep writing to that same row. */
+    function loadSession(session) {
+      if (!session) return;
+      sessionIdRef.current = session.id;
+      setSessionId(session.id);
+      setInput('');
+      setFocusAgentId(null);
+      setMessages((session.messages || []).map(m => m.role === 'tool'
+        ? { id: uid(), role: 'tool', name: m.name, input: m.input, result: m.result }
+        : { id: uid(), role: m.role, content: m.content }));
     }
 
     function findAgent(id) {
@@ -6863,6 +7005,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             tools: (input.tools || []).map(toolShape),
           });
           await apiCreate(created);
+          setFocusAgentId(created.id);
           await onAgentsChanged();
           return done(`Created agent "${created.name}" with id ${created.id}.`);
         }
@@ -6899,6 +7042,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             });
           }
           await apiUpdate(updated);
+          setFocusAgentId(updated.id);
           await onAgentsChanged();
           const touched = Object.keys(input).filter(k => k !== 'agent_id');
           return done(`Updated "${updated.name}" (${touched.join(', ') || 'nothing'}).`);
@@ -6907,7 +7051,7 @@ npm run migrate            # הרצה בפועל`}</Block>
         if (name === 'delete_agent') {
           const agent = findAgent(input.agent_id);
           if (!agent) return done(`No agent with id ${input.agent_id}.`);
-          const ok = window.confirm(`למחוק את הסוכן "${agent.name}" וכל מה ששייך לו?\n\nDelete the agent "${agent.name}" and everything it owns?`);
+          const ok = window.confirm(L(`Delete the agent "${agent.name}" and everything it owns?`, `למחוק את הסוכן "${agent.name}" וכל מה ששייך לו?`));
           if (!ok) return done('The user declined the deletion. Nothing was deleted.');
           await apiDelete(agent.id);
           await onAgentsChanged();
@@ -6980,19 +7124,31 @@ npm run migrate            # הרצה בפועל`}</Block>
       }
     }
 
-    async function send(text) {
+    /* `fresh` asks the question in a conversation of its own: a link from
+       somewhere else in the app means a new chat, not a turn inside whatever
+       was left open here. */
+    async function send(text, { fresh } = {}) {
       const question = (text || '').trim();
       if (!question || pending || noKey) return;
       setInput('');
-      const history = [
-        ...messages.filter(m => m.role === 'user' || m.role === 'assistant').map(m => ({ role: m.role, content: m.content })),
-        { role: 'user', content: question },
-      ];
-      setMessages(m => [...m, { id: uid(), role: 'user', content: question }]);
+      const history = fresh
+        ? [{ role: 'user', content: question }]
+        : [
+            ...messages.filter(m => m.role === 'user' || m.role === 'assistant').map(m => ({ role: m.role, content: m.content })),
+            { role: 'user', content: question },
+          ];
+      if (fresh) {
+        sessionIdRef.current = uid();
+        setSessionId(sessionIdRef.current);
+        setFocusAgentId(null);
+        setMessages([{ id: uid(), role: 'user', content: question }]);
+      } else {
+        setMessages(m => [...m, { id: uid(), role: 'user', content: question }]);
+      }
       setPending(true);
       try {
         const reply = await callWithToolDefs({
-          system: buildPlatformAssistantPrompt(agentsRef.current, language),
+          system: buildPlatformAssistantPrompt(agentsRef.current, language) + (systemExtra ? '\n\n' + systemExtra : ''),
           history,
           tools: PLATFORM_TOOLS,
           execute,
@@ -7010,6 +7166,14 @@ npm run migrate            # הרצה בפועל`}</Block>
       }
     }
 
+    return { messages, input, setInput, pending, send, noKey, startNewChat, loadSession, listRef, focusAgentId, sessionId };
+  }
+
+  /* ─────────────────── ASSISTANT CHAT ─────────────────── */
+  function PlatformAssistantView({ agents, onAgentsChanged, language, compact, seed }) {
+    const { messages, input, setInput, pending, send, noKey, startNewChat, listRef } =
+      usePlatformAssistant({ agents, onAgentsChanged, language, seed });
+
     const opening = PLATFORM_OPENING[language === 'en' ? 'en' : 'he'];
     const dir = language === 'en' ? 'ltr' : 'rtl';
 
@@ -7020,22 +7184,21 @@ npm run migrate            # הרצה בפועל`}</Block>
           <div style={{ flex: 1, minWidth: 0 }}>
             {!compact && <div style={{ fontWeight: 800, fontSize: 22, letterSpacing: '-0.02em' }}>Assistant</div>}
             <div style={{ fontSize: compact ? 11 : 12, color: 'var(--text-muted)', marginTop: compact ? 0 : 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {language === 'en' ? 'Operates the platform for you' : 'מתפעל את המערכת בשבילך'} · {accountApi().model || 'no model'}
+              {L('Operates the platform for you', 'מתפעל את המערכת בשבילך')} · {accountApi().model || 'no model'}
             </div>
           </div>
           {messages.length > 0 && (
             <button onClick={startNewChat}
               style={{ fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 'var(--r-md)', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-2)', flexShrink: 0 }}>
-              {language === 'en' ? 'New chat' : 'שיחה חדשה'}
+              {L('New chat', 'שיחה חדשה')}
             </button>
           )}
         </div>
 
         {noKey && (
           <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 'var(--r-md)', padding: '10px 14px', fontSize: 13, color: 'var(--warning)', marginBottom: 12 }}>
-            {language === 'en'
-              ? 'Set an API key in Settings to use the assistant.'
-              : 'כדי להשתמש באסיסטנט צריך להגדיר מפתח API במסך Settings.'}
+            {L('Set an API key in Settings to use the assistant.',
+                'כדי להשתמש באסיסטנט צריך להגדיר מפתח API במסך Settings.')}
           </div>
         )}
 
@@ -7081,7 +7244,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             );
           })}
 
-          {pending && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{language === 'en' ? 'Working…' : 'עובד…'}</div>}
+          {pending && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{L('Working…', 'עובד…')}</div>}
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginTop: 12, flexShrink: 0 }}>
@@ -7092,12 +7255,538 @@ npm run migrate            # הרצה בפועל`}</Block>
             dir="auto"
             rows={2}
             disabled={pending || noKey}
-            placeholder={language === 'en' ? 'Ask for anything — build an agent, change one, or ask how something works…' : 'בקש כל דבר — לבנות סוכן, לשנות סוכן, או לשאול איך משהו עובד…'}
+            placeholder={L('Ask for anything — build an agent, change one, or ask how something works…', 'בקש כל דבר — לבנות סוכן, לשנות סוכן, או לשאול איך משהו עובד…')}
             style={{ flex: 1, resize: 'none', fontSize: 13.5, padding: '10px 14px', borderRadius: 'var(--r-md)' }}
           />
           <button onClick={() => send(input)} disabled={pending || noKey || !input.trim()}
             style={{ background: 'var(--primary)', color: '#0a0a0a', padding: '0 18px', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 17, opacity: pending || noKey || !input.trim() ? 0.5 : 1 }}>➤</button>
         </div>
+      </div>
+    );
+  }
+
+  /* ─────────────────── HOME ─────────────────── */
+  /*
+   * The first screen of the product is a conversation, not a list. An empty
+   * account is walked through building its first agent one question at a time;
+   * an account that already has agents gets the same chat with the assistant's
+   * full run of the platform behind it.
+   */
+
+  /** What "build it for me" asks, in the language the interface is in. */
+  function FIRST_AGENT_ASK() {
+    return L('Build me my first agent. Ask me what it needs to do.',
+             'בנה לי סוכן ראשון. שאל אותי מה הוא צריך לעשות.');
+  }
+  function NEW_AGENT_ASK() {
+    return L('Build me a new agent. Ask me what it needs to do.',
+             'בנה לי סוכן חדש. שאל אותי מה הוא צריך לעשות.');
+  }
+
+  /**
+   * The time of day, by the clock on this machine. Night belongs to the
+   * evening — "good night" is a goodbye, not a greeting.
+   */
+  function greeting(name) {
+    const h = new Date().getHours();
+    const part = (h >= 5 && h < 12) ? L('Good morning', 'בוקר טוב')
+               : (h >= 12 && h < 17) ? L('Good afternoon', 'אחר הצהריים טובים')
+               : L('Good evening', 'ערב טוב');
+    return name ? `${part}, ${name}` : part;
+  }
+
+  const HOME_COPY = {
+    he: {
+      firstSub: 'ספר לי מה הסוכן שלך צריך לעשות — אשאל כמה שאלות ואבנה אותו איתך.',
+      backSub: 'אפשר לבנות סוכן חדש, לשנות קיים, או לשאול איך משהו עובד.',
+      placeholder: 'למשל: סוכן שעונה ללקוחות בוואטסאפ על מצב הזמנה…',
+      answer: 'כתוב תשובה…',
+      buildingFirst: 'בונים את הסוכן הראשון',
+      building: 'בונים סוכן',
+      talking: 'שיחה עם האסיסטנט',
+      newChat: 'שיחה חדשה',
+      thinking: 'חושב…',
+      noKey: 'כדי להתחיל צריך להגדיר מפתח API במסך Settings.',
+      foot: '8Legs.ai בונה את הסוכן בפועל — פרומפט, סקילים וכלים — ולא רק מסביר איך.',
+      firstChips: [
+        'סוכן שירות לקוחות',
+        'סוכן שמתאם פגישות',
+        'סוכן שעונה מתוך המסמכים שלי',
+        'מה זה Skill?',
+      ],
+      backChips: [
+        'בנה לי סוכן חדש',
+        'מה קרה בשיחות מאתמול?',
+        'שפר לי את הפרומפט של סוכן',
+      ],
+      card: {
+        head: 'הסוכן שנבנה',
+        draft: 'טיוטה · נשמר אוטומטית',
+        waiting: 'עוד לא התחלנו',
+        pendingName: 'ייקבע בשיחה',
+        role: 'תפקיד', lang: 'שפה', skills: 'Skills', tools: 'Tools',
+        channel: 'ערוץ', knowledge: 'ידע',
+        none: 'עוד לא',
+        noChannel: 'טרם חובר',
+        widget: 'Widget באתר',
+        open: 'פתח בעורך',
+        test: 'בדוק בצ׳אט',
+        note: 'אפשר לפתוח אותו ב־Agents בכל רגע — השיחה ממשיכה מאיפה שהפסקת.',
+      },
+    },
+    en: {
+      firstSub: 'Tell me what your agent needs to do — I will ask a few questions and build it with you.',
+      backSub: 'Build a new agent, change one you have, or ask how something works.',
+      placeholder: 'e.g. an agent that answers customers on WhatsApp about their order…',
+      answer: 'Type your answer…',
+      buildingFirst: 'Building your first agent',
+      building: 'Building an agent',
+      talking: 'Talking to the assistant',
+      newChat: 'New chat',
+      thinking: 'Thinking…',
+      noKey: 'Set an API key in Settings to get started.',
+      foot: '8Legs.ai builds the agent for real — prompt, skills and tools — not just explains how.',
+      firstChips: [
+        'A customer support agent',
+        'An agent that books meetings',
+        'An agent that answers from my documents',
+        'What is a Skill?',
+      ],
+      backChips: [
+        'Build me a new agent',
+        'What happened in yesterday’s conversations?',
+        'Improve an agent’s prompt',
+      ],
+      card: {
+        head: 'The agent being built',
+        draft: 'Draft · saved automatically',
+        waiting: 'Not started yet',
+        pendingName: 'decided in the chat',
+        role: 'Role', lang: 'Language', skills: 'Skills', tools: 'Tools',
+        channel: 'Channel', knowledge: 'Knowledge',
+        none: 'not yet',
+        noChannel: 'not connected',
+        widget: 'Website widget',
+        open: 'Open in editor',
+        test: 'Test in chat',
+        note: 'You can open it under Agents at any time — this chat picks up where it left off.',
+      },
+    },
+  };
+
+  /**
+   * What the home screen adds to the assistant's own system prompt. Only the
+   * first-agent case changes how it behaves; an account that already has
+   * agents gets the assistant it always had.
+   */
+  function homeSystemExtra(firstAgent, language) {
+    const lines = [
+      'You are answering inside the 8Legs.ai home screen — the first thing the user sees, a single conversation.',
+      'When a question of yours has a small set of likely answers, end that message with one final line of exactly this form, and nothing after it:',
+      '::options:: first | second | third',
+      'The screen turns that line into buttons, so keep each option to a few words, at most four of them, and never put anything the user must read there.',
+      '',
+      'Which of these two the turn is decides everything about how you answer:',
+      '',
+      'A NEW AGENT is wanted — the user asks you to build, create or set up an agent, however they word it, whether it is their first or their tenth. Run the interview:',
+      '- Ask ONE question per message, short, and never more than five questions before the agent exists.',
+      '- Start from what the agent should do and who it serves. Then cover, in this order and only as far as they matter: the language it speaks to its users, where its answers come from (an API, documents the user will upload, or nothing yet), and the channel it will live on (the website widget, WhatsApp, or email).',
+      '- Do not wait for every answer. As soon as you know the job and the language, call create_agent and say in one line what you built; keep refining it with update_agent as the remaining answers come in.',
+      '- Never open with a menu of what you can do. Ask the next question.',
+      '',
+      'ANYTHING ELSE — a question about the platform, or a change to an agent that already exists. Do NOT interview:',
+      '- Answer it, or make the change with your tools, in one turn.',
+      '- Ask a question back only when you genuinely cannot proceed without the answer, and then only that one.',
+      '- Never turn a change into a questionnaire. "Make it friendlier" is a change, not a new agent.',
+    ];
+    if (firstAgent) {
+      lines.push(
+        '',
+        'This account has no agents at all yet, so the user is new here: no jargon without a half-sentence of explanation the first time it appears.',
+      );
+    }
+    lines.push('', language === 'en' ? 'Speak English.' : 'דבר עברית.');
+    return lines.join('\n');
+  }
+
+  /* The assistant marks its suggested answers with a final ::options:: line.
+     A model that ignores it simply produces a message with no buttons. */
+  function splitOptions(content) {
+    const text = content || '';
+    const m = text.match(/\n?::options::[ \t]*(.+?)[ \t]*$/);
+    if (!m) return { body: text, options: [] };
+    const options = m[1].split('|').map(o => o.trim()).filter(Boolean).slice(0, 4);
+    return { body: text.slice(0, m.index).trimEnd(), options };
+  }
+
+  /* The first line of the base prompt that reads like a sentence — enough to
+     show on the card what this agent is for. */
+  function agentRoleLine(agent) {
+    const line = (agent.basePrompt || '')
+      .split('\n')
+      .map(l => l.replace(/^#+\s*/, '').trim())
+      .find(l => l.length > 12);
+    if (!line) return '';
+    return line.length > 74 ? line.slice(0, 74) + '…' : line;
+  }
+
+  /** The agent this conversation is building, filling in as answers arrive. */
+  function AgentBuildCard({ agent, copy, dir, onOpen, onTest, compact }) {
+    const c = copy.card;
+    const skills = agent ? (agent.skills || []).map(s => s.name).filter(Boolean) : [];
+    const tools = agent ? (agent.tools || []).map(t => t.name).filter(Boolean) : [];
+    const channel = !agent ? '' :
+      (agent.whatsapp && agent.whatsapp.enabled) ? 'WhatsApp' :
+      agent.emailEnabled ? 'Email' : '';
+    const role = agent ? agentRoleLine(agent) : '';
+
+    const rows = [
+      { k: c.role,      v: role,                   on: !!role },
+      { k: c.skills,    v: skills.join(', '),      on: skills.length > 0 },
+      { k: c.tools,     v: tools.join(', '),       on: tools.length > 0 },
+      { k: c.channel,   v: channel || c.noChannel, on: !!channel },
+    ];
+    const done = rows.filter(r => r.on).length + (agent ? 1 : 0);
+    const pct = Math.round((done / (rows.length + 1)) * 100);
+
+    return (
+      <div dir={dir} style={{
+        background: 'var(--bg-card)', border: '1px solid var(--border)',
+        borderRadius: 'var(--r-lg)', padding: 14, boxShadow: 'var(--shadow)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, minWidth: 0 }}>
+          <div style={{
+            width: 38, height: 38, borderRadius: 11, flexShrink: 0, background: 'var(--primary-dim)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            {agent ? <AvatarDisplay value={agent.avatar} size={20} /> : <span style={{ color: 'var(--primary)', display: 'flex' }}>{Icons.sparkle}</span>}
+          </div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontWeight: 800, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {agent ? agent.name : c.pendingName}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+              {agent ? c.draft : c.waiting}
+            </div>
+          </div>
+        </div>
+
+        {rows.map(r => (
+          <div key={r.k} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 0', borderTop: '1px solid var(--border)', fontSize: 12 }}>
+            <span style={{
+              width: 15, height: 15, borderRadius: '50%', flexShrink: 0, fontSize: 9,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: r.on ? 'var(--success)' : 'var(--bg-input)',
+              color: r.on ? '#fff' : 'var(--text-muted)',
+              border: r.on ? 'none' : '1px solid var(--border)',
+            }}>{r.on ? '✓' : '·'}</span>
+            <span style={{ color: 'var(--text-muted)', width: 66, flexShrink: 0 }}>{r.k}</span>
+            <span dir="auto" style={{
+              flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              color: r.on ? 'var(--text)' : 'var(--text-muted)',
+              fontWeight: r.on ? 600 : 500, fontStyle: r.on ? 'normal' : 'italic',
+            }}>{r.on ? r.v : (r.v || c.none)}</span>
+          </div>
+        ))}
+
+        <div style={{ height: 5, borderRadius: 999, background: 'var(--bg-input)', overflow: 'hidden', marginTop: 12 }}>
+          <div style={{ height: '100%', width: `${pct}%`, background: 'var(--primary)', borderRadius: 999, transition: 'width 0.4s ease' }} />
+        </div>
+
+        {agent && (
+          <div style={{ display: 'flex', gap: 7, marginTop: 12 }}>
+            <Btn size="sm" icon={Icons.edit} onClick={() => onOpen(agent.id)}>{c.open}</Btn>
+            <Btn size="sm" icon={Icons.chat} onClick={() => onTest(agent.id)}>{c.test}</Btn>
+          </div>
+        )}
+        {!compact && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10, lineHeight: 1.6 }}>{c.note}</div>}
+      </div>
+    );
+  }
+
+  /** The one input, centred on an empty screen and docked once a chat starts. */
+  function HomeComposer({ value, onChange, onSend, disabled, placeholder, dir, width = 720 }) {
+    const [focus, setFocus] = useState(false);
+    return (
+      <div dir={dir} style={{
+        width: `min(${width}px, 100%)`, margin: '0 auto',
+        background: 'var(--bg-card)', border: `1px solid ${focus ? 'var(--primary)' : 'var(--border)'}`,
+        borderRadius: 26, boxShadow: focus ? '0 0 0 4px var(--primary-dim), var(--shadow)' : 'var(--shadow)',
+        padding: '5px 6px', display: 'flex', alignItems: 'flex-end', gap: 8,
+        transition: 'border-color 0.18s, box-shadow 0.18s',
+      }}>
+        <textarea
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          onFocus={() => setFocus(true)}
+          onBlur={() => setFocus(false)}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); } }}
+          dir="auto"
+          rows={1}
+          disabled={disabled}
+          placeholder={placeholder}
+          style={{
+            flex: 1, resize: 'none', border: 'none', background: 'transparent', outline: 'none',
+            boxShadow: 'none', fontSize: 14.5, lineHeight: 1.6, padding: '13px 12px', maxHeight: 150,
+          }}
+        />
+        <button onClick={onSend} disabled={disabled || !value.trim()} title="Send"
+          style={{
+            width: 40, height: 40, borderRadius: '50%', flexShrink: 0, marginBottom: 4,
+            background: 'var(--primary)', color: '#0a0a0a', fontSize: 17, fontWeight: 800,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            opacity: disabled || !value.trim() ? 0.45 : 1,
+          }}>↑</button>
+      </div>
+    );
+  }
+
+  function HomeChatView({
+    agents, user, onAgentsChanged, language, onOpenAgent, onTestAgent,
+    onSaved, onSessionChange, restore, newChatNonce, seed, stacked,
+  }) {
+    const copy = HOME_COPY[language === 'en' ? 'en' : 'he'];
+    const dir = language === 'en' ? 'ltr' : 'rtl';
+    const hasAgents = (agents || []).length > 0;
+
+    /* Whether this account had any agent when the conversation started. It
+       only softens the wording for a newcomer — whether to interview is the
+       model's call, on what the user actually asked for. Held from the start
+       all the same, so the agent built mid-conversation does not change it. */
+    const firstRunRef = useRef(!hasAgents);
+    const firstRun = firstRunRef.current;
+
+    const {
+      messages, input, setInput, pending, send, noKey, startNewChat, loadSession, listRef, focusAgentId, sessionId,
+    } = usePlatformAssistant({
+      agents, onAgentsChanged, language, onSaved, seed,
+      systemExtra: homeSystemExtra(!firstRunRef.current, language),
+    });
+
+    useEffect(() => {
+      if (messages.length === 0) firstRunRef.current = !hasAgents;
+    }, [messages.length, hasAgents]);
+
+    /* Two things drive this chat from the outside: the sidebar picking a past
+       conversation, and the New chat button. Both arrive as a changing nonce so
+       the same pick twice still takes. */
+    useEffect(() => { if (onSessionChange) onSessionChange(sessionId); }, [sessionId]);
+
+    const restoredRef = useRef(null);
+    useEffect(() => {
+      if (!restore || restore.nonce === restoredRef.current) return;
+      restoredRef.current = restore.nonce;
+      loadSession(restore.session);
+    }, [restore]);
+
+    const clearedRef = useRef(newChatNonce);
+    useEffect(() => {
+      if (newChatNonce === clearedRef.current) return;
+      clearedRef.current = newChatNonce;
+      startNewChat();
+    }, [newChatNonce]);
+
+    const started = messages.length > 0;
+    const built = (agents || []).find(a => a.id === focusAgentId) || null;
+    const chips = firstRun ? copy.firstChips : copy.backChips;
+    const hello = greeting(user && user.username);
+    const threadTitle = built
+      ? L(`Building ${built.name}`, `בונים את ${built.name}`)
+      : firstRun ? copy.buildingFirst : copy.talking;
+
+    const keyWarning = noKey && (
+      <div dir={dir} style={{
+        background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)',
+        borderRadius: 'var(--r-md)', padding: '9px 14px', fontSize: 12.5, color: 'var(--warning)',
+        width: 'min(720px, 100%)', margin: '0 auto 12px', textAlign: 'center',
+      }}>{copy.noKey}</div>
+    );
+
+    /* ── nothing said yet: the mark in the middle of the screen ── */
+    if (!started) {
+      return (
+        <div style={{
+          flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          padding: stacked ? '0 18px 18px' : '0 34px 50px', overflowY: 'auto',
+        }}>
+          <SpiderLogo size={stacked ? 150 : 200} />
+          <div dir={dir} style={{
+            fontSize: stacked ? 25 : 30, fontWeight: 800, letterSpacing: '-0.035em',
+            textAlign: 'center', marginTop: -4,
+          }}>{hello}</div>
+          <div dir={dir} style={{
+            fontSize: 13.5, color: 'var(--text-2)', textAlign: 'center',
+            marginTop: 9, lineHeight: 1.65, maxWidth: 520,
+          }}>{firstRun ? copy.firstSub : copy.backSub}</div>
+
+          <div style={{ width: '100%', marginTop: 24 }}>
+            {keyWarning}
+            <HomeComposer value={input} onChange={setInput} onSend={() => send(input)}
+              disabled={pending || noKey} placeholder={copy.placeholder} dir={dir} />
+          </div>
+
+          <div dir={dir} style={{
+            display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center',
+            marginTop: 18, width: 'min(760px, 100%)',
+          }}>
+            {chips.map(text => (
+              <button key={text} onClick={() => send(text)} disabled={noKey}
+                style={{
+                  background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-2)',
+                  borderRadius: 999, padding: '8px 15px', fontSize: 12.5, fontWeight: 600,
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.color = 'var(--text)'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-2)'; }}
+              >{text}</button>
+            ))}
+          </div>
+
+          {!stacked && (
+            <div dir={dir} style={{ marginTop: 26, fontSize: 11.5, color: 'var(--text-muted)' }}>{copy.foot}</div>
+          )}
+        </div>
+      );
+    }
+
+    /* ── in conversation: the mark shrinks into the corner ── */
+    const thread = (
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <div dir={dir} style={{
+          flexShrink: 0, display: 'flex', alignItems: 'center', gap: 11,
+          padding: stacked ? '8px 16px 6px' : '14px 30px 10px',
+        }}>
+          <div style={{
+            width: 38, height: 38, borderRadius: 12, flexShrink: 0,
+            background: 'var(--primary-dim)', border: '1px solid rgba(239,159,39,0.28)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <SpiderLogo size={34} busy={pending} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div dir="auto" style={{ fontWeight: 800, fontSize: 15, letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {threadTitle}
+            </div>
+            <div dir="ltr" style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2, textAlign: dir === 'rtl' ? 'right' : 'left' }}>
+              {accountApi().model || 'no model'}
+            </div>
+          </div>
+          <button onClick={startNewChat}
+            style={{
+              fontSize: 11.5, fontWeight: 650, padding: '6px 12px', borderRadius: 10, flexShrink: 0,
+              background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-2)',
+            }}>{copy.newChat}</button>
+        </div>
+
+        <div ref={listRef} style={{
+          flex: 1, minHeight: 0, overflowY: 'auto',
+          padding: stacked ? '4px 16px 8px' : '6px 30px 10px',
+        }}>
+          <div style={{ width: 'min(720px, 100%)', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {messages.map((msg, i) => {
+              if (msg.role === 'user') {
+                return (
+                  <div key={msg.id} dir="auto" style={{
+                    alignSelf: 'flex-end', maxWidth: '85%', background: 'var(--primary)', color: '#0a0a0a',
+                    padding: '10px 14px', borderRadius: '16px 16px 4px 16px', fontSize: 13.5,
+                    lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                  }}>{msg.content}</div>
+                );
+              }
+              if (msg.role === 'tool') {
+                const args = Object.entries(msg.input || {})
+                  .map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : String(v)}`)
+                  .join(', ');
+                return (
+                  <div key={msg.id} dir="ltr" style={{
+                    alignSelf: 'stretch', background: 'var(--bg-panel)', border: '1px solid var(--border)',
+                    borderRadius: 'var(--r-md)', padding: '8px 12px', fontSize: 11.5,
+                    fontFamily: MONO, color: 'var(--text-muted)',
+                  }}>
+                    <div style={{ color: 'var(--teal)' }}>🔧 {msg.name}({args.length > 120 ? args.slice(0, 120) + '…' : args})</div>
+                  </div>
+                );
+              }
+              if (msg.role === 'error') {
+                return (
+                  <div key={msg.id} dir="auto" style={{
+                    background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+                    color: 'var(--danger)', padding: '9px 13px', borderRadius: 'var(--r-md)',
+                    fontSize: 12.5, wordBreak: 'break-word',
+                  }}>{msg.content}</div>
+                );
+              }
+              /* Only the last answer's options are still worth tapping. */
+              const { body, options } = splitOptions(msg.content);
+              const live = i === messages.length - 1 && !pending;
+              return (
+                <div key={msg.id} dir="auto" style={{
+                  alignSelf: 'stretch', background: 'var(--bg-card)', border: '1px solid var(--border)',
+                  padding: '12px 15px', borderRadius: '16px 16px 16px 4px', fontSize: 13.5,
+                  lineHeight: 1.75, wordBreak: 'break-word',
+                }}>
+                  <div style={{ whiteSpace: 'pre-wrap' }}>{body}</div>
+                  {live && options.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 10 }}>
+                      {options.map(opt => (
+                        <button key={opt} onClick={() => send(opt)}
+                          style={{
+                            background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 999,
+                            padding: '6px 13px', fontSize: 12, fontWeight: 600, color: 'var(--text-2)',
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.color = 'var(--text)'; }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-2)'; }}
+                        >{opt}</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {pending && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '2px 2px 6px' }}>
+                <span className="typing-dot" /><span className="typing-dot" /><span className="typing-dot" />
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{copy.thinking}</span>
+              </div>
+            )}
+
+            {/* On a phone the card rides along with the conversation. */}
+            {stacked && (built || firstRun) && (
+              <AgentBuildCard agent={built} copy={copy} dir={dir} compact
+                onOpen={onOpenAgent} onTest={onTestAgent} />
+            )}
+          </div>
+        </div>
+
+        <div style={{ flexShrink: 0, padding: stacked ? '6px 16px 14px' : '6px 30px 20px' }}>
+          {keyWarning}
+          <HomeComposer value={input} onChange={setInput} onSend={() => send(input)}
+            disabled={pending || noKey} placeholder={copy.answer} dir={dir} />
+        </div>
+      </div>
+    );
+
+    if (stacked) return <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>{thread}</div>;
+
+    /* The column is about an agent taking shape. With nothing being built and
+       no interview running, it would be an empty checklist next to a chat
+       about something else entirely — so the conversation takes the width. */
+    if (!built && !firstRun) return <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>{thread}</div>;
+
+    return (
+      <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+        {thread}
+        <aside dir={dir} style={{
+          width: 310, flexShrink: 0, borderInlineStart: '1px solid var(--border)',
+          background: 'var(--bg-panel)', padding: '16px 18px', overflowY: 'auto',
+        }}>
+          {language === 'en'
+            ? <Eyebrow style={{ marginBottom: 11 }}>{copy.card.head}</Eyebrow>
+            : <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 11 }}>{copy.card.head}</div>}
+          <AgentBuildCard agent={built} copy={copy} dir={dir}
+            onOpen={onOpenAgent} onTest={onTestAgent} />
+        </aside>
       </div>
     );
   }
@@ -7234,7 +7923,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 14px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)', flexShrink: 0 }}>
               <span style={{ display: 'flex', color: 'var(--primary)' }}>{Icons.sparkle}</span>
               <div style={{ flex: 1, fontWeight: 700, fontSize: 14 }}>Assistant</div>
-              <IconBtn onClick={() => setOpen(false)} title={language === 'en' ? 'Collapse' : 'לקפל'}>▾</IconBtn>
+              <IconBtn onClick={() => setOpen(false)} title={L('Collapse', 'לקפל')}>▾</IconBtn>
             </div>
             <div style={{ flex: 1, minHeight: 0, padding: '12px 14px 14px', display: 'flex', flexDirection: 'column' }}>
               <PlatformAssistantView
@@ -7257,7 +7946,7 @@ npm run migrate            # הרצה בפועל`}</Block>
         <button
           onClick={() => { markIntroSeen(); setIntro(false); setOpen(v => !v); }}
           className={!open && intro ? 'assistant-ring' : undefined}
-          title={open ? (language === 'en' ? 'Collapse the assistant' : 'לקפל את האסיסטנט') : copy.label}
+          title={open ? L('Collapse the assistant', 'לקפל את האסיסטנט') : copy.label}
           style={{
             position: 'fixed', bottom: 24, right: 24, zIndex: 200,
             height: 52, borderRadius: 999,
@@ -7280,9 +7969,9 @@ npm run migrate            # הרצה בפועל`}</Block>
 
   /* ─────────────────── ASSISTANT HISTORY ─────────────────── */
   const ASSISTANT_KINDS = {
-    platform: { label: 'מערכת · Platform', short: 'Platform', tone: 'skills', color: 'var(--violet)' },
-    tool:     { label: 'כלי · Tool',        short: 'Tool',     tone: 'tools',  color: 'var(--primary)' },
-    skill:    { label: 'סקיל · Skill',      short: 'Skill',    tone: 'teal',   color: 'var(--teal)' },
+    platform: { label: L('Platform', 'מערכת · Platform'), short: 'Platform', tone: 'skills', color: 'var(--violet)' },
+    tool:     { label: L('Tool', 'כלי · Tool'),          short: 'Tool',     tone: 'tools',  color: 'var(--primary)' },
+    skill:    { label: L('Skill', 'סקיל · Skill'),       short: 'Skill',    tone: 'teal',   color: 'var(--teal)' },
   };
 
   function AssistantHistoryView({ onOpenAgent, stacked }) {
@@ -7306,7 +7995,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     }, [kind, query, tick]);
 
     async function remove(session) {
-      if (!window.confirm(`למחוק את השיחה הזאת מההיסטוריה?\n\nDelete this conversation from the history?`)) return;
+      if (!window.confirm(L('Delete this conversation from the history?', 'למחוק את השיחה הזאת מההיסטוריה?'))) return;
       await deleteAssistantSession(session.id).catch(() => {});
       if (open && open.id === session.id) setOpen(null);
       setTick(t => t + 1);
@@ -7323,13 +8012,13 @@ npm run migrate            # הרצה בפועל`}</Block>
             <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
             <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 800, fontSize: 18, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 620 }}>
-                {open.title || '(ללא כותרת)'}
+                {open.title || L('(untitled)', '(ללא כותרת)')}
               </div>
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>
                 <span style={{ color: meta.color, fontWeight: 700 }}>{meta.label}</span>
                 {open.agent_name ? ` · ${open.agent_name}` : ''}
                 {open.subject ? ` · ${open.subject}` : ''}
-                {` · ${new Date(open.updated_at).toLocaleString()} · ${msgs.length} הודעות`}
+                {` · ${new Date(open.updated_at).toLocaleString()} · ${msgs.length} ` + L('messages', 'הודעות')}
               </div>
             </div>
             {open.agent_id && onOpenAgent && (
@@ -7363,7 +8052,7 @@ npm run migrate            # הרצה בפועל`}</Block>
                 }}>
                   {m.content}
                   {m.applied && m.applied.length > 0 && (
-                    <div style={{ fontSize: 11, color: 'var(--success)', marginTop: 6 }}>✓ נכתב לעורך ({m.applied.join(' + ')})</div>
+                    <div style={{ fontSize: 11, color: 'var(--success)', marginTop: 6 }}>✓ {L('written to the editor', 'נכתב לעורך')} ({m.applied.join(' + ')})</div>
                   )}
                 </div>
               );
@@ -7402,10 +8091,10 @@ npm run migrate            # הרצה בפועל`}</Block>
             ))}
           </div>
           {loading ? (
-            <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: 20, textAlign: 'center' }}>טוען…</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: 20, textAlign: 'center' }}>{L('Loading…', 'טוען…')}</div>
           ) : sessions.length === 0 ? (
             <div style={{ padding: '40px 20px', textAlign: 'center', background: 'var(--bg-card)', border: '1px dashed var(--border)', borderRadius: 'var(--r-lg)', color: 'var(--text-muted)', fontSize: 13 }}>
-              עוד לא דיברת עם האסיסטנטים.
+              {L('You have not talked to the assistants yet.', 'עוד לא דיברת עם האסיסטנטים.')}
             </div>
           ) : sessions.map(sx => {
             const meta = ASSISTANT_KINDS[sx.kind] || { short: sx.kind, tone: 'neutral' };
@@ -7419,7 +8108,7 @@ npm run migrate            # הרצה בפועל`}</Block>
                   </span>
                   <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--text-muted)' }}>{sx.message_count} msg</span>
                 </div>
-                <div dir="auto" style={{ fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sx.title || '(ללא כותרת)'}</div>
+                <div dir="auto" style={{ fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sx.title || L('(untitled)', '(ללא כותרת)')}</div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{new Date(sx.updated_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</div>
               </button>
             );
@@ -7447,11 +8136,13 @@ npm run migrate            # הרצה בפועל`}</Block>
         {error ? (
           <div style={{ padding: 20, borderRadius: 'var(--r-lg)', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: 'var(--danger)', fontSize: 13 }}>{error}</div>
         ) : loading ? (
-          <div style={{ color: 'var(--text-2)', padding: 30 }}>טוען…</div>
+          <div style={{ color: 'var(--text-2)', padding: 30 }}>{L('Loading…', 'טוען…')}</div>
         ) : sessions.length === 0 ? (
           <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '60px 20px', fontSize: 14, background: 'var(--bg-card)', border: '1px dashed var(--border)', borderRadius: 'var(--r-lg)' }}>
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12, color: 'var(--text-muted)' }}>{Icons.sparkle}</div>
-            {query || kind ? 'אין שיחות שתואמות את הסינון.' : 'עוד לא דיברת עם האסיסטנטים. הכפתור "שאל את האסיסטנט" בפינה למטה פותח את הצ\'אט.'}
+            {query || kind
+                        ? L('No conversation matches the filter.', 'אין שיחות שתואמות את הסינון.')
+                        : L('You have not talked to the assistants yet. The "Ask the assistant" button in the corner opens the chat.', 'עוד לא דיברת עם האסיסטנטים. הכפתור "שאל את האסיסטנט" בפינה למטה פותח את הצ\'אט.')}
           </div>
         ) : (
           <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', overflowX: 'auto' }}>
@@ -7490,10 +8181,10 @@ npm run migrate            # הרצה בפועל`}</Block>
                       </td>
                       <td style={{ ...td, fontFamily: MONO, fontSize: 12, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>{sx.message_count} msg</td>
                       <td style={{ ...td, maxWidth: 380 }}>
-                        <div dir="auto" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sx.title || '(ללא כותרת)'}</div>
+                        <div dir="auto" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sx.title || L('(untitled)', '(ללא כותרת)')}</div>
                       </td>
                       <td style={{ ...td, textAlign: 'end', whiteSpace: 'nowrap' }}>
-                        <IconBtn onClick={e => { e.stopPropagation(); remove(sx); }} danger title="מחיקה">{Icons.trash}</IconBtn>
+                        <IconBtn onClick={e => { e.stopPropagation(); remove(sx); }} danger title={L('Delete', 'מחיקה')}>{Icons.trash}</IconBtn>
                         <span style={{ color: 'var(--text-muted)', marginInlineStart: 6 }}>›</span>
                       </td>
                     </tr>
@@ -7542,13 +8233,8 @@ npm run migrate            # הרצה בפועל`}</Block>
           color: 'var(--text-2)',
         }}>
           <span style={{ flexShrink: 0 }}>🔑</span>
-          <div style={{ minWidth: 0 }}>
-            <div dir="rtl" style={{ textAlign: 'right' }}>
-              <strong style={strongStyle}>{headline.he}</strong>{' — '}{body.he}
-            </div>
-            <div dir="ltr" style={{ textAlign: 'left', marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
-              <strong style={strongStyle}>{headline.en}</strong>{' — '}{body.en}
-            </div>
+          <div dir={uiDir()} style={{ minWidth: 0, textAlign: uiHe() ? 'right' : 'left' }}>
+            <strong style={strongStyle}>{headline[uiLang()]}</strong>{' — '}{body[uiLang()]}
           </div>
         </div>
       </div>
@@ -7608,15 +8294,16 @@ npm run migrate            # הרצה בפועל`}</Block>
     );
   }
 
-  function Sidebar({ activeNav, onNav, user, onLogout, settings }) {
+  function Sidebar({ activeNav, onNav, user, onLogout, settings, recents, activeSessionId, onPickRecent, onNewChat, language }) {
     const items = [
-      { id: 'home',         label: 'Agents',        icon: Icons.home },
-      { id: 'assistant',    label: 'Assistant',     icon: Icons.sparkle },
+      { id: 'home',         label: 'Home',          icon: Icons.home },
+      { id: 'agents',       label: 'Agents',        icon: Icons.agents },
       { id: 'interactions', label: 'Interactions',  icon: Icons.interactions },
       { id: 'docs',         label: 'Documentation', icon: Icons.docs },
       { id: 'settings',     label: 'Settings',      icon: Icons.settings },
       ...(user && user.isAdmin ? [{ id: 'admin', label: 'Admin', icon: Icons.admin }] : []),
     ];
+    const en = (language || uiLang()) !== 'he';
 
     return (
       <div style={{
@@ -7632,7 +8319,7 @@ npm run migrate            # הרצה בפועל`}</Block>
           <Eyebrow>Workspace</Eyebrow>
         </div>
 
-        <div style={{ flex: 1, padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 3, overflowY: 'auto' }}>
+        <div style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 3, flexShrink: 0 }}>
           {items.map(item => {
             const active = activeNav === item.id;
             return (
@@ -7655,6 +8342,52 @@ npm run migrate            # הרצה בפועל`}</Block>
               </button>
             );
           })}
+        </div>
+
+        {/* The home screen is one conversation at a time, so the ones before it
+            live here — a chat you left half-finished is a thing you come back
+            to, not something to go hunting for in a history tab. */}
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', marginTop: 18 }}>
+          <div style={{ padding: '0 20px 8px', display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* The mono, letter-spaced eyebrow is an English shape; Hebrew gets
+                a plain label instead of spaced-out letters. */}
+            {en
+              ? <Eyebrow style={{ flex: 1 }}>Chats</Eyebrow>
+              : <div style={{ flex: 1, fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>שיחות</div>}
+            <button onClick={onNewChat} title={en ? 'New chat' : 'שיחה חדשה'}
+              style={{ display: 'flex', alignItems: 'center', background: 'transparent', color: 'var(--text-muted)', padding: 2, borderRadius: 7 }}
+              onMouseEnter={e => e.currentTarget.style.color = 'var(--primary)'}
+              onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+            >{Icons.plusCircle}</button>
+          </div>
+
+          <div style={{ flex: '0 1 auto', minHeight: 0, overflowY: 'auto', padding: '0 12px 4px', display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {(recents || []).length === 0 ? (
+              <div style={{ padding: '2px 13px', fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                {en ? 'Conversations you have here show up in this list.' : 'השיחות שלך כאן יופיעו ברשימה הזאת.'}
+              </div>
+            ) : (recents || []).map(sx => {
+              const on = sx.id === activeSessionId;
+              return (
+                <button key={sx.id} onClick={() => onPickRecent(sx)} title={sx.title || ''}
+                  style={{
+                    display: 'block', width: '100%', textAlign: 'start', padding: '7px 13px', borderRadius: 9,
+                    background: on ? 'var(--bg-hover)' : 'transparent',
+                    color: on ? 'var(--text)' : 'var(--text-2)', fontSize: 12.5,
+                    fontWeight: on ? 650 : 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}
+                  onMouseEnter={e => { if (!on) e.currentTarget.style.background = 'var(--bg-hover)'; }}
+                  onMouseLeave={e => { if (!on) e.currentTarget.style.background = 'transparent'; }}
+                >{sx.title || (en ? '(untitled)' : '(ללא כותרת)')}</button>
+              );
+            })}
+          </div>
+
+          <button onClick={() => onNav('assistant')}
+            style={{ textAlign: 'start', padding: '8px 25px 4px', background: 'transparent', color: 'var(--text-muted)', fontSize: 11.5, fontWeight: 600 }}
+            onMouseEnter={e => e.currentTarget.style.color = 'var(--primary)'}
+            onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+          >{en ? 'All conversations →' : 'כל השיחות →'}</button>
         </div>
 
         <div style={{ padding: '12px 12px 6px' }}>
@@ -8319,9 +9052,9 @@ npm run migrate            # הרצה בפועל`}</Block>
 
         {deleting && (
           <ConfirmDialog
-            title={`למחוק את "${deleting.name}"?`}
-            body={`הסוכן של ${targetUser.username} יימחק על כל המסמכים, השיחות והערוצים שלו. אין ביטול.`}
-            confirmLabel="מחק סוכן"
+            title={L(`Delete "${deleting.name}"?`, `למחוק את "${deleting.name}"?`)}
+            body={L(`${targetUser.username}'s agent goes, and with it every document, conversation and channel it owns. This cannot be undone.`, `הסוכן של ${targetUser.username} יימחק על כל המסמכים, השיחות והערוצים שלו. אין ביטול.`)}
+            confirmLabel={L('Delete agent', 'מחק סוכן')}
             busy={deleteBusy}
             onConfirm={() => reallyDelete(deleting)}
             onCancel={() => setDeleting(null)} />
@@ -8348,7 +9081,7 @@ npm run migrate            # הרצה בפועל`}</Block>
                      background: copied ? 'var(--success)' : 'var(--bg-hover)',
                      border: '1px solid var(--border)',
                      color: copied ? '#0a0a0a' : 'var(--text-1)', fontSize: 12, fontWeight: 700 }}>
-            {copied ? '✓' : 'העתק'}
+            {copied ? '✓' : L('Copy', 'העתק')}
           </button>
         </div>
         {note && <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 6 }}>{note}</div>}
@@ -8397,11 +9130,11 @@ npm run migrate            # הרצה בפועל`}</Block>
             onKeyDown={e => { if (e.key === 'Enter') create(); }}
             maxLength={80}
             dir="auto"
-            placeholder="שם הטוקן — למשל laptop"
+            placeholder={L('Token name — e.g. laptop', 'שם הטוקן — למשל laptop')}
             style={{ width: fieldWidth, padding: '7px 12px', fontSize: 13 }}
           />
           <button onClick={create} disabled={busy || !name.trim()}
-            title={name.trim() ? 'צור טוקן בשם הזה' : 'קודם תן לטוקן שם'}
+            title={name.trim() ? L('Create a token with this name', 'צור טוקן בשם הזה') : L('Give the token a name first', 'קודם תן לטוקן שם')}
             style={{ padding: '8px 16px', borderRadius: 'var(--r-sm)',
                      cursor: busy || !name.trim() ? 'default' : 'pointer',
                      background: name.trim() ? 'var(--primary)' : 'var(--bg-hover)',
@@ -8409,7 +9142,7 @@ npm run migrate            # הרצה בפועל`}</Block>
                      border: `1px solid ${name.trim() ? 'var(--primary)' : 'var(--border)'}`,
                      fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap',
                      opacity: busy ? 0.6 : 1, flexShrink: 0 }}>
-            {busy ? '…' : 'צור טוקן'}
+            {busy ? '…' : L('Create token', 'צור טוקן')}
           </button>
         </div>
 
@@ -8417,9 +9150,9 @@ npm run migrate            # הרצה בפועל`}</Block>
           <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 'var(--r-md)',
                         background: 'rgba(250,204,21,0.10)', border: '1px solid rgba(250,204,21,0.35)' }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--warning)', marginBottom: 8 }}>
-              <span dir="auto">{fresh.name}</span> — העתק עכשיו, הטוקן לא יוצג שוב
+              <span dir="auto">{fresh.name}</span> — {L('copy it now, it is never shown again', 'העתק עכשיו, הטוקן לא יוצג שוב')}
             </div>
-            <CopyableCommand command={fresh.token} note="הרץ 8legs login והדבק אותו שם." />
+            <CopyableCommand command={fresh.token} note={L('Run 8legs login and paste it there.', 'הרץ 8legs login והדבק אותו שם.')} />
           </div>
         )}
 
@@ -8456,9 +9189,9 @@ npm run migrate            # הרצה בפועל`}</Block>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minWidth: 220, flex: '1 1 220px' }}>
             <div style={{ ...iconBox, color: 'var(--text-2)' }}>{Icons.terminal}</div>
             <div>
-              <div style={{ fontSize: 14, fontWeight: 600 }}>עריכה מה-IDE</div>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>{L('Editing from your IDE', 'עריכה מה-IDE')}</div>
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.5 }}>
-                טוקן נותן ל-CLI לפעול בשמך. תן לו שם שתזהה — אפשר לבטל אותו בכל רגע.
+                {L('A token lets the CLI act as you. Give it a name you will recognise — you can revoke it at any time.', 'טוקן נותן ל-CLI לפעול בשמך. תן לו שם שתזהה — אפשר לבטל אותו בכל רגע.')}
               </div>
             </div>
           </div>
@@ -8469,15 +9202,15 @@ npm run migrate            # הרצה בפועל`}</Block>
 
         <div style={{ borderTop: '1px solid var(--border)', padding: '14px 20px',
                       display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)' }}>התקנה</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)' }}>{L('Install', 'התקנה')}</div>
           <CopyableCommand command="npm i -g @8legs/cli"
-            note="ואז 8legs login מכל תיקייה. דורש Node 18 ומעלה." />
+            note={L('Then 8legs login from any folder. Needs Node 18 or newer.', 'ואז 8legs login מכל תיקייה. דורש Node 18 ומעלה.')} />
           <CopyableCommand command="npx @8legs/cli login"
-            note="בלי להתקין כלום — npx מוריד אותו בכל הרצה." />
+            note={L('Without installing anything — npx downloads it on every run.', 'בלי להתקין כלום — npx מוריד אותו בכל הרצה.')} />
         </div>
 
         {loading ? (
-          <div style={{ ...rowStyle, borderTop: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 13 }}>טוען…</div>
+          <div style={{ ...rowStyle, borderTop: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 13 }}>{L('Loading…', 'טוען…')}</div>
         ) : tokens.map(t => (
           <div key={t.id} style={{ borderTop: '1px solid var(--border)', ...rowStyle }}>
             <div>
@@ -8491,7 +9224,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             <button onClick={() => revoke(t.id)} disabled={busy}
               style={{ padding: '6px 14px', borderRadius: 'var(--r-sm)', cursor: 'pointer',
                        background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.25)',
-                       color: 'var(--danger)', fontSize: 12, fontWeight: 600 }}>בטל</button>
+                       color: 'var(--danger)', fontSize: 12, fontWeight: 600 }}>{L('Revoke', 'בטל')}</button>
           </div>
         ))}
 
@@ -8608,7 +9341,7 @@ npm run migrate            # הרצה בפועל`}</Block>
           <div style={sectionHeader}>AI · Model &amp; API key</div>
           <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-              המפתח הזה משמש את כל הסוכנים בחשבון, את כל הערוצים ואת האסיסטנט. אין צורך להגדיר מפתח לכל סוכן בנפרד.
+              {L('This key drives every agent in the account, every channel and the assistant. There is no per-agent key to set.', 'המפתח הזה משמש את כל הסוכנים בחשבון, את כל הערוצים ואת האסיסטנט. אין צורך להגדיר מפתח לכל סוכן בנפרד.')}
             </div>
 
             <div>
@@ -8647,21 +9380,27 @@ npm run migrate            # הרצה בפועל`}</Block>
             </div>
 
             <div>
-              <Eyebrow style={{ marginBottom: 8 }}>שפת האסיסטנט · Assistant language</Eyebrow>
-              <SegTabs value={draft.assistantLanguage || 'he'} onChange={v => set('assistantLanguage', v)}
-                items={[{ id: 'he', label: 'עברית' }, { id: 'en', label: 'English' }]} />
+              <Eyebrow style={{ marginBottom: 8 }}>{L('Interface language', 'שפת הממשק')}</Eyebrow>
+              <SegTabs value={draft.assistantLanguage || 'en'} onChange={v => set('assistantLanguage', v)}
+                items={[{ id: 'en', label: 'English' }, { id: 'he', label: 'עברית' }]} />
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 7, lineHeight: 1.6 }}>
+                {L('The whole interface and the assistants. The Documentation tab is written in Hebrew either way.',
+                   'כל הממשק והאסיסטנטים. טאב Documentation כתוב בעברית בכל מקרה.')}
+              </div>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', paddingTop: 4, borderTop: '1px solid var(--border)', marginTop: 4 }}>
-              {saved && !dirty && <span style={{ fontSize: 12, color: 'var(--success)' }}>✓ נשמר</span>}
+              {saved && !dirty && <span style={{ fontSize: 12, color: 'var(--success)' }}>✓ {L('saved', 'נשמר')}</span>}
               {error && <span style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</span>}
               {!usable && <span style={{ fontSize: 12, color: 'var(--warning)' }}>
-                {draft.provider === 'ollama' ? 'בלי כתובת שרת שום סוכן לא יענה' : 'בלי מפתח שום סוכן לא יענה'}
+                {draft.provider === 'ollama'
+                  ? L('Without a host address no agent will answer', 'בלי כתובת שרת שום סוכן לא יענה')
+                  : L('Without a key no agent will answer', 'בלי מפתח שום סוכן לא יענה')}
               </span>}
               <div style={{ marginInlineStart: 'auto', display: 'flex', gap: 10, paddingTop: 10 }}>
-                <Btn size="sm" onClick={() => setDraft(settings || accountApi())} disabled={!dirty}>בטל שינויים</Btn>
+                <Btn size="sm" onClick={() => setDraft(settings || accountApi())} disabled={!dirty}>{L('Discard changes', 'בטל שינויים')}</Btn>
                 <Btn size="sm" variant="primary" onClick={save} disabled={saving || !dirty}>
-                  {saving ? 'שומר…' : 'שמור שינויים'}
+                  {saving ? L('Saving…', 'שומר…') : L('Save changes', 'שמור שינויים')}
                 </Btn>
               </div>
             </div>
@@ -8767,8 +9506,8 @@ npm run migrate            # הרצה בפועל`}</Block>
    */
   function MobileBottomNav({ active, onNav }) {
     const items = [
-      { id: 'home',         label: 'Agents',       icon: Icons.home },
-      { id: 'assistant',    label: 'Assistant',    icon: Icons.sparkle },
+      { id: 'home',         label: 'Home',         icon: Icons.home },
+      { id: 'agents',       label: 'Agents',       icon: Icons.agents },
       { id: 'interactions', label: 'Interactions', icon: Icons.interactions },
       { id: 'settings',     label: 'Settings',     icon: Icons.settings },
     ];
@@ -8835,7 +9574,7 @@ npm run migrate            # הרצה בפועל`}</Block>
       <MobileSheet open={open} onClose={onClose} full
         title="Assistant"
         right={onHistory && (
-          <button onClick={onHistory} title={language === 'en' ? 'Conversation history' : 'היסטוריית שיחות'}
+          <button onClick={onHistory} title={L('Conversation history', 'היסטוריית שיחות')}
             style={{ width: 40, height: 40, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-2)' }}>
             {MobileIcons.clock}
           </button>
@@ -8878,7 +9617,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     );
   }
 
-  function MobileHome({ agents, onNew, onEdit }) {
+  function MobileHome({ agents, onNew, onEdit, onBuildInChat }) {
     const [query, setQuery] = useState('');
     const shown = agents.filter(a => !query || a.name.toLowerCase().includes(query.toLowerCase()));
     return (
@@ -8896,7 +9635,7 @@ npm run migrate            # הרצה בפועל`}</Block>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '40px 20px', background: 'var(--bg-card)', borderRadius: 'var(--r-xl)', border: '1px dashed var(--border)', textAlign: 'center' }}>
             <div style={{ color: 'var(--text)', fontWeight: 700, fontSize: 15 }}>No agents yet</div>
             <div style={{ color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.6 }}>Describe what you want in plain words and the assistant will build the agent for you.</div>
-            <Btn variant="primary" icon={Icons.sparkle} onClick={() => askAssistant('בנה לי סוכן ראשון. שאל אותי מה הוא צריך לעשות.')}>
+            <Btn variant="primary" icon={Icons.sparkle} onClick={() => onBuildInChat(FIRST_AGENT_ASK())}>
               Build it with the assistant
             </Btn>
             <Btn onClick={onNew} icon={Icons.plus}>New agent</Btn>
@@ -8939,8 +9678,8 @@ npm run migrate            # הרצה בפועל`}</Block>
         <div style={{ marginBottom: 6 }}>
           <RuntimeCard settings={accountApi()} onOpenSettings={() => onOpen('settings')} />
         </div>
-        <Row icon={Icons.docs} label="Documentation" hint="איך כל חלק במערכת עובד" onClick={() => onOpen('docs')} />
-        {user.isAdmin && <Row icon={Icons.admin} label="Admin" hint="משתמשים וסוכני התבנית" onClick={() => onOpen('admin')} />}
+        <Row icon={Icons.docs} label="Documentation" hint={L('How every part of this works', 'איך כל חלק במערכת עובד')} onClick={() => onOpen('docs')} />
+        {user.isAdmin && <Row icon={Icons.admin} label="Admin" hint={L('Users and the template agents', 'משתמשים וסוכני התבנית')} onClick={() => onOpen('admin')} />}
         <div style={{ height: 6 }} />
         <Row icon={Icons.logout} label="Log out" onClick={onLogout} danger />
       </div>
@@ -8999,9 +9738,10 @@ npm run migrate            # הרצה בפועל`}</Block>
 
   const M_FIELD_LABEL = { fontSize: 12, color: 'var(--text-2)', marginBottom: 5, display: 'block' };
 
-  function MobileSkillsTab({ agent, onUpdate }) {
+  function MobileSkillsTab({ agent, onUpdate, onDetail }) {
     const skills = agent.skills || [];
     const [openId, setOpenId] = useState(null);
+    useEffect(() => { if (onDetail) onDetail(!!openId); }, [openId]);
     const [seg, setSeg] = useState('prompt');
     const selected = openId ? skills.find(sk => sk.id === openId) || null : null;
 
@@ -9059,10 +9799,11 @@ npm run migrate            # הרצה בפועל`}</Block>
     );
   }
 
-  function MobileToolsTab({ agent, onUpdate }) {
+  function MobileToolsTab({ agent, onUpdate, onDetail }) {
     const tools = agent.tools || [];
     // null = list · 'builtin' = send_email · an id = that tool
     const [open, setOpen] = useState(null);
+    useEffect(() => { if (onDetail) onDetail(!!open); }, [open]);
     const [seg, setSeg] = useState('code');
     const [lastRun, setLastRun] = useState(null);
     const selected = open && open !== 'builtin' ? tools.find(t => t.id === open) || null : null;
@@ -9192,16 +9933,16 @@ npm run migrate            # הרצה בפועל`}</Block>
       <div style={{ flexShrink: 0, padding: '10px 12px', borderBottom: '1px solid var(--border)',
                     background: 'rgba(250,204,21,0.08)' }}>
         <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 8 }}>
-          שינויים שלא פורסמו. הסוכן החי עונה מהגרסה הקודמת.
+          {L('Unpublished changes. The live agent answers from the previous version.', 'שינויים שלא פורסמו. הסוכן החי עונה מהגרסה הקודמת.')}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => act(() => apiBranchAction(agent.id, { action: 'publish' }))} disabled={busy}
             style={{ flex: 1, height: 38, borderRadius: 'var(--r-md)', background: 'var(--primary)',
-                     color: '#0a0a0a', fontWeight: 700, fontSize: 13 }}>{busy ? '…' : 'פרסם'}</button>
-          <button onClick={() => { if (confirm('לבטל את הטיוטה?')) act(() => apiDeleteBranch(agent.id, 'draft')); }}
+                     color: '#0a0a0a', fontWeight: 700, fontSize: 13 }}>{busy ? '…' : L('Publish', 'פרסם')}</button>
+          <button onClick={() => { if (confirm(L('Discard the draft?', 'לבטל את הטיוטה?'))) act(() => apiDeleteBranch(agent.id, 'draft')); }}
             disabled={busy}
             style={{ height: 38, padding: '0 16px', borderRadius: 'var(--r-md)', background: 'transparent',
-                     border: '1px solid var(--border)', color: 'var(--text-2)', fontWeight: 600, fontSize: 13 }}>בטל</button>
+                     border: '1px solid var(--border)', color: 'var(--text-2)', fontWeight: 600, fontSize: 13 }}>{L('Discard', 'בטל')}</button>
         </div>
         {error && <div style={{ marginTop: 8, fontSize: 12, color: 'var(--danger)' }}>{error}</div>}
       </div>
@@ -9211,6 +9952,11 @@ npm run migrate            # הרצה בפועל`}</Block>
   function MobileAgentEditor({ agent, onUpdate, onBack, onTest, initialTab, onReload, onDuplicate, onDelete }) {
     const [tab, setTab] = useState(initialTab || 'configuration');
     const [menu, setMenu] = useState(false);
+    /* A skill or a tool opened inside a tab is a screen of its own: Monaco in
+       the ~270px left over beside the rail is unusable. While one is open the
+       rail and the agent's own header step aside. */
+    const [detail, setDetail] = useState(false);
+    useEffect(() => { setDetail(false); }, [tab]);
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -9228,7 +9974,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             </div>
           } />
 
-        <div style={{ padding: '12px 16px 0', flexShrink: 0 }}>
+        <div style={{ padding: '12px 16px 0', flexShrink: 0, display: detail ? 'none' : 'block' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ width: 48, height: 48, borderRadius: 14, flexShrink: 0, overflow: 'hidden', background: 'var(--bg-panel)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <AvatarDisplay value={agent.avatar} size={28} />
@@ -9243,13 +9989,14 @@ npm run migrate            # הרצה בפועל`}</Block>
           </div>
         </div>
 
-        <MobileDraftBar agent={agent} onChanged={onReload} />
+        {!detail && <MobileDraftBar agent={agent} onChanged={onReload} />}
 
         {/* The rail, the same one the desktop has, narrowed to a phone */}
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 10, padding: '12px 12px 0' }}>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: detail ? 0 : 10, padding: detail ? '10px 12px 0' : '12px 12px 0' }}>
           <div style={{
             width: 94, flexShrink: 0, overflowY: 'auto', padding: '8px 5px',
             background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16,
+            display: detail ? 'none' : 'block',
           }}>
             {AGENT_NAV.map(n => {
               const on = tab === n.id;
@@ -9272,8 +10019,8 @@ npm run migrate            # הרצה בפועל`}</Block>
 
           <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', paddingBottom: 24 }}>
             {tab === 'configuration' && <ConfigurationTab agent={agent} onUpdate={onUpdate} stacked />}
-            {tab === 'skills' && <MobileSkillsTab agent={agent} onUpdate={onUpdate} />}
-            {tab === 'tools' && <MobileToolsTab agent={agent} onUpdate={onUpdate} />}
+            {tab === 'skills' && <MobileSkillsTab agent={agent} onUpdate={onUpdate} onDetail={setDetail} />}
+            {tab === 'tools' && <MobileToolsTab agent={agent} onUpdate={onUpdate} onDetail={setDetail} />}
             {tab === 'knowledge' && <KnowledgeTab agent={agent} />}
             {tab === 'manual tests' && <ManualTestsTab agent={agent} onTest={onTest} />}
             {tab === 'export' && <ExportTab agent={agent} stacked />}
@@ -9305,7 +10052,8 @@ npm run migrate            # הרצה בפועל`}</Block>
   }) {
     const [assistantOpen, setAssistantOpen] = useState(false);
     const [moreOpen, setMoreOpen] = useState(false);
-    const [seed, setSeed] = useState(null);
+    const [seed, setSeed] = useState(null);         // the assistant sheet
+    const [homeSeed, setHomeSeed] = useState(null); // the home conversation
     const language = (settings || accountApi()).assistantLanguage || 'he';
 
     // Anything that calls askAssistant() opens the sheet with its question.
@@ -9315,14 +10063,14 @@ npm run migrate            # הרצה בפועל`}</Block>
       return () => window.removeEventListener('assistant:ask', onAsk);
     }, []);
 
-    const inEditor = nav === 'home' && state.view === 'editor' && editingAgent;
-    const TABS = ['home', 'assistant', 'interactions', 'settings'];
+    const inEditor = nav === 'agents' && state.view === 'editor' && editingAgent;
+    const TABS = ['home', 'agents', 'interactions', 'settings'];
     const navActive = TABS.includes(nav) ? nav : '';
 
     function go(id) {
       setMoreOpen(false);
       setNav(id);
-      if (id === 'home') { dispatch({ type: 'SET_VIEW', view: 'list' }); setAdminSelectedUser(null); }
+      if (id === 'agents') dispatch({ type: 'SET_VIEW', view: 'list' });
       if (id !== 'admin') setAdminSelectedUser(null);
     }
 
@@ -9333,7 +10081,7 @@ npm run migrate            # הרצה בפועל`}</Block>
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="7" x2="21" y2="7"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="17" x2="21" y2="17"/></svg>
       </button>
     );
-    function openAgent(id) { setNav('home'); setEditorTab(null); dispatch({ type: 'SET_VIEW', view: 'editor', editingId: id }); }
+    function openAgent(id) { setNav('agents'); setEditorTab(null); dispatch({ type: 'SET_VIEW', view: 'editor', editingId: id }); }
 
     let screen;
     if (inEditor) {
@@ -9390,17 +10138,35 @@ npm run migrate            # הרצה בפועל`}</Block>
           </div>
         </div>
       );
+    } else if (nav === 'agents') {
+      screen = (
+        <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <MobileTopBar left={burger} title="Agents" center />
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+            <MobileHome agents={state.agents} onNew={onCreate}
+              onBuildInChat={text => { setHomeSeed({ text, nonce: uid(), fresh: true }); go('home'); }}
+              onEdit={id => dispatch({ type: 'SET_VIEW', view: 'editor', editingId: id })} />
+          </div>
+        </div>
+      );
     } else {
       screen = (
         <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-          <MobileTopBar
-            left={<svg viewBox="255 40 170 130" width="40" height="31" role="img" aria-label="8Legs.ai" style={{ marginLeft: 6 }}><ellipse cx="340" cy="108" rx="21" ry="29" fill="#EF9F27"/><ellipse cx="340" cy="72" rx="14" ry="14" fill="#EF9F27"/><circle cx="335" cy="70" r="3.5" fill="#854F0B"/><circle cx="345" cy="70" r="3.5" fill="#854F0B"/><path d="M345,136 C372,138 390,122 390,98 C390,72 374,56 379,38" fill="none" stroke="#EF9F27" strokeWidth="8" strokeLinecap="round"/><polygon points="375,40 382,24 389,40" fill="#D85A30"/><polyline points="319,95 293,80 278,72" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/><polyline points="319,105 291,102 276,100" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/><polyline points="319,115 291,119 276,124" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/><polyline points="319,125 293,136 281,146" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/><polyline points="361,95 387,80 402,72" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/><polyline points="361,105 389,102 404,100" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/><polyline points="361,115 389,119 404,124" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/><polyline points="361,125 387,136 399,146" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+          {/* The conversation below carries the mark; the bar just names the
+              place and holds the ☰. */}
+          <MobileTopBar center
             title={<span style={{ fontWeight: 800, fontSize: 17, letterSpacing: '-0.02em' }}>8Legs<span style={{ color: 'var(--primary)' }}>.ai</span></span>}
             right={burger} />
-          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-            <MobileHome agents={state.agents} onNew={onCreate}
-              onEdit={id => dispatch({ type: 'SET_VIEW', view: 'editor', editingId: id })} />
-          </div>
+          <HomeChatView
+            agents={state.agents}
+            user={user}
+            onAgentsChanged={onReload}
+            language={language}
+            seed={homeSeed}
+            onOpenAgent={openAgent}
+            onTestAgent={id => dispatch({ type: 'OPEN_CHAT', id, live: true })}
+            stacked
+          />
         </div>
       );
     }
@@ -9445,6 +10211,22 @@ npm run migrate            # הרצה בפועל`}</Block>
     const [editorTab, setEditorTab] = useState(null);
     const [settings, setSettings] = useState(null);
     const isMobile = useIsMobile();
+
+    /* The home screen is one conversation; the sidebar lists the ones before
+       it. Both handoffs — reopen this one, start a fresh one — travel as a
+       nonce so the same pick twice still registers. */
+    const [recents, setRecents] = useState([]);
+    const [restore, setRestore] = useState(null);
+    const [homeSeed, setHomeSeed] = useState(null);
+    const [newChatNonce, setNewChatNonce] = useState(0);
+    const [homeSessionId, setHomeSessionId] = useState(null);
+
+    const refreshRecents = useCallback(() => (
+      apiListAssistantSessions({ kind: 'platform', limit: 20 })
+        .then(d => setRecents(d.sessions || []))
+        .catch(() => {})
+    ), []);
+    useEffect(() => { refreshRecents(); }, [refreshRecents]);
     /* The trail across the top. Everything but the agent editor can be read off
        the nav; the editor reports its own, down to the open tab. */
     const [editorCrumbs, setEditorCrumbs] = useState(null);
@@ -9482,7 +10264,7 @@ npm run migrate            # הרצה בפועל`}</Block>
       const gmailError = params.get('gmail_error');
 
       if (connectedAgent) {
-        setNav('home');
+        setNav('agents');
         setEditorTab('tools');
         dispatch({ type: 'SET_VIEW', view: 'editor', editingId: connectedAgent });
       }
@@ -9555,13 +10337,14 @@ npm run migrate            # הרצה בפועל`}</Block>
 
     const editingAgent = state.agents.find(a => a.id === state.editingId);
     const chatAgent = state.chatAgentSnapshot || state.agents.find(a => a.id === state.chatAgentId);
+    const assistantLanguage = (settings || accountApi()).assistantLanguage || 'he';
 
     const doomed = state.agents.find(a => a.id === pendingDelete);
     const deleteDialog = doomed && (
       <ConfirmDialog
-        title={`למחוק את "${doomed.name}"?`}
-        body="נמחקים גם המסמכים, שיחות הבדיקה והשיחות של הסוכן, והווידג'ט ו-WhatsApp שלו מפסיקים לענות. אין ביטול."
-        confirmLabel="מחק סוכן"
+        title={L(`Delete "${doomed.name}"?`, `למחוק את "${doomed.name}"?`)}
+        body={L("Its documents, its test conversations and its conversations go too, and its widget and WhatsApp stop answering. This cannot be undone.", "נמחקים גם המסמכים, שיחות הבדיקה והשיחות של הסוכן, והווידג'ט ו-WhatsApp שלו מפסיקים לענות. אין ביטול.")}
+        confirmLabel={L('Delete agent', 'מחק סוכן')}
         busy={deleteBusy}
         onConfirm={() => reallyDelete(doomed.id)}
         onCancel={() => setPendingDelete(null)} />
@@ -9576,9 +10359,34 @@ npm run migrate            # הרצה בפועל`}</Block>
 
     function handleNav(id) {
       setNav(id);
-      if (id === 'home') { dispatch({ type: 'SET_VIEW', view: 'list' }); setAdminSelectedUser(null); }
-      if (id === 'interactions' || id === 'assistant') setAdminSelectedUser(null);
-      if (id === 'admin') setAdminSelectedUser(null);
+      if (id === 'agents') dispatch({ type: 'SET_VIEW', view: 'list' });
+      setAdminSelectedUser(null);
+    }
+
+    /* Opening an agent always means the Agents tab, wherever the link was. */
+    function openAgent(id) {
+      setNav('agents');
+      setEditorTab(null);
+      dispatch({ type: 'SET_VIEW', view: 'editor', editingId: id });
+    }
+
+    function pickRecent(session) {
+      setNav('home');
+      setHomeSessionId(session.id);
+      setRestore({ session, nonce: uid() });
+    }
+
+    function newHomeChat() {
+      setNav('home');
+      setHomeSessionId(null);
+      setNewChatNonce(n => n + 1);
+    }
+
+    /* "Build it for me", from wherever it was clicked, is the home chat with
+       that question already asked — not a second assistant in a bubble. */
+    function buildInChat(text) {
+      setNav('home');
+      setHomeSeed({ text, nonce: uid(), fresh: true });
     }
 
     // Phones get their own shell over the same state and handlers. The
@@ -9600,35 +10408,53 @@ npm run migrate            # הרצה בפועל`}</Block>
     );
 
     const NAV_CRUMBS = {
-      home: ['Workspace', 'Agents'],
+      home: ['Workspace', 'Home'],
+      agents: ['Workspace', 'Agents'],
       assistant: ['Workspace', 'Assistant'],
       interactions: ['Workspace', 'Interactions'],
       docs: ['Workspace', 'Documentation'],
       settings: ['Workspace', 'Settings'],
       admin: ['Workspace', 'Admin'],
     };
-    const inEditor = nav === 'home' && state.view === 'editor' && editingAgent;
+    const inEditor = nav === 'agents' && state.view === 'editor' && editingAgent;
     const trail = inEditor && editorCrumbs ? editorCrumbs : NAV_CRUMBS[nav] || NAV_CRUMBS.home;
 
     return (
       <React.Fragment>
       <div style={{ display: 'flex', height: 'calc(100vh / var(--ui-zoom))', overflow: 'hidden' }}>
-        <Sidebar activeNav={nav} onNav={handleNav} user={user} onLogout={onLogout} settings={settings} />
+        <Sidebar activeNav={nav} onNav={handleNav} user={user} onLogout={onLogout} settings={settings}
+          recents={recents} activeSessionId={homeSessionId} onPickRecent={pickRecent}
+          onNewChat={newHomeChat} language={assistantLanguage} />
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg-app)' }}>
         <Crumbs trail={trail} />
+        {/* Home fills the frame and scrolls its own thread; every other screen
+            is a page in the padded column below. */}
+        {nav === 'home' ? (
+          <HomeChatView
+            agents={state.agents}
+            user={user}
+            onAgentsChanged={hydrate}
+            language={assistantLanguage}
+            onOpenAgent={openAgent}
+            onTestAgent={id => dispatch({ type: 'OPEN_CHAT', id, live: true })}
+            onSaved={refreshRecents}
+            onSessionChange={setHomeSessionId}
+            restore={restore}
+            seed={homeSeed}
+            newChatNonce={newChatNonce}
+          />
+        ) : (
         <div style={{ flex: 1, overflowY: 'auto', position: 'relative' }}>
           <BgLogo size={560} wrapStyle={{ bottom: '-80px', right: '-80px' }} />
           <div style={{ maxWidth: 1460, margin: '0 auto', padding: '30px 34px 80px', minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
           <ApiKeyNote />
           {nav === 'assistant' ? (
-            <AssistantHistoryView
-              onOpenAgent={id => { setNav('home'); setEditorTab(null); dispatch({ type: 'SET_VIEW', view: 'editor', editingId: id }); }}
-            />
+            <AssistantHistoryView onOpenAgent={openAgent} />
           ) : nav === 'interactions' ? (
             <InteractionsView
               agents={state.agents}
               user={user}
-              onOpenAgent={id => { setNav('home'); setEditorTab(null); dispatch({ type: 'SET_VIEW', view: 'editor', editingId: id }); }}
+              onOpenAgent={openAgent}
             />
           ) : nav === 'docs' ? (
             <DocsView />
@@ -9665,6 +10491,7 @@ npm run migrate            # הרצה בפועל`}</Block>
           ) : (
             <AgentListView
               agents={state.agents}
+              onBuildInChat={buildInChat}
               onNew={handleCreate}
               onEdit={id => dispatch({ type: 'SET_VIEW', view: 'editor', editingId: id })}
               onTest={id => dispatch({ type: 'OPEN_CHAT', id, live: true })}
@@ -9675,6 +10502,7 @@ npm run migrate            # הרצה בפועל`}</Block>
           )}
           </div>
         </div>
+        )}
         </div>
 
         {chatAgent && (
@@ -9683,11 +10511,13 @@ npm run migrate            # הרצה בפועל`}</Block>
             onClose={() => dispatch({ type: 'CLOSE_CHAT' })} />
         )}
         {deleteDialog}
-        <FloatingAssistant
-          agents={state.agents}
-          language={(settings || accountApi()).assistantLanguage || 'he'}
-          onAgentsChanged={() => apiList().then(list => dispatch({ type: 'HYDRATE', agents: list })).catch(() => {})}
-        />
+        {nav !== 'home' && (
+          <FloatingAssistant
+            agents={state.agents}
+            language={assistantLanguage}
+            onAgentsChanged={() => apiList().then(list => dispatch({ type: 'HYDRATE', agents: list })).catch(() => {})}
+          />
+        )}
       </div>
       </React.Fragment>
     );

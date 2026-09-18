@@ -3,8 +3,8 @@
 Platform for building AI agents: prompt, model, skills, Python tools, a knowledge base, and
 distribution over a website widget and WhatsApp — configured in the browser, with no build step.
 
-The in-app **Documentation** tab is the user-facing guide. This file covers running and
-maintaining the deployment.
+The in-app **Documentation** tab is the user-facing guide, and is written in Hebrew. This file
+covers running and maintaining the deployment.
 
 ## Stack
 
@@ -88,16 +88,63 @@ channels resolve it server-side from the agent's owner (`resolveAgentApiConfig`)
 to an agent's own stored `apiConfig` only while the account's settings are still empty —
 migration `010` backfills them from each user's most recently updated agent that had a key.
 
-`user_settings.assistant_language` (`he` or `en`) selects the platform assistant's language.
+## Language
+
+The interface is English. `user_settings.assistant_language` (`en` or `he`) switches the whole
+of it — chrome and assistants alike — and it is edited as **Interface language** in Settings.
+In the browser it lands in one module variable behind `L(en, he)`, `uiLang()` and `uiDir()`;
+`setAccountApi` keeps it in step with the account, so a save re-renders the tree in the other
+language. The one thing that does not follow it is the **Documentation** tab, which is written
+in Hebrew either way — translating that manual is its own piece of work, and Settings says so
+under the switch.
+
+## The home screen
+
+The first screen after login is a conversation, not a list: the mark animated in the middle of
+the page and one input under it. `HomeChatView` and the Assistant chat are two dressings of
+`usePlatformAssistant`, the hook that holds the conversation, the tool loop and the saving —
+so the home screen builds agents with the same tools the assistant always had.
+
+Asking for a new agent — in any words, whether it is the first or the tenth — starts an
+interview: `homeSystemExtra` tells the model one question per message, and to call
+`create_agent` as soon as it knows the job rather than at the end. A question about the
+platform, or a change to an agent that already exists, does not: those are answered or done in
+one turn. Which of the two a turn is, is the model's reading of what was asked, not a count of
+how many agents the account has. When a question has a few likely answers the model ends its
+message with a `::options:: a | b | c` line, which the screen turns into buttons; a model that
+omits it just produces a message without them.
+
+The screen opens on the time of day and the user's name — `greeting()` — with night counted as
+evening, since "good night" is a goodbye.
+
+Beside the thread, `AgentBuildCard` shows the agent this conversation created or changed —
+role, skills, tools, channel — filling in as answers arrive. It appears only when there is
+something to show, and on a phone it rides inside the thread instead of in a column.
+
+The agent list lives under **Agents**; every route into the editor (a link from Interactions,
+the assistant history, the Gmail OAuth return) navigates there. "Build with the assistant",
+wherever it is clicked, opens the home chat with that question already asked instead of the
+floating bubble — which is hidden on the home screen, since the screen is already a chat.
+
+## Phones
+
+The phone shell is a separate React branch (`MobileApp`), and two desktop leaves reach into it
+where their proportions do not survive the trip. The test chat (`ChatTestDrawer fullScreen`)
+re-cuts its header, padding and composer, because the phone drops the app's 80% zoom and an
+iOS-forced 16px field beside a rectangular button comes out squashed. In the agent editor, a
+skill or a tool opened inside a tab reports `onDetail`, and the 94px rail and the agent header
+step aside so Monaco — minimap off, wrapping on — gets the whole screen instead of the ~270px
+left beside them.
 
 ## Assistant conversations
 
-The platform assistant is a floating chat, reachable from every screen by the ✨ button in the
-corner. Every turn of every assistant — platform, tool and skill — is saved to
-`assistant_sessions` (migration `012`) through `PUT /api/assistant-sessions`, and the
-**Assistant chats** tab lists them with filters per kind, a keyword search over the
-transcripts, and each conversation's tool calls with their arguments and results. Saving is
-fire-and-forget: a failure there must never interrupt the conversation.
+The platform assistant is also a floating chat, reachable by the ✨ button in the corner of
+every screen but Home. Every turn of every assistant — platform, tool and skill — is saved to
+`assistant_sessions` (migration `012`) through `PUT /api/assistant-sessions`. The sidebar lists
+the recent platform conversations under the nav items and reopens one in the home screen;
+**All conversations** below them opens the full history, with filters per kind, a keyword
+search over the transcripts, and each conversation's tool calls with their arguments and
+results. Saving is fire-and-forget: a failure there must never interrupt the conversation.
 
 ## Error log
 

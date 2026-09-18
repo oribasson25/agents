@@ -12,10 +12,12 @@ export const DEFAULT_MODELS = {
   ollama: 'gemma4:12b',
 };
 
-export const ASSISTANT_LANGUAGES = ['he', 'en'];
+/* The interface and the assistants speak English unless the account picks
+   Hebrew in Settings. */
+export const ASSISTANT_LANGUAGES = ['en', 'he'];
 
 export function emptySettings() {
-  return { provider: 'claude', api_key: '', model: DEFAULT_MODELS.claude, ollama_host: '', assistant_language: 'he' };
+  return { provider: 'claude', api_key: '', model: DEFAULT_MODELS.claude, ollama_host: '', assistant_language: 'en' };
 }
 
 export async function getUserSettings(userId) {
@@ -29,7 +31,7 @@ export async function getUserSettings(userId) {
 
 export async function saveUserSettings(userId, patch) {
   const provider = ['claude', 'openai', 'ollama'].includes(patch.provider) ? patch.provider : 'claude';
-  const language = ASSISTANT_LANGUAGES.includes(patch.assistantLanguage) ? patch.assistantLanguage : 'he';
+  const language = ASSISTANT_LANGUAGES.includes(patch.assistantLanguage) ? patch.assistantLanguage : 'en';
   const apiKey = typeof patch.apiKey === 'string' ? patch.apiKey.trim() : '';
   const model = (typeof patch.model === 'string' && patch.model.trim()) || DEFAULT_MODELS[provider];
   const ollamaHost = typeof patch.ollamaHost === 'string' ? patch.ollamaHost.trim().replace(/\/$/, '') : '';
