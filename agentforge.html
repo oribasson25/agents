@@ -4827,8 +4827,7 @@
                         No traffic
                       </Chip>
                     : <Chip tone="neutral">Experiment</Chip>}
-              <Chip tone="skills" mono>{agent.skills.length} skills</Chip>
-              <Chip tone="tools" mono>{agent.tools.length} tools</Chip>
+              <MadeOf agent={agent} style={{ marginInlineStart: 2 }} />
             </div>
           </div>
 
@@ -4915,6 +4914,28 @@
   /** An agent with no role written is still a blank — say so with the dot. */
   function agentReady(agent)   { return !!(agent.basePrompt || '').trim(); }
 
+  /**
+   * How many skills and how many tools — read, never clicked, so it is text.
+   * The number carries the page's ink and the noun stays quiet beside it.
+   */
+  function MadeOf({ agent, short, style }) {
+    const part = (n, word) => (
+      <span>
+        <span style={{ color: 'var(--text)', fontWeight: 600 }}>{n}</span>{' '}{word}
+      </span>
+    );
+    return (
+      <div dir="ltr" style={{
+        display: 'flex', alignItems: 'center', gap: 7, fontFamily: MONO,
+        fontSize: 12, color: 'var(--text-2)', whiteSpace: 'nowrap', ...style,
+      }}>
+        {part(agent.skills.length, short ? 'sk' : 'skills')}
+        <span style={{ opacity: 0.4 }}>·</span>
+        {part(agent.tools.length, short ? 'tl' : 'tools')}
+      </div>
+    );
+  }
+
   /** The tile that opens a new agent, first in the grid. */
   function NewAgentTile({ onNew, onAssistant }) {
     const [hot, setHot] = useState(false);
@@ -4997,10 +5018,7 @@
         </div>
 
         {/* What it is made of */}
-        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-          <Chip tone="skills" mono>{agent.skills.length} skills</Chip>
-          <Chip tone="tools" mono>{agent.tools.length} tools</Chip>
-        </div>
+        <MadeOf agent={agent} />
 
         {/* Actions: the two you reach for carry a label, the rest are icons. */}
         <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: 6, borderTop: '1px solid var(--border)', paddingTop: 13 }}
@@ -5043,10 +5061,7 @@
         </div>
         <span dir="ltr" style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--text-muted)', width: 110, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{agentBranch(agent)}</span>
         <span style={{ fontSize: 12, color: 'var(--text-2)', width: 80, flexShrink: 0 }}>{agentChannel(agent)}</span>
-        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-          <Chip tone="skills" mono>{agent.skills.length} sk</Chip>
-          <Chip tone="tools" mono>{agent.tools.length} tl</Chip>
-        </div>
+        <MadeOf agent={agent} short style={{ flexShrink: 0, fontSize: 11.5 }} />
         <div style={{ display: 'flex', gap: 4, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
           <Btn size="sm" icon={Icons.edit} onClick={onEdit}>Edit</Btn>
           <Btn size="sm" icon={Icons.play} onClick={onTest}
@@ -8635,8 +8650,8 @@ npm run migrate            # הרצה בפועל`}</Block>
             {agent.name}
           </div>
           <div dir="ltr" style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 7 }}>
-            <Chip tone="skills" mono>{agent.skills.length} sk</Chip>
-            <Chip tone="tools" mono>{agent.tools.length} tl</Chip>
+            <MadeOf agent={agent} short style={{ fontSize: 11.5 }} />
+            <span style={{ color: 'var(--text-muted)', opacity: 0.4 }}>·</span>
             <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {agentBranch(agent)}
             </span>
