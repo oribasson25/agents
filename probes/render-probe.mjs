@@ -15,7 +15,7 @@ const src = fs.readFileSync(new URL('../agentforge.html', import.meta.url).pathn
 const body = src.match(/<script type="text\/babel"[^>]*>([\s\S]*?)<\/script>/)[1];
 
 /* Hand the probe the components it wants to render. */
-const exposed = ['TokensSection', 'PullCommandButton', 'SettingsPanel', 'AgentEditor', 'BranchBar', 'MergePanel', 'MobileDraftBar', 'MobileAgentEditor', 'CopyableCommand', 'DocsView'];
+const exposed = ['TokensSection', 'TokenMinter', 'LocalIdePanel', 'SettingsPanel', 'AgentEditor', 'BranchBar', 'MergePanel', 'MobileDraftBar', 'MobileAgentEditor', 'CopyableCommand', 'DocsView'];
 const code = babel.transform(
   body + `\n;globalThis.__probe = { ${exposed.map(n => `${n}: typeof ${n} === 'function' ? ${n} : null`).join(', ')} };`,
   { presets: ['react'] }).code;
@@ -67,9 +67,12 @@ const cmdBox = render('CopyableCommand', React.createElement(probe.CopyableComma
 }));
 if (cmdBox && !cmdBox.includes('העתק')) { console.log('✗ CopyableCommand has no copy button'); failed++; }
 
-const pull = render('PullCommandButton',
-  React.createElement(probe.PullCommandButton, { agentId: '804fe690-c8b6-4e3a-bb8f-1305bd1721d7' }));
-if (pull && !pull.includes('8legs pull')) { console.log('✗ PullCommandButton does not show the command'); failed++; }
+const ide = render('LocalIdePanel',
+  React.createElement(probe.LocalIdePanel, { agentId: '804fe690-c8b6-4e3a-bb8f-1305bd1721d7', onClose() {} }));
+for (const cmd of ['npm i -g @8legs/cli', 'npx @8legs/cli login', '@8legs/cli pull 804fe690-c8b6-4e3a-bb8f-1305bd1721d7']) {
+  if (ide && !ide.includes(cmd)) { console.log(`✗ the local-IDE panel is missing \`${cmd}\``); failed++; }
+}
+if (ide && !ide.includes('צור טוקן')) { console.log('✗ the local-IDE panel cannot mint a token'); failed++; }
 
 const settings = render('SettingsPanel (with the new section)', React.createElement(probe.SettingsPanel, {
   theme: 'dark', onToggleTheme() {}, user: { email: 'a@b.c' }, onLogout() {},
@@ -83,7 +86,7 @@ const editor = render('AgentEditor header', React.createElement(probe.AgentEdito
   agent: { id: 'a-1', name: 'ביטוח רכב', avatar: '🚗', skills: [], tools: [], basePrompt: '' },
   onUpdate() {}, onBack() {}, onTest() {},
 }));
-if (editor && !editor.includes('8legs pull')) { console.log('✗ the editor header has no pull button'); failed++; }
+if (editor && !editor.includes('Build on local IDE')) { console.log('✗ the editor header has no local-IDE button'); failed++; }
 
 const bar = render('BranchBar on a draft', React.createElement(probe.BranchBar, {
   agent: { id: 'a-1', _branch: 'draft' }, branch: null, onSwitch() {}, onChanged() {},

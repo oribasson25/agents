@@ -4409,18 +4409,85 @@
    * exact command, with this agent's id already in it. Copying beats typing a
    * uuid, and it is the only place the id is visible at all.
    */
-  function PullCommandButton({ agentId }) {
-    const [copied, setCopied] = useState(false);
-    const command = `npx @8legs/cli pull ${agentId}`;
+  /**
+   * Everything needed to work on this agent from an editor, in the order you
+   * need it: install the CLI, log in with a token minted here, pull the agent.
+   */
+  function LocalIdePanel({ agentId, onClose }) {
+    useEffect(() => {
+      function onKey(e) { if (e.key === 'Escape') onClose(); }
+      document.addEventListener('keydown', onKey);
+      return () => document.removeEventListener('keydown', onKey);
+    }, [onClose]);
+
+    const step = (n, title, note) => (
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, marginBottom: 9 }}>
+        <span style={{
+          width: 20, height: 20, borderRadius: '50%', flexShrink: 0, alignSelf: 'center',
+          background: 'var(--primary-dim)', border: '1px solid rgba(239,159,39,0.3)', color: 'var(--primary)',
+          fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>{n}</span>
+        <div>
+          <div style={{ fontSize: 13.5, fontWeight: 700 }}>{title}</div>
+          {note && <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.6 }}>{note}</div>}
+        </div>
+      </div>
+    );
+
     return (
-      <Btn title={command}
-        onClick={() => navigator.clipboard.writeText(command).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 2200);
-        })}
-        style={{ fontFamily: copied ? 'inherit' : MONO, color: copied ? 'var(--success)' : undefined }}>
-        {copied ? '✓ הפקודה הועתקה' : <span dir="ltr">{'⌘ 8legs pull'}</span>}
-      </Btn>
+      <div onClick={onClose} style={{
+        position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.35)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 220,
+      }}>
+        <div onClick={e => e.stopPropagation()} dir="rtl" style={{
+          width: 'min(560px, 92vw)', maxHeight: '86vh', overflowY: 'auto',
+          background: 'var(--bg-card)', border: '1px solid var(--border)',
+          borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', padding: 22,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 18 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>Build on local IDE</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.6 }}>
+                הסוכן הזה הוא קבצים. משוך אותו לתיקייה, ערוך בעורך שלך, ודחוף בחזרה.
+              </div>
+            </div>
+            <IconBtn onClick={onClose} title="סגור">✕</IconBtn>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <div>
+              {step(1, 'התקנה', 'דורש Node 18 ומעלה. אפשר גם בלי להתקין — npx מוריד בכל הרצה.')}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <CopyableCommand command="npm i -g @8legs/cli" />
+                <CopyableCommand command="npx @8legs/cli login" note="הפקודה שמחברת את המחשב לחשבון." />
+              </div>
+            </div>
+
+            <div>
+              {step(2, 'טוקן', 'ה-login מבקש טוקן. צור אותו כאן — הוא מוצג פעם אחת בלבד.')}
+              <TokenMinter fieldWidth={220} />
+            </div>
+
+            <div>
+              {step(3, 'משיכת הסוכן', 'נוצרת תיקייה עם הפרומפט, הסקילים והכלים. 8legs push מחזיר אותם.')}
+              <CopyableCommand command={`npx @8legs/cli pull ${agentId}`} />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function LocalIdeButton({ agentId }) {
+    const [open, setOpen] = useState(false);
+    return (
+      <React.Fragment>
+        <Btn icon={Icons.terminal} onClick={() => setOpen(true)}
+             title="להתקין את ה-CLI, להתחבר ולמשוך את הסוכן">
+          Build on local IDE
+        </Btn>
+        {open && <LocalIdePanel agentId={agentId} onClose={() => setOpen(false)} />}
+      </React.Fragment>
     );
   }
 
@@ -4835,7 +4902,7 @@
             {mergeable && (
               <Btn icon={Icons.merge} onClick={() => setMerging(branchNow)}>Merge to main</Btn>
             )}
-            <PullCommandButton agentId={agent.id} />
+            <LocalIdeButton agentId={agent.id} />
             {onTest && (
               <Btn variant="primary" icon={Icons.play} onClick={testThis}
                    title={`Talk to ${branchNow} — the conversation is saved in Manual tests`}>
@@ -8187,22 +8254,16 @@ npm run migrate            # הרצה בפועל`}</Block>
    * there is nothing left to show on the next load. That is the point, but it
    * means the one moment it is on screen has to be obvious and easy to copy.
    */
-  function TokensSection({ sectionStyle, sectionHeader, rowStyle, iconBox }) {
-    const [tokens, setTokens] = useState([]);
-    const [loading, setLoading] = useState(true);
+  /**
+   * Mint one token: a name, a button that stays inert without one, and the
+   * token itself shown the only time it is ever shown. Used in Settings and
+   * in the panel that walks you through working from an IDE.
+   */
+  function TokenMinter({ onCreated, fieldWidth = 200 }) {
+    const [name, setName] = useState('');
     const [busy, setBusy] = useState(false);
     const [fresh, setFresh] = useState(null);
     const [error, setError] = useState(null);
-    /* A token is named by the person making it. Three of them called CLI tell
-       you nothing on the day you have to decide which one to revoke. */
-    const [name, setName] = useState('');
-
-    async function load() {
-      try { setTokens(await apiListTokens()); setError(null); }
-      catch (e) { setError(e.message); }
-      finally { setLoading(false); }
-    }
-    useEffect(() => { load(); }, []);
 
     async function create() {
       const clean = name.trim();
@@ -8213,10 +8274,63 @@ npm run migrate            # הרצה בפועל`}</Block>
         const created = await apiCreateToken(clean);
         setFresh({ token: created.token, name: clean });
         setName('');
-        await load();
+        if (onCreated) onCreated();
       } catch (e) { setError(e.message); }
       finally { setBusy(false); }
     }
+
+    return (
+      <React.Fragment>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') create(); }}
+            maxLength={80}
+            dir="auto"
+            placeholder="שם הטוקן — למשל laptop"
+            style={{ width: fieldWidth, padding: '7px 12px', fontSize: 13 }}
+          />
+          <button onClick={create} disabled={busy || !name.trim()}
+            title={name.trim() ? 'צור טוקן בשם הזה' : 'קודם תן לטוקן שם'}
+            style={{ padding: '8px 16px', borderRadius: 'var(--r-sm)',
+                     cursor: busy || !name.trim() ? 'default' : 'pointer',
+                     background: name.trim() ? 'var(--primary)' : 'var(--bg-hover)',
+                     color: name.trim() ? '#0a0a0a' : 'var(--text-muted)',
+                     border: `1px solid ${name.trim() ? 'var(--primary)' : 'var(--border)'}`,
+                     fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap',
+                     opacity: busy ? 0.6 : 1, flexShrink: 0 }}>
+            {busy ? '…' : 'צור טוקן'}
+          </button>
+        </div>
+
+        {fresh && (
+          <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 'var(--r-md)',
+                        background: 'rgba(250,204,21,0.10)', border: '1px solid rgba(250,204,21,0.35)' }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--warning)', marginBottom: 8 }}>
+              <span dir="auto">{fresh.name}</span> — העתק עכשיו, הטוקן לא יוצג שוב
+            </div>
+            <CopyableCommand command={fresh.token} note="הרץ 8legs login והדבק אותו שם." />
+          </div>
+        )}
+
+        {error && <div style={{ fontSize: 12, color: 'var(--danger)', marginTop: 8 }}>{error}</div>}
+      </React.Fragment>
+    );
+  }
+
+  function TokensSection({ sectionStyle, sectionHeader, rowStyle, iconBox }) {
+    const [tokens, setTokens] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+
+    async function load() {
+      try { setTokens(await apiListTokens()); setError(null); }
+      catch (e) { setError(e.message); }
+      finally { setLoading(false); }
+    }
+    useEffect(() => { load(); }, []);
 
     async function revoke(id) {
       setBusy(true);
@@ -8239,27 +8353,8 @@ npm run migrate            # הרצה בפועל`}</Block>
               </div>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-            <input
-              value={name}
-              onChange={e => setName(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') create(); }}
-              maxLength={80}
-              dir="auto"
-              placeholder="שם הטוקן — למשל laptop"
-              style={{ width: 200, padding: '7px 12px', fontSize: 13 }}
-            />
-            <button onClick={create} disabled={busy || !name.trim()}
-              title={name.trim() ? 'צור טוקן בשם הזה' : 'קודם תן לטוקן שם'}
-              style={{ padding: '8px 16px', borderRadius: 'var(--r-sm)',
-                       cursor: busy || !name.trim() ? 'default' : 'pointer',
-                       background: name.trim() ? 'var(--primary)' : 'var(--bg-hover)',
-                       color: name.trim() ? '#0a0a0a' : 'var(--text-muted)',
-                       border: `1px solid ${name.trim() ? 'var(--primary)' : 'var(--border)'}`,
-                       fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap',
-                       opacity: busy ? 0.6 : 1, flexShrink: 0 }}>
-              {busy ? '…' : 'צור טוקן'}
-            </button>
+          <div style={{ flexShrink: 0 }}>
+            <TokenMinter onCreated={load} />
           </div>
         </div>
 
@@ -8271,16 +8366,6 @@ npm run migrate            # הרצה בפועל`}</Block>
           <CopyableCommand command="npx @8legs/cli login"
             note="בלי להתקין כלום — npx מוריד אותו בכל הרצה." />
         </div>
-
-        {fresh && (
-          <div style={{ borderTop: '1px solid var(--border)', padding: '14px 20px',
-                        background: 'rgba(250,204,21,0.07)' }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--warning)', marginBottom: 8 }}>
-              <span dir="auto">{fresh.name}</span> — העתק עכשיו, הטוקן לא יוצג שוב
-            </div>
-            <CopyableCommand command={fresh.token} note="הרץ 8legs login והדבק אותו שם." />
-          </div>
-        )}
 
         {loading ? (
           <div style={{ ...rowStyle, borderTop: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 13 }}>טוען…</div>
