@@ -4477,16 +4477,15 @@
                   <span dir="ltr" style={{ fontFamily: MONO }}>{b.name}</span>
                   {b.kind === 'draft' && <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>  טיוטה</span>}
                   {b.live && <span style={{ color: 'var(--success)', fontWeight: 500 }}>  חי</span>}
-                  {b.live && b.name !== 'main' && (
-                    <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>  {b.traffic_weight}% מהשיחות</span>
-                  )}
                 </button>
 
                 {/* A draft is a place to work, never something customers reach. */}
                 {b.kind !== 'draft' && (
                   <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
+                    {/* main's share is whatever the branches leave over, so it
+                        is shown and never typed into. */}
                     <input type="number" min="0" max="100" defaultValue={b.traffic_weight}
-                      disabled={b.live || busy}
+                      disabled={b.kind === 'main' || busy}
                       onBlur={e => { const v = Number(e.target.value);
                                      if (v !== b.traffic_weight) setWeight(b.name, v); }}
                       style={{ width: 58, fontSize: 12, padding: '3px 6px' }} />
@@ -4752,10 +4751,14 @@
               {branchNow === 'draft'
                 ? <Chip tone="draft">Draft</Chip>
                 : liveNow
-                  ? <Chip tone="live">
-                      Live{branchNow !== 'main' && branchInfo ? ` · ${branchInfo.traffic_weight}%` : ''}
+                  ? <Chip tone="live" title="Real conversations reach this version">
+                      Live{branchInfo && branchInfo.traffic_weight < 100 ? ` · ${branchInfo.traffic_weight}%` : ''}
                     </Chip>
-                  : <Chip tone="neutral">Experiment</Chip>}
+                  : branchNow === 'main'
+                    ? <Chip tone="neutral" title="Experiments are taking every conversation right now">
+                        No traffic
+                      </Chip>
+                    : <Chip tone="neutral">Experiment</Chip>}
               <Chip tone="skills" mono>{agent.skills.length} skills</Chip>
               <Chip tone="tools" mono>{agent.tools.length} tools</Chip>
             </div>
