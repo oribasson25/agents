@@ -356,6 +356,14 @@ The same Testing status has a second effect worth knowing: Google **expires refr
 `invalid_grant`. `api/_gmail.js` reports that as TOKEN_EXPIRED and says to reconnect; publishing
 the consent screen is what stops it recurring.
 
+## Editing one in words
+
+Every chatbot card carries **Edit with AI** beside **Edit**. It opens the home chat with a request
+that names that chatbot and tells the assistant to read it before asking anything, so a change can
+be described rather than found: "ask for an email too", "never promise a price". The assistant
+makes it through the tools it already has. Naming the chatbot is also what gives the conversation
+a title of its own instead of a column of identical ones in the history.
+
 ## Crawling a site
 
 One URL on an AI Chatbot's **Knowledge** tab means the domain behind it, not the page. The crawl

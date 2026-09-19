@@ -5522,7 +5522,7 @@ function markSvgString(color, size = 30) {
     );
   }
 
-  function AgentCard({ agent, onEdit, onTest, onDuplicate, onDelete, onExport, isNew }) {
+  function AgentCard({ agent, onEdit, onEditWithAi, onTest, onDuplicate, onDelete, onExport, isNew }) {
     const [hovered, setHovered] = useState(false);
     const ready = agentReady(agent);
 
@@ -5568,9 +5568,13 @@ function markSvgString(color, size = 30) {
         <MadeOf agent={agent} />
 
         {/* Actions: the two you reach for carry a label, the rest are icons. */}
-        <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: 6, borderTop: '1px solid var(--border)', paddingTop: 13 }}
+        <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', borderTop: '1px solid var(--border)', paddingTop: 13 }}
              onClick={e => e.stopPropagation()}>
-          <Btn size="sm" icon={Icons.edit} onClick={onEdit}>Edit</Btn>
+          <Btn size="sm" icon={Icons.edit} onClick={onEdit}>{L('Edit', 'עריכה')}</Btn>
+          <Btn size="sm" icon={Icons.sparkle} onClick={onEditWithAi}
+               title={L('Describe the change in words and the assistant makes it', 'לתאר את השינוי במילים, והאסיסטנט מבצע')}>
+            {L('Edit with AI', 'עריכה עם AI')}
+          </Btn>
           <Btn size="sm" icon={Icons.play} onClick={onTest}
                title="A real conversation through the live channel — it lands in Interactions">Test</Btn>
           <div style={{ marginInlineStart: 'auto', display: 'flex', gap: 2 }}>
@@ -5587,7 +5591,7 @@ function markSvgString(color, size = 30) {
   }
 
   /** The same agent as one line, for when the list gets long. */
-  function AgentRow({ agent, onEdit, onTest, onDuplicate, onDelete, onExport, isNew }) {
+  function AgentRow({ agent, onEdit, onEditWithAi, onTest, onDuplicate, onDelete, onExport, isNew }) {
     const [hot, setHot] = useState(false);
     return (
       <div className={isNew ? 'card-highlight fade-in' : 'fade-in'}
@@ -5608,7 +5612,8 @@ function markSvgString(color, size = 30) {
         <span style={{ fontSize: 12, color: 'var(--text-2)', width: 80, flexShrink: 0 }}>{agentChannel(agent)}</span>
         <MadeOf agent={agent} short style={{ flexShrink: 0, fontSize: 11.5 }} />
         <div style={{ display: 'flex', gap: 4, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-          <Btn size="sm" icon={Icons.edit} onClick={onEdit}>Edit</Btn>
+          <Btn size="sm" icon={Icons.edit} onClick={onEdit}>{L('Edit', 'עריכה')}</Btn>
+          <IconBtn onClick={onEditWithAi} title={L('Edit with AI', 'עריכה עם AI')}>{Icons.sparkle}</IconBtn>
           <Btn size="sm" icon={Icons.play} onClick={onTest}
                title="A real conversation through the live channel — it lands in Interactions">Test</Btn>
           <IconBtn onClick={onDuplicate} title="Duplicate">{Icons.copy}</IconBtn>
@@ -5700,6 +5705,10 @@ function markSvgString(color, size = 30) {
             <li><strong>9 · לולאת אישור</strong> — ראה למטה</li>
             <li><strong>10 · פרסום</strong> — סניפט לאתר, וואטסאפ, או דילוג</li>
           </UL>
+
+          <H3>עריכה עם AI</H3>
+          <P>על כל כרטיס של צ'אטבוט יש <Code>עריכה עם AI</Code> לצד <Code>עריכה</Code>. הוא פותח את הצ'אט בדף הבית עם בקשה שכוללת את <strong>שם הצ'אטבוט</strong>, ומבקשת מהאסיסטנט לקרוא אותו לפני שהוא שואל משהו. משם אפשר לתאר שינוי במילים — ״שיבקש גם מייל״, ״שלא יבטיח מחיר״ — והאסיסטנט מבצע אותו דרך אותם כלים שיש לו ממילא.</P>
+          <P>השם בבקשה הוא גם מה שנותן לשיחה כותרת משלה, במקום עמודה של שיחות זהות בהיסטוריה.</P>
 
           <H3>טולים — רק כשאין ברירה</H3>
           <P>כמעט שום דבר לא צריך קוד. הידע עונה על שאלות, הטבלה רושמת מה שנאסף, Gmail שולח, והסורק קורא את האתר. טול נחוץ רק לדבר האחד שאף אחד מהם לא מגיע אליו — <strong>מערכת של חברה אחרת</strong>: מעקב משלוח אצל שליח, הפקת חשבונית בתוכנת הנהלת חשבונות, שליחת SMS דרך ספק.</P>
@@ -8253,6 +8262,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     const cardProps = a => ({
       key: a.id, agent: a, isNew: a._isNew,
       onEdit: () => onEdit(a.id),
+      onEditWithAi: () => onBuildInChat(EDIT_AGENT_ASK(a.name)),
       onTest: () => onTest(a.id),
       onDuplicate: () => onDuplicate(a.id),
       onDelete: () => onDelete(a.id),
@@ -9593,6 +9603,13 @@ npm run migrate            # הרצה בפועל`}</Block>
                       he: 'בנה לי AI Chatbot חדש. שאל אותי מה הוא צריך לעשות.' };
   function FIRST_AGENT_ASK() { return L(FIRST_ASK.en, FIRST_ASK.he); }
   function NEW_AGENT_ASK()   { return L(NEW_ASK.en, NEW_ASK.he); }
+  /* Naming the chatbot is what makes this useful: the assistant reads that one
+     before it asks anything, and the conversation gets a title of its own
+     rather than joining a column of identical ones. */
+  function EDIT_AGENT_ASK(name) {
+    return L(`I want to change the AI Chatbot "${name}". Read it first, then ask me what to change.`,
+             `אני רוצה לשנות את ה-AI Chatbot "${name}". קרא אותו קודם, ואז שאל אותי מה לשנות.`);
+  }
   /* Conversations are recognised by these words rather than by a flag, which
      they were saved without. The wording the product used before the rename
      stays on the list: those conversations are still in the database, and a
