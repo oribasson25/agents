@@ -206,6 +206,19 @@ The browser keeps its own session log for test runs and provider errors. Togethe
 the tool assistant, the skill assistant and the platform assistant receive, so "fix it" works
 without pasting a traceback.
 
+## The mark as an avatar
+
+An AI Chatbot does not wear an emoji or an uploaded picture: it wears the platform's own mark,
+drawn in one of eight colours, with no tile or frame around it. What is stored in `avatar` is a
+hex colour. Anything stored before this — an emoji, a data URL — resolves through
+`avatarColor()` to one colour of the palette by hashing its own text, so an old AI Chatbot
+keeps a stable colour without a migration and without losing its row.
+
+The drawing lives in three places that cannot share code: `spiderPaths(color)` in the browser
+as JSX, `markSvgString(color)` in the browser for the embed snippet it hands out as text, and
+`api/_mark.js` for the widget the server renders into somebody else's site. The palette is
+duplicated in the last of those; `probes/render-probe.mjs` checks the two lists still match.
+
 ## Starter agents
 
 Every new account is seeded with a copy of each row in `starter_agents` (migration `018`), the

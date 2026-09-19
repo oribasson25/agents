@@ -15,7 +15,7 @@ const src = fs.readFileSync(new URL('../agentforge.html', import.meta.url).pathn
 const body = src.match(/<script type="text\/babel"[^>]*>([\s\S]*?)<\/script>/)[1];
 
 /* Hand the probe the components it wants to render. */
-const exposed = ['TokensSection', 'TokenMinter', 'LocalIdePanel', 'SettingsPanel', 'AgentEditor', 'BranchBar', 'MergePanel', 'MobileDraftBar', 'MobileAgentEditor', 'CopyableCommand', 'DocsView', 'HomeChatView', 'AgentBuildCard', 'Sidebar', 'splitOptions', 'HOME_COPY', 'homeSystemExtra', 'greeting', 'L', 'Eyebrow', 'sessionTitle', 'reducer'];
+const exposed = ['TokensSection', 'TokenMinter', 'LocalIdePanel', 'SettingsPanel', 'AgentEditor', 'BranchBar', 'MergePanel', 'MobileDraftBar', 'MobileAgentEditor', 'CopyableCommand', 'DocsView', 'HomeChatView', 'AgentBuildCard', 'Sidebar', 'splitOptions', 'HOME_COPY', 'homeSystemExtra', 'greeting', 'L', 'Eyebrow', 'sessionTitle', 'reducer', 'AvatarDisplay', 'avatarColor', 'AVATAR_COLORS', 'markSvgString'];
 const code = babel.transform(
   body + `\n;globalThis.__probe = { ${exposed.map(n => `${n}: typeof ${n} !== 'undefined' ? ${n} : null`).join(', ')} };`,
   { presets: ['react'] }).code;
@@ -184,6 +184,21 @@ if (side && side.includes('>Assistant<')) { console.log('✗ the sidebar still c
 if (side && !/dir="auto"[^>]*>[\s\S]{0,40}סוכן למעקב הזמנות/.test(side)) {
   console.log('✗ the chat rows do not carry their own direction'); failed++;
 } else console.log('✓ a chat title in the sidebar carries dir="auto"');
+
+/* An AI Chatbot wears the platform's mark in a colour — never an emoji, and
+   never in a tile. Anything stored before the change still resolves to one
+   colour, the same one every time. */
+const mark = render('AvatarDisplay', React.createElement(probe.AvatarDisplay, { value: '#0d9488', size: 24 }));
+if (!/<svg/.test(mark)) { console.log('✗ the avatar is not the mark'); failed++; }
+if (!mark.includes('#0d9488')) { console.log('✗ the avatar ignores its colour'); failed++; }
+if (/🤖/.test(mark)) { console.log('✗ an emoji is still being drawn'); failed++; }
+if (probe.avatarColor('🤖') !== probe.avatarColor('🤖')) { console.log('✗ an old avatar changes colour between renders'); failed++; }
+if (!probe.AVATAR_COLORS.includes(probe.avatarColor('🤖'))) { console.log('✗ an old avatar lands outside the palette'); failed++; }
+if (probe.avatarColor('#6d5ce0') !== '#6d5ce0') { console.log('✗ a stored colour is not used as-is'); failed++; }
+if (probe.AVATAR_COLORS.length !== 8) { console.log('✗ the palette is not eight colours'); failed++; }
+/* The snippet people paste into their own site carries the same drawing. */
+if (!probe.markSvgString('#dc2626', 32).includes('#dc2626')) { console.log('✗ the embed snippet loses the colour'); failed++; }
+console.log('✓ an AI Chatbot wears the mark, in its own colour, with no tile');
 
 /* The first edit to a live agent opens a draft, and the save says so. The
    answer arrives after a debounce, by which time the agent in hand may hold

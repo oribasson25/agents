@@ -236,36 +236,54 @@
   const { useState, useReducer, useEffect, useRef, useCallback, createContext, useContext } = React;
 
   /* ─────────────────── BG WATERMARK ─────────────────── */
-  const spiderSvgPaths = (
-    <>
-      <ellipse cx="340" cy="108" rx="21" ry="29" fill="#EF9F27"/>
-      <ellipse cx="340" cy="72" rx="14" ry="14" fill="#EF9F27"/>
-      <circle cx="335" cy="70" r="3.5" fill="#854F0B"/>
-      <circle cx="345" cy="70" r="3.5" fill="#854F0B"/>
-      <path d="M345,136 C372,138 390,122 390,98 C390,72 374,56 379,38" fill="none" stroke="#EF9F27" strokeWidth="8" strokeLinecap="round"/>
-      <polygon points="375,40 382,24 389,40" fill="#D85A30"/>
-      {/* Grouped per side so the home screen can step them; a plain <g> changes
-          nothing for the callers that draw the mark still. */}
-      <g className="sp-legs-l">
-        <polyline points="319,95 293,80 278,72" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
-        <polyline points="319,105 291,102 276,100" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
-        <polyline points="319,115 291,119 276,124" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
-        <polyline points="319,125 293,136 281,146" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
-      </g>
-      <g className="sp-legs-r">
-        <polyline points="361,95 387,80 402,72" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
-        <polyline points="361,105 389,102 404,100" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
-        <polyline points="361,115 389,119 404,124" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
-        <polyline points="361,125 387,136 399,146" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
-      </g>
-      <path d="M328,62 L313,48" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round"/>
-      <path d="M313,48 L304,40" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
-      <path d="M313,48 L309,57" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
-      <path d="M352,62 L367,48" fill="none" stroke="#EF9F27" strokeWidth="4.5" strokeLinecap="round"/>
-      <path d="M367,48 L376,40" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
-      <path d="M367,48 L371,57" fill="none" stroke="#EF9F27" strokeWidth="4" strokeLinecap="round"/>
-    </>
-  );
+  /* Every colour in the mark comes off one hue, so the same drawing can stand
+     for the platform in amber and for an AI Chatbot in whatever it was given. */
+  function shade(hex, amount) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+    if (!m) return hex;
+    const n = parseInt(m[1], 16);
+    const mix = c => Math.round(amount < 0 ? c * (1 + amount) : c + (255 - c) * amount);
+    const out = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(mix);
+    return '#' + out.map(c => c.toString(16).padStart(2, '0')).join('');
+  }
+
+  function spiderPaths(color = '#EF9F27', ink, flag) {
+    const eye = ink || shade(color, -0.55);
+    const tip = flag || shade(color, -0.35);
+    return (
+      <>
+        <ellipse cx="340" cy="108" rx="21" ry="29" fill={color}/>
+        <ellipse cx="340" cy="72" rx="14" ry="14" fill={color}/>
+        <circle cx="335" cy="70" r="3.5" fill={eye}/>
+        <circle cx="345" cy="70" r="3.5" fill={eye}/>
+        <path d="M345,136 C372,138 390,122 390,98 C390,72 374,56 379,38" fill="none" stroke={color} strokeWidth="8" strokeLinecap="round"/>
+        <polygon points="375,40 382,24 389,40" fill={tip}/>
+        {/* Grouped per side so the home screen can step them; a plain <g> changes
+            nothing for the callers that draw the mark still. */}
+        <g className="sp-legs-l">
+          <polyline points="319,95 293,80 278,72" fill="none" stroke={color} strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+          <polyline points="319,105 291,102 276,100" fill="none" stroke={color} strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+          <polyline points="319,115 291,119 276,124" fill="none" stroke={color} strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+          <polyline points="319,125 293,136 281,146" fill="none" stroke={color} strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </g>
+        <g className="sp-legs-r">
+          <polyline points="361,95 387,80 402,72" fill="none" stroke={color} strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+          <polyline points="361,105 389,102 404,100" fill="none" stroke={color} strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+          <polyline points="361,115 389,119 404,124" fill="none" stroke={color} strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+          <polyline points="361,125 387,136 399,146" fill="none" stroke={color} strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </g>
+        <path d="M328,62 L313,48" fill="none" stroke={color} strokeWidth="4.5" strokeLinecap="round"/>
+        <path d="M313,48 L304,40" fill="none" stroke={color} strokeWidth="4" strokeLinecap="round"/>
+        <path d="M313,48 L309,57" fill="none" stroke={color} strokeWidth="4" strokeLinecap="round"/>
+        <path d="M352,62 L367,48" fill="none" stroke={color} strokeWidth="4.5" strokeLinecap="round"/>
+        <path d="M367,48 L376,40" fill="none" stroke={color} strokeWidth="4" strokeLinecap="round"/>
+        <path d="M367,48 L371,57" fill="none" stroke={color} strokeWidth="4" strokeLinecap="round"/>
+      </>
+    );
+  }
+
+  /* The brand's own colouring, which is what every existing caller draws. */
+  const spiderSvgPaths = spiderPaths('#EF9F27', '#854F0B', '#D85A30');
 
   function BgLogo({ size = 560, wrapStyle = {} }) {
     return (
@@ -1150,10 +1168,74 @@
     );
   }
 
+  /* An AI Chatbot wears the platform's mark, in a colour of its own. Eight of
+     them, one per leg, all far enough apart to tell at 18px. */
+  const AVATAR_COLORS = [
+    '#EF9F27',  // the brand's amber
+    '#0d9488',  // teal
+    '#6d5ce0',  // violet
+    '#2563eb',  // blue
+    '#16a34a',  // green
+    '#dc2626',  // red
+    '#db2777',  // pink
+    '#475569',  // slate
+  ];
+  const DEFAULT_AVATAR_COLOR = AVATAR_COLORS[0];
+
+  /**
+   * The colour an AI Chatbot's mark is drawn in.
+   *
+   * What is stored is a hex colour. Anything else is from before the mark
+   * replaced emoji and uploaded pictures — those are turned into a colour by
+   * their own text, so an AI Chatbot that used to be 🤖 keeps one colour
+   * rather than changing every time the page loads.
+   */
+  function avatarColor(value) {
+    const v = (value || '').trim();
+    if (/^#[0-9a-f]{6}$/i.test(v)) return v;
+    if (!v) return DEFAULT_AVATAR_COLOR;
+    let h = 0;
+    for (let i = 0; i < v.length; i++) h = (h * 31 + v.charCodeAt(i)) >>> 0;
+    return AVATAR_COLORS[h % AVATAR_COLORS.length];
+  }
+
+  /* The same drawing as a plain string, for the HTML this app hands out
+     rather than renders: the embed snippet. `api/_mark.js` is the server's
+     copy of this, for the widget it serves. */
+function markSvgString(color, size = 30) {
+  const c = /^#[0-9a-f]{6}$/i.test((color || '').trim()) ? color.trim() : '#EF9F27';
+  const dark = (hex, amount) => {
+    const n = parseInt(hex.slice(1), 16);
+    const mix = v => Math.round(v * (1 + amount));
+    return '#' + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(mix)
+      .map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0')).join('');
+  };
+  const eye = dark(c, -0.55), tip = dark(c, -0.35);
+  const leg = (pts) => `<polyline points="${pts}" fill="none" stroke="${c}" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="272 20 136 136" width="${size}" height="${size}">`
+    + `<ellipse cx="340" cy="108" rx="21" ry="29" fill="${c}"/>`
+    + `<ellipse cx="340" cy="72" rx="14" ry="14" fill="${c}"/>`
+    + `<circle cx="335" cy="70" r="3.5" fill="${eye}"/><circle cx="345" cy="70" r="3.5" fill="${eye}"/>`
+    + `<path d="M345,136 C372,138 390,122 390,98 C390,72 374,56 379,38" fill="none" stroke="${c}" stroke-width="8" stroke-linecap="round"/>`
+    + `<polygon points="375,40 382,24 389,40" fill="${tip}"/>`
+    + leg('319,95 293,80 278,72') + leg('319,105 291,102 276,100') + leg('319,115 291,119 276,124') + leg('319,125 293,136 281,146')
+    + leg('361,95 387,80 402,72') + leg('361,105 389,102 404,100') + leg('361,115 389,119 404,124') + leg('361,125 387,136 399,146')
+    + `<path d="M328,62 L313,48" fill="none" stroke="${c}" stroke-width="4.5" stroke-linecap="round"/>`
+    + `<path d="M313,48 L304,40" fill="none" stroke="${c}" stroke-width="4" stroke-linecap="round"/>`
+    + `<path d="M313,48 L309,57" fill="none" stroke="${c}" stroke-width="4" stroke-linecap="round"/>`
+    + `<path d="M352,62 L367,48" fill="none" stroke="${c}" stroke-width="4.5" stroke-linecap="round"/>`
+    + `<path d="M367,48 L376,40" fill="none" stroke="${c}" stroke-width="4" stroke-linecap="round"/>`
+    + `<path d="M367,48 L371,57" fill="none" stroke="${c}" stroke-width="4" stroke-linecap="round"/>`
+    + `</svg>`;
+}
+
   function AvatarDisplay({ value, size = 22, style: extraStyle = {} }) {
-    const isImage = value && (value.startsWith('data:') || value.startsWith('http'));
-    if (isImage) return <img src={value} style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, ...extraStyle }} />;
-    return <span style={{ fontSize: size, lineHeight: 1, ...extraStyle }}>{value || '🤖'}</span>;
+    return (
+      <svg viewBox="272 20 136 136" width={size} height={size} aria-hidden="true"
+           style={{ flexShrink: 0, display: 'block', ...extraStyle }}>
+        {spiderPaths(avatarColor(value))}
+      </svg>
+    );
   }
 
   /* ─────────────────── RICH PROMPT EDITOR ─────────────────── */
@@ -1411,14 +1493,12 @@
   /* ─────────────────── CONFIGURATION TAB ─────────────────── */
   /* The platform's own mark, as an image an agent can wear. A new agent gets
      it instead of a stock robot, and the picker offers it back. */
-  const DEFAULT_AVATAR = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='268 14 144 144'%3E%3Cellipse cx='340' cy='108' rx='21' ry='29' fill='%23EF9F27'/%3E%3Cellipse cx='340' cy='72' rx='14' ry='14' fill='%23EF9F27'/%3E%3Ccircle cx='335' cy='70' r='3.5' fill='%23854F0B'/%3E%3Ccircle cx='345' cy='70' r='3.5' fill='%23854F0B'/%3E%3Cpath d='M345,136 C372,138 390,122 390,98 C390,72 374,56 379,38' fill='none' stroke='%23EF9F27' stroke-width='8' stroke-linecap='round'/%3E%3Cpolygon points='375,40 382,24 389,40' fill='%23D85A30'/%3E%3Cpolyline points='319,95 293,80 278,72' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='319,105 291,102 276,100' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='319,115 291,119 276,124' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='319,125 293,136 281,146' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='361,95 387,80 402,72' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='361,105 389,102 404,100' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='361,115 389,119 404,124' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='361,125 387,136 399,146' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M328,62 L313,48' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round'/%3E%3Cpath d='M313,48 L304,40' fill='none' stroke='%23EF9F27' stroke-width='4' stroke-linecap='round'/%3E%3Cpath d='M313,48 L309,57' fill='none' stroke='%23EF9F27' stroke-width='4' stroke-linecap='round'/%3E%3Cpath d='M352,62 L367,48' fill='none' stroke='%23EF9F27' stroke-width='4.5' stroke-linecap='round'/%3E%3Cpath d='M367,48 L376,40' fill='none' stroke='%23EF9F27' stroke-width='4' stroke-linecap='round'/%3E%3Cpath d='M367,48 L371,57' fill='none' stroke='%23EF9F27' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E";
+  const DEFAULT_AVATAR = DEFAULT_AVATAR_COLOR;
 
-  const EMOJI_OPTIONS = ['🤖','🧠','💼','🎯','🔥','🚀','⚡','💡','🛡️','🌟','👾','🎨','🔬','📊','🗺️','🎤','🌐','🔑','⚙️','🦁'];
 
   function ConfigurationTab({ agent, onUpdate, stacked }) {
-    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const [pickingColor, setPickingColor] = useState(false);
     const [askAI, setAskAI] = useState(false);
-    const fileInputRef = React.useRef(null);
 
     // The assistant hands back several fields at once, and undo hands the old
     // ones back the same way.
@@ -1437,28 +1517,6 @@
       onUpdate(updated);
     }
 
-    function handleImageUpload(e) {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = ev => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = 64; canvas.height = 64;
-          const ctx = canvas.getContext('2d');
-          // cover-crop to square
-          const s = Math.min(img.width, img.height);
-          const sx = (img.width - s) / 2, sy = (img.height - s) / 2;
-          ctx.drawImage(img, sx, sy, s, s, 0, 0, 64, 64);
-          update(['avatar'], canvas.toDataURL('image/png', 0.9));
-          setShowEmojiPicker(false);
-        };
-        img.src = ev.target.result;
-      };
-      reader.readAsDataURL(file);
-      e.target.value = '';
-    }
 
     return (
       /*
@@ -1476,25 +1534,34 @@
         <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: 24, border: '1px solid var(--border)' }}>
           <div style={{ fontWeight: 700, marginBottom: 16, fontSize: 15 }}>Identity</div>
           <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-            {/* Avatar */}
+            {/* The mark, in this AI Chatbot's colour. No frame around it —
+                the drawing is the avatar, not a tile with something in it. */}
             <div style={{ position: 'relative' }}>
-              <input type="file" accept="image/*" ref={fileInputRef} style={{ display: 'none' }} onChange={handleImageUpload} />
-              <button
-                onClick={() => setShowEmojiPicker(v => !v)}
-                style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--bg-panel)', fontSize: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--border)', overflow: 'hidden', padding: 0 }}
-              ><AvatarDisplay value={agent.avatar} size={40} /></button>
-              {showEmojiPicker && (
-                <div style={{ position: 'absolute', top: 72, left: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 10, zIndex: 100, width: 190 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 4, marginBottom: 8 }}>
-                    <button key="logo" title="The 8Legs mark" onClick={() => { update(['avatar'], DEFAULT_AVATAR); setShowEmojiPicker(false); }}
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', borderRadius: 6, padding: 4 }}>
-                      <AvatarDisplay value={DEFAULT_AVATAR} size={22} />
-                    </button>
-                    {EMOJI_OPTIONS.map(e => (
-                      <button key={e} onClick={() => { update(['avatar'], e); setShowEmojiPicker(false); }} style={{ fontSize: 22, background: 'transparent', borderRadius: 6, padding: 4 }}>{e}</button>
-                    ))}
-                  </div>
-                  <button onClick={() => fileInputRef.current.click()} style={{ width: '100%', fontSize: 12, padding: '6px 0', borderRadius: 6, background: 'var(--bg-hover)', color: 'var(--text-2)', border: '1px dashed var(--border)', cursor: 'pointer' }}>📁 Upload image</button>
+              <button onClick={() => setPickingColor(v => !v)} title="Pick a colour"
+                style={{ background: 'transparent', padding: 4, borderRadius: 12, display: 'flex' }}>
+                <AvatarDisplay value={agent.avatar} size={56} />
+              </button>
+              {pickingColor && (
+                <div style={{
+                  position: 'absolute', top: 70, left: 0, zIndex: 100,
+                  background: 'var(--bg-card)', border: '1px solid var(--border)',
+                  borderRadius: 'var(--r-md)', padding: 8, boxShadow: 'var(--shadow)',
+                  display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 2,
+                }}>
+                  {AVATAR_COLORS.map(c => {
+                    const on = avatarColor(agent.avatar) === c;
+                    return (
+                      <button key={c} title={c}
+                        onClick={() => { update(['avatar'], c); setPickingColor(false); }}
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          padding: 6, borderRadius: 10, background: on ? 'var(--bg-hover)' : 'transparent',
+                          border: `1px solid ${on ? 'var(--border)' : 'transparent'}`,
+                        }}>
+                        <AvatarDisplay value={c} size={26} />
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -3774,11 +3841,9 @@
     const widgetUrl = `${baseUrl}/api/widget/${agent.id}?${params}`;
     const iframeTag = `<iframe src="${widgetUrl}" width="100%" height="${widgetHeight}px" frameborder="0" style="border-radius:${radius}px;border:none;" sandbox="allow-scripts allow-forms"></iframe>`;
 
-    const avatar = agent.avatar || '🤖';
-    const avatarIsImage = avatar.startsWith('data:') || avatar.startsWith('http');
-    const btnIconHtml = avatarIsImage
-      ? `<img src="${avatar}" style="width:32px;height:32px;border-radius:50%;object-fit:cover">`
-      : avatar;
+    /* The floating button wears the mark, in this AI Chatbot's colour, so the
+       snippet somebody pastes into their site matches what they see here. */
+    const btnIconHtml = markSvgString(avatarColor(agent.avatar), 32);
     const floatingSnippet = `<!-- ${agent.name} Chat Widget -->
 <style>
   #_agentbtn{position:fixed;bottom:24px;right:24px;width:56px;height:56px;border-radius:50%;background:${accent};border:none;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.25);font-size:26px;display:flex;align-items:center;justify-content:center;z-index:9998;transition:transform .2s}
@@ -4237,7 +4302,7 @@
           width: fullScreen ? '100vw' : 420, background: 'var(--bg-sidebar)', borderLeft: fullScreen ? 'none' : '1px solid var(--border)', zIndex: 201, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
           {/* Header */}
           <div style={{ padding: fullScreen ? '9px 10px 9px 14px' : '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-            <div style={{ width: fullScreen ? 34 : 40, height: fullScreen ? 34 : 40, borderRadius: '50%', background: 'var(--bg-panel)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}><AvatarDisplay value={agent.avatar} size={fullScreen ? 34 : 40} /></div>
+            <AvatarDisplay value={agent.avatar} size={fullScreen ? 34 : 40} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
                 <span dir="auto" style={{ fontWeight: 700, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agent.name}</span>
@@ -5105,13 +5170,7 @@
             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-2)'; }}
           >{Icons.back}</button>
 
-          <div style={{
-            width: 52, height: 52, borderRadius: 15, flexShrink: 0, overflow: 'hidden',
-            background: 'var(--bg-panel)', border: '1px solid var(--border)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <AvatarDisplay value={agent.avatar} size={52} />
-          </div>
+          <AvatarDisplay value={agent.avatar} size={52} />
 
           <div style={{ minWidth: 0, flex: '1 1 260px' }}>
             <div dir="auto" style={{ fontWeight: 700, fontSize: 28, letterSpacing: '-0.03em', lineHeight: 1.15, overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -5302,13 +5361,7 @@
         }}>
         {/* Identity */}
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-          <div style={{
-            width: 44, height: 44, borderRadius: 13, flexShrink: 0, overflow: 'hidden',
-            background: 'var(--bg-panel)', border: '1px solid var(--border)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <AvatarDisplay value={agent.avatar} size={44} />
-          </div>
+          <AvatarDisplay value={agent.avatar} size={44} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div dir="auto" style={{ fontWeight: 700, fontSize: 15, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {agent.name}
@@ -5357,9 +5410,7 @@
           border: `1px solid ${hot ? 'rgba(239,159,39,0.35)' : 'var(--border)'}`,
           transition: 'border-color 0.16s',
         }}>
-        <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, overflow: 'hidden', background: 'var(--bg-panel)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <AvatarDisplay value={agent.avatar} size={34} />
-        </div>
         <StatusDot on={agentReady(agent)} size={6} />
         <div dir="auto" style={{ flex: '1 1 180px', minWidth: 0, fontWeight: 650, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {agent.name}
@@ -6264,7 +6315,7 @@ npm run migrate            # הרצה בפועל`}</Block>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
             <button onClick={() => setOpenSession(null)} style={{ background: 'var(--bg-hover)', color: 'var(--text-2)', padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 13, border: '1px solid var(--border)' }}>← Back</button>
             <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
-            <AvatarDisplay value={openSession.agent_avatar || '🤖'} size={28} />
+            <AvatarDisplay value={openSession.agent_avatar} size={28} />
             <div>
               <div style={{ fontWeight: 800, fontSize: 18 }}>{openSession.agent_name}</div>
               <div style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 2 }}>
@@ -6372,9 +6423,7 @@ npm run migrate            # הרצה בפועל`}</Block>
                 return (
                   <button key={sx.id} onClick={() => setOpenSession(sx)}
                     style={{ width: '100%', textAlign: 'left', display: 'flex', gap: 12, alignItems: 'flex-start', padding: '13px 14px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, color: 'var(--text)' }}>
-                    <div style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--bg-panel)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <AvatarDisplay value={sx.agent_avatar || '🤖'} size={22} />
-                    </div>
+                      <AvatarDisplay value={sx.agent_avatar} size={22} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                         <span dir="auto" style={{ fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sx.agent_name}</span>
@@ -6596,9 +6645,7 @@ npm run migrate            # הרצה בפועל`}</Block>
                       >
                         <td style={td}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <div style={{ width: 30, height: 30, borderRadius: 9, flexShrink: 0, background: 'var(--bg-panel)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <AvatarDisplay value={sx.agent_avatar || '🤖'} size={18} />
-                            </div>
+                              <AvatarDisplay value={sx.agent_avatar} size={18} />
                             <span dir="auto" style={{ fontWeight: 650 }}>{sx.agent_name || '—'}</span>
                           </div>
                         </td>
@@ -6729,7 +6776,7 @@ npm run migrate            # הרצה בפועל`}</Block>
         type: 'object',
         properties: {
           name: STR('Short display name'),
-          avatar: STR('A single emoji'),
+          avatar: STR('The colour its mark is drawn in, as a hex like #0d9488. One of: #EF9F27 amber, #0d9488 teal, #6d5ce0 violet, #2563eb blue, #16a34a green, #dc2626 red, #db2777 pink, #475569 slate.'),
           base_prompt: STR("Written in ENGLISH, always. Always-on instructions only: who the AI Chatbot is, which language and tone it answers its users in, the rules that always hold, and when to hand off to its skills. Use ## sections. Must NOT contain the step-by-step procedure for a task — that is a skill."),
           opening_message: STR("The first line the AI Chatbot says to a user — in the language the AI Chatbot serves them in, NOT English unless that is their language"),
           skills: {
@@ -6762,7 +6809,7 @@ npm run migrate            # הרצה בפועל`}</Block>
         properties: {
           agent_id: STR('The AI Chatbot id'),
           name: STR('New name'),
-          avatar: STR('A single emoji'),
+          avatar: STR('The colour its mark is drawn in, as a hex like #0d9488. One of: #EF9F27 amber, #0d9488 teal, #6d5ce0 violet, #2563eb blue, #16a34a green, #dc2626 red, #db2777 pink, #475569 slate.'),
           base_prompt: STR('Replacement always-on instructions, in ENGLISH. A task procedure belongs in a skill, not here.'),
           opening_message: STR('Replacement opening line, in the language the AI Chatbot speaks to its users'),
           email_enabled: { type: 'boolean', description: 'Enable the built-in send_email tool' },
@@ -7546,12 +7593,14 @@ npm run migrate            # הרצה בפועל`}</Block>
         borderRadius: 'var(--r-lg)', padding: 14, boxShadow: 'var(--shadow)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, minWidth: 0 }}>
-          <div style={{
-            width: 38, height: 38, borderRadius: 11, flexShrink: 0, background: 'var(--primary-dim)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            {agent ? <AvatarDisplay value={agent.avatar} size={20} /> : <span style={{ color: 'var(--primary)', display: 'flex' }}>{Icons.sparkle}</span>}
-          </div>
+          {agent ? <AvatarDisplay value={agent.avatar} size={38} /> : (
+            <div style={{
+              width: 38, height: 38, borderRadius: 11, flexShrink: 0, background: 'var(--primary-dim)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <span style={{ color: 'var(--primary)', display: 'flex' }}>{Icons.sparkle}</span>
+            </div>
+          )}
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontWeight: 800, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {agent ? agent.name : c.pendingName}
@@ -8739,7 +8788,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             <button onClick={() => setOpenSession(null)} style={{ background: 'var(--bg-hover)', color: 'var(--text-2)', padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 13 }}>← Back</button>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 700, fontSize: 20 }}>
-                <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--bg-panel)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}><AvatarDisplay value={openSession.agent_avatar || '🤖'} size={32} /></div>
+                <AvatarDisplay value={openSession.agent_avatar} size={32} />
                 {openSession.agent_name}
               </div>
               <div style={{ color: 'var(--text-2)', fontSize: 12, marginTop: 2 }}>
@@ -8802,7 +8851,7 @@ npm run migrate            # הרצה בפועל`}</Block>
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                   >
-                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--bg-panel)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}><AvatarDisplay value={s.agent_avatar || '🤖'} size={40} /></div>
+                    <AvatarDisplay value={s.agent_avatar} size={40} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 14, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 3 }}>{preview}</div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
@@ -9214,7 +9263,9 @@ npm run migrate            # הרצה בפועל`}</Block>
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                   >
-                    {a.avatar || '🤖'} {a.name}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      <AvatarDisplay value={a.avatar} size={18} /> {a.name}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -9231,7 +9282,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             {agents.map(a => (
               <div key={a.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 20 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                  <AvatarDisplay value={a.avatar || '🤖'} size={28} />
+                  <AvatarDisplay value={a.avatar} size={28} />
                   <div style={{ fontWeight: 600, flex: 1 }}>{a.name}</div>
                 </div>
                 <div style={{ color: 'var(--text-2)', fontSize: 12, marginBottom: 14, lineHeight: 1.4, minHeight: 32 }}>
@@ -9828,9 +9879,7 @@ npm run migrate            # הרצה בפועל`}</Block>
           background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 18,
           textAlign: 'left', color: 'var(--text)',
         }}>
-        <div style={{ width: 54, height: 54, borderRadius: 16, flexShrink: 0, overflow: 'hidden', background: 'var(--bg-panel)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <AvatarDisplay value={agent.avatar} size={30} />
-        </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div dir="auto" style={{ fontWeight: 700, fontSize: 16, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {agent.name}
@@ -10207,9 +10256,7 @@ npm run migrate            # הרצה בפועל`}</Block>
 
         <div style={{ padding: '12px 16px 0', flexShrink: 0, display: detail ? 'none' : 'block' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 48, height: 48, borderRadius: 14, flexShrink: 0, overflow: 'hidden', background: 'var(--bg-panel)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <AvatarDisplay value={agent.avatar} size={28} />
-            </div>
             <div style={{ minWidth: 0 }}>
               <div dir="auto" style={{ fontWeight: 700, fontSize: 20, letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agent.name}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 6 }}>

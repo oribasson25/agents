@@ -1,4 +1,5 @@
 import { sql } from '../_db.js';
+import { markSvg, markColor } from '../_mark.js';
 
 function he(s) {
   return String(s)
@@ -23,11 +24,9 @@ export default async function handler(req, res) {
 
   const agent = row.data;
   const titleStr   = titleParam || agent.name || 'Agent';
-  const avatarRaw  = agent.avatar  || '\uD83E\uDD16';
-  const avatarIsImage = avatarRaw.startsWith('data:') || avatarRaw.startsWith('http');
-  const avatarHtml = avatarIsImage
-    ? `<img src="${he(avatarRaw)}" style="width:30px;height:30px;border-radius:50%;object-fit:cover">`
-    : he(avatarRaw);
+  /* An AI Chatbot wears the platform's mark in its own colour — the same
+     drawing the app shows, so the widget in somebody's website matches. */
+  const avatarHtml = markSvg(markColor(agent.avatar), 30);
   const openingStr = agent.openingMessage || 'Hello!';
 
   const jsChatUrl = JSON.stringify(`/api/widget/${agentId}/chat`);
