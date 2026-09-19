@@ -37,41 +37,53 @@ export default async function handler(req, res) {
     for (const agent of agents) {
       const crawlConfig = agent.data.crawlConfig || {};
       const urls = crawlConfig.urls || [];
-      const maxPages = crawlConfig.maxPages || 100;
+      const maxPages = Math.min(Math.max(parseInt(crawlConfig.maxPages, 10) || 100, 1), 500);
+      // Carried across this agent's URLs, so the second crawl's write does not
+      // overwrite the first one's counts with a stale copy of the config.
+      let latest = { ...crawlConfig, urls, maxPages };
 
       for (const url of urls) {
         const left = deadline - Date.now();
         if (left < 20000) { skippedUrls.push(`${agent.id} ${url}`); continue; }
         try {
           // Mark as running
+          latest = { ...latest, status: 'running', startedAt: new Date().toISOString() };
           await sql`
             UPDATE agents
-            SET data = jsonb_set(data, '{crawlConfig,status}', '"running"')
+            SET data = data || ${JSON.stringify({ crawlConfig: latest })}::jsonb
             WHERE id = ${agent.id}
           `;
 
           const result = await crawlSite({ startUrl: url, agentId: agent.id, maxPages, budgetMs: left - 10000 });
 
-          // Update with success stats
-          await sql`
-            UPDATE agents
-            SET data = data || ${JSON.stringify({
-              crawlConfig: {
-                ...crawlConfig,
+          // A site that would not answer is a failure. Saying "done, 0 pages"
+          // would look like the site had nothing on it, and the previous
+          // crawl's documents are in fact still there.
+          latest = result.failed
+            ? { ...latest, status: 'error', startedAt: null, errorMessage: result.errors[0] || 'The site did not answer' }
+            : {
+                ...latest,
                 status: 'done',
+                startedAt: null,
                 lastCrawledAt: new Date().toISOString(),
                 pagesCrawled: result.pagesCrawled,
+                pagesFound: result.pagesFound,
                 totalChars: result.totalChars,
-              }
-            })}::jsonb
+                stoppedEarly: result.stoppedEarly || false,
+                thinPages: result.thinPages || 0,
+              };
+          await sql`
+            UPDATE agents
+            SET data = data || ${JSON.stringify({ crawlConfig: latest })}::jsonb
             WHERE id = ${agent.id}
           `;
 
-          results.push({ agentId: agent.id, url, success: true, pagesCrawled: result.pagesCrawled });
+          results.push({ agentId: agent.id, url, success: !result.failed, pagesCrawled: result.pagesCrawled });
         } catch (err) {
+          latest = { ...latest, status: 'error', startedAt: null, errorMessage: err.message };
           await sql`
             UPDATE agents
-            SET data = jsonb_set(data, '{crawlConfig,status}', '"error"')
+            SET data = data || ${JSON.stringify({ crawlConfig: latest })}::jsonb
             WHERE id = ${agent.id}
           `;
           results.push({ agentId: agent.id, url, success: false, error: err.message });

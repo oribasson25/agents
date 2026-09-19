@@ -3408,6 +3408,7 @@ function markSvgString(color, size = 30) {
     const [crawlConfig, setCrawlConfig] = useState(agent.crawlConfig || { urls: [], status: 'idle' });
     const [crawlUrlInput, setCrawlUrlInput] = useState('');
     const [crawlUrlError, setCrawlUrlError] = useState('');
+    const [crawlMax, setCrawlMax] = useState(agent.crawlConfig?.maxPages || 100);
     const crawlPollRef = useRef(null);
 
     useEffect(() => {
@@ -3445,22 +3446,22 @@ function markSvgString(color, size = 30) {
     }
 
     async function startCrawl(url) {
-      setCrawlConfig(c => ({ ...c, status: 'running' }));
+      setCrawlConfig(c => ({ ...c, status: 'running', pagesCrawled: 0, pagesFound: 0, maxPages: crawlMax }));
       try {
         const r = await apiFetch(`/api/agents/${agent.id}/crawl`, {
           method: 'POST',
-          body: JSON.stringify({ url, maxPages: crawlConfig.maxPages || 100 }),
+          body: JSON.stringify({ url, maxPages: crawlMax }),
         });
         const data = await r.json();
-        if (r.ok) {
-          setCrawlConfig(c => ({ ...c, ...data.crawlConfig, status: 'done', pagesCrawled: data.pagesCrawled }));
+        // The crawl can outlive this request on a slow site; the poll started
+        // by the `running` status above is what finally settles the screen, so
+        // a request that did not come back is not an error in itself.
+        if (r.ok && data.crawlConfig) {
+          setCrawlConfig(data.crawlConfig);
           apiFetch(`/api/agents/${agent.id}/documents`)
             .then(r => r.json()).then(rows => setDocs(Array.isArray(rows) ? rows : [])).catch(() => {});
-          // Reload agent crawlConfig from server
-          const cfg = await apiFetch(`/api/agents/${agent.id}/crawl`).then(r => r.json()).catch(() => null);
-          if (cfg) setCrawlConfig(cfg);
-        } else {
-          setCrawlConfig(c => ({ ...c, status: 'error', errorMessage: data.error }));
+        } else if (!r.ok) {
+          setCrawlConfig(c => ({ ...c, status: 'error', errorMessage: data.error || L('The crawl failed', 'הסריקה נכשלה') }));
         }
       } catch (err) {
         setCrawlConfig(c => ({ ...c, status: 'error', errorMessage: err.message }));
@@ -3761,16 +3762,28 @@ function markSvgString(color, size = 30) {
           </div>
 
           {/* URL input row */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
             <input
               value={crawlUrlInput}
               onChange={e => { setCrawlUrlInput(e.target.value); setCrawlUrlError(''); }}
               onKeyDown={e => e.key === 'Enter' && addCrawlUrl()}
               placeholder="https://example.com"
               dir="ltr"
-              style={{ flex: 1, fontSize: 13 }}
+              style={{ flex: 1, minWidth: 160, fontSize: 13 }}
               disabled={crawlConfig.status === 'running'}
             />
+            {/* How deep into the site to go. A crawl follows every internal
+                link and the sitemap, so this is the only thing that stops it. */}
+            <select
+              value={crawlMax}
+              onChange={e => setCrawlMax(Number(e.target.value))}
+              disabled={crawlConfig.status === 'running'}
+              title={L('How many pages of the site to read', 'כמה עמודים מהאתר לקרוא')}
+              style={{ width: 'auto', flexShrink: 0, fontSize: 13, padding: '8px 30px 8px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-2)' }}>
+              {[25, 50, 100, 250, 500].map(n => (
+                <option key={n} value={n}>{n} {L('pages', 'עמודים')}</option>
+              ))}
+            </select>
             <button
               onClick={addCrawlUrl}
               disabled={crawlConfig.status === 'running' || !crawlUrlInput.trim()}
@@ -3806,16 +3819,24 @@ function markSvgString(color, size = 30) {
           <div style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             {crawlConfig.status === 'running' && (
               <span style={{ color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⏳</span> {L('Crawling…', 'סורק…')}
+                <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⏳</span>
+                {crawlConfig.pagesCrawled
+                  ? L(`Crawling… ${crawlConfig.pagesCrawled} of ${crawlConfig.pagesFound || '?'} pages read`,
+                      `סורק… ${crawlConfig.pagesCrawled} מתוך ${crawlConfig.pagesFound || '?'} עמודים`)
+                  : L('Crawling…', 'סורק…')}
               </span>
             )}
             {crawlConfig.status === 'done' && (
               <React.Fragment>
-                <span style={{ color: 'var(--teal)' }}>✓ {L('Last crawl:', 'סריקה אחרונה:')} {formatCrawlTime(crawlConfig.lastCrawledAt)} | {crawlConfig.pagesCrawled || 0} {L('pages', 'עמודים')}</span>
+                <span style={{ color: 'var(--teal)' }}>
+                  ✓ {L('Last crawl:', 'סריקה אחרונה:')} {formatCrawlTime(crawlConfig.lastCrawledAt)} | {crawlConfig.pagesCrawled || 0} {L('pages', 'עמודים')}
+                  {crawlConfig.pagesFound > (crawlConfig.pagesCrawled || 0)
+                    ? ` ${L(`of ${crawlConfig.pagesFound} found`, `מתוך ${crawlConfig.pagesFound} שנמצאו`)}` : ''}
+                </span>
                 {/* A crawl that ran out of time, or a site that needs JavaScript,
                     both look like "it worked" otherwise. */}
                 {crawlConfig.stoppedEarly && (
-                  <span style={{ color: 'var(--warning)' }} title={L('Stopped before it reached the whole site. Run it again to continue.', 'נעצר לפני שהספיק את כל האתר. אפשר להריץ שוב כדי להמשיך')}>⏱ {L('stopped early', 'נעצר מוקדם')}</span>
+                  <span style={{ color: 'var(--warning)' }} title={L('The site has more pages than the limit, or the crawl ran out of time. Raise the page limit and run it again.', 'באתר יש יותר עמודים מהמגבלה, או שנגמר הזמן. אפשר להעלות את מספר העמודים ולהריץ שוב')}>⏱ {L('more of the site is left', 'נשאר עוד מהאתר')}</span>
                 )}
                 {crawlConfig.thinPages > 0 && (
                   <span style={{ color: 'var(--warning)' }} title={L('The crawler reads the HTML the server returns and does not run JavaScript, so pages built in the browser come back empty', 'הסורק קורא את ה-HTML שהשרת מחזיר ולא מריץ JavaScript, אז דפים שנבנים בדפדפן חוזרים ריקים')}>
@@ -5928,12 +5949,15 @@ def run(**kwargs):
           <Tip>עדיין שווה לתת למסמך כותרת תיאורית ולפצל לפי נושא. הסידור האוטומטי עושה הרבה, אבל מסמך שמאורגן היטב מלכתחילה תמיד יימצא טוב יותר.</Tip>
 
           <H3>סריקת אתרים</H3>
-          <P>מזינים כתובת אחת או יותר, והסורק עובר על האתר ושומר כל דף כמסמך מסומן <Code>web</Code>. הכותרות (<Code>h1</Code>-<Code>h6</Code>) נשמרות כסעיפים, וכל דף מחולק לקטעי חיפוש כמו כל מסמך אחר. הסריקה מתרעננת אוטומטית פעמיים ביום.</P>
+          <P>מזינים כתובת אחת, בוחרים כמה עמודים לקרוא, והסורק עובר על <strong>כל הדומיין</strong> — לא רק על הדף שהוזן. כל דף נשמר כמסמך מסומן <Code>web</Code>, הכותרות (<Code>h1</Code>-<Code>h6</Code>) נשמרות כסעיפים, וכל דף מחולק לקטעי חיפוש כמו כל מסמך אחר. הסריקה מתרעננת אוטומטית פעמיים ביום.</P>
+          <P>איך הוא מוצא את הדומיין: מתחילים מהכתובת שהוזנה ואחרי כל הפניה שהיא עושה, ומשם עוקבים אחרי כל קישור פנימי בכל דף. במקביל נקרא ה-<Code>sitemap.xml</Code> של האתר, וזו הדרך היחידה להגיע לדפים שאף דף אחר לא מקשר אליהם. <Code>example.com</Code> ו-<Code>www.example.com</Code> הם אותו אתר; תת-דומיין כמו <Code>blog.example.com</Code> הוא אתר אחר ודורש כתובת משלו.</P>
           <Warn>הסורק קורא את ה-HTML שהשרת מחזיר — הוא <strong>לא מריץ JavaScript</strong>. אתר שנבנה בדפדפן (React, Vue, Angular) יחזיר דפים כמעט ריקים, והממשק יסמן כמה דפים כאלה נמצאו. במקרה כזה עדיף להדביק את התוכן ידנית.</Warn>
           <UL>
-            <li>דפים שנסרקו <strong>לא</strong> עוברים את הסידור האוטומטי — סריקה יכולה להיות מאה דפים. אפשר להריץ את הסידור על דף בודד ידנית</li>
+            <li>דפים שנסרקו <strong>לא</strong> עוברים את הסידור האוטומטי — סריקה יכולה להיות מאות דפים. אפשר להריץ את הסידור על דף בודד ידנית</li>
             <li>עמוד גדול במיוחד נחתך ב-60 אלף תווים</li>
-            <li>סריקה נעצרת לבד לפני שנגמר הזמן ומסמנת <strong>נעצר מוקדם</strong> — הרצה חוזרת ממשיכה</li>
+            <li><Code>robots.txt</Code> של האתר מכובד. דפים שהאתר חוסם לא נקראים</li>
+            <li>המסמכים של הסריקה הקודמת נמחקים רק כשיש דף חדש להחליף אותם. אתר שלא עונה משאיר את הידע הקיים במקומו ומסמן שגיאה</li>
+            <li>מסמן <strong>נשאר עוד מהאתר</strong> כשנגמרו העמודים שהוקצו או הזמן — אפשר להעלות את מספר העמודים ולהריץ שוב</li>
           </UL>
           <P>בנוסף, כשמשתמש שולח כתובת בצ'אט הבדיקה, עד שלוש כתובות מההודעה נסרקות מיד ונמסרות למודל תחת <Code>## Fetched Web Pages</Code> — בלי להישמר בבסיס הידע.</P>
         </div>
@@ -7532,6 +7556,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     '- Parameter types are string, number, integer or boolean.',
     '- send_email is a built-in tool, switched on per AI Chatbot, that sends from a Gmail account connected on that AI Chatbot (Tools tab). You cannot connect Gmail for the user — say where to do it.',
     "- KNOWLEDGE is documents (pasted, PDF/DOCX upload, or crawled sites). On upload each one is rewritten by the model into short titled sections with a bilingual keyword line, then split into chunks; a question retrieves chunks by full-text search into the prompt. The search is LEXICAL, not semantic — it matches words, so a document only answers questions phrased with words it contains. You cannot upload files for the user, but you can tell them to press the tidy button on a document to have it reorganised.",
+    "- The CRAWLER on the Knowledge tab takes one URL and reads the whole domain from it: every internal link, plus the site's sitemap.xml, up to the page limit chosen beside the field. It follows the redirect the URL makes, treats example.com and www.example.com as one site, and obeys robots.txt. A subdomain is a different site and needs its own URL. It does not run JavaScript, so a site rendered in the browser comes back near-empty — the screen says how many such pages there were. You cannot start a crawl for the user; tell them where the field is.",
     "- TABLES are rows the account keeps — a price list, orders, leads — shared across its AI Chatbots rather than owned by one. Each chatbot is ticked onto the tables it may use, in its own Tables tab, and then it can read, add and update rows mid-conversation; it can never delete one or change a table's shape. You can make tables and read and write their rows yourself.",
     '- CHANNELS: the in-app test chat, an embeddable website widget (Export tab), and WhatsApp via Meta Cloud API (Whatsapp tab, needs a phone number id, access token, app secret and verify token from Meta). A WhatsApp number belongs to one AI Chatbot only.',
     '- DLP can mask credit-card and Israeli-ID numbers before they reach the model and before history is stored.',

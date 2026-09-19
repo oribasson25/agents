@@ -22,7 +22,8 @@ product.
 - **Database** — Neon Postgres; an agent is a single JSONB row in `agents`
 - **Models** — Claude (Anthropic), OpenAI, or a self-hosted Ollama, chosen once per account
 - **Tools** — user Python executed in `api/run_tool.py`, with `pip install` on demand
-- **Crawler** — Playwright + Chromium (`api/scrape_browser.js`), renders JS before extracting
+- **Crawler** — `api/_crawlSite.js`, plain fetch over a site's own HTML and its sitemap
+- **Live scraper** — Playwright + Chromium (`api/scrape_browser.js`), renders JS, one page at a time
 
 ## Layout
 
@@ -259,6 +260,38 @@ the agent is not allowed to touch and stop telling you the truth about your agen
 
 Every row records who wrote it (`written_by`: `user`, or the agent's id), which is what the
 sheet's footer reads back.
+
+## Crawling a site
+
+One URL on an AI Chatbot's **Knowledge** tab means the domain behind it, not the page. The crawl
+starts at whatever that URL redirects to, follows every internal link from every page it reads,
+and reads the site's `sitemap.xml` alongside — which is the only way to reach a page that nothing
+links to. Four pages are fetched at a time, `robots.txt` is obeyed, and a page limit beside the
+field (25 to 500) is what finally stops it.
+
+Three things used to end a crawl on its first page, and each has a test in `probes/crawl-probe.mjs`:
+
+- **A redirect to `www`.** The old loop kept the origin of the URL the user typed and compared
+  every link against it, so a site that redirects `example.com` to `www.example.com` — most of
+  them — threw away nearly every link it found. On one real site that was 3 links kept out of 44.
+  `example.com` and `www.example.com` are now the same site. A subdomain is not, and needs its
+  own URL.
+- **A thin landing page.** Links were read after the "is there enough text here to store?" test,
+  so a splash page or a JavaScript shell was skipped before anything was taken off it.
+  Links are read first now, always.
+- **`?` in the href.** The link pattern was `href=["']([^"'#?]+)["']`, which discarded every link
+  carrying a query string. `?page=2` and `?id=7` are how a great many sites expose the rest of
+  themselves. Query strings are kept, minus tracking parameters, and capped at eight variants per
+  path so a filter page does not become infinite.
+
+Some smaller things it now gets right: a page is decoded in the character set it declares, so a
+Hebrew site served as `windows-1255` is stored as Hebrew rather than mojibake; a non-2xx response
+is reported instead of filed as knowledge; two URLs that redirect to the same page are stored
+once; and the previous crawl's documents are deleted only once this crawl has a page to put in
+their place, so a site that is down for the afternoon does not empty the knowledge base.
+
+It reads the HTML a server returns and does not run JavaScript. A site rendered in the browser
+comes back near-empty, and the screen says how many such pages there were.
 
 ## Starter agents
 
