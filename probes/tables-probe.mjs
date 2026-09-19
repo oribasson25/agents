@@ -148,6 +148,56 @@ ok(refused.startsWith('No table called'), "a chatbot cannot read a table it was 
 const noTools = await T.runAgentTableTool({ toolName: 'table_list', inputs: {}, agent: { tables: [] }, ownerId: 'u-1' });
 ok(noTools.includes('No tables are enabled'), 'a chatbot with none ticked is told so plainly');
 
+/* ── a day, written the way it is written here ── */
+ok(T.parseDay('9.1.2025') === '2025-01-09',
+   'a date written day-first is the day it says', T.parseDay('9.1.2025'));
+ok(T.parseDay('21/01/2025') === '2025-01-21',
+   'and one that can only be day-first is not refused', T.parseDay('21/01/2025'));
+ok(T.parseDay('19.9.2026') === '2026-09-19', 'dots read the same as slashes');
+ok(T.parseDay('1/21/2025') === '2025-01-21', 'a month-first date is still understood');
+ok(T.parseDay('2025-01-09') === '2025-01-09', 'ISO stays ISO');
+ok(T.parseDay('19/9/26') === '2026-09-19', 'a two-digit year is this century');
+ok(T.parseDay('מחר') === null && T.parseDay('32/1/2025') === null,
+   'and what is not a day is refused rather than stored in a date column');
+
+/* ── a column is not its punctuation ── */
+const hebCols = [{ key: 'שם_מלא', name: 'שם מלא', type: 'text' },
+                 { key: 'תאריך_רישום', name: 'תאריך רישום', type: 'date' },
+                 { key: 'total', name: 'Total', type: 'number' }];
+ok(T.shapeRow(hebCols, { 'שם מלא': 'דנה כהן' })['שם_מלא'] === 'דנה כהן', 'the column name lands');
+ok(T.shapeRow(hebCols, { 'שם_מלא': 'דנה' })['שם_מלא'] === 'דנה', 'so does its key');
+ok(T.shapeRow(hebCols, { 'שם-מלא': 'רון' })['שם_מלא'] === 'רון', 'and a near miss on the separator');
+ok(T.shapeRow(hebCols, { TOTAL: '1,250' }).total === 1250, 'case is not what a column is');
+
+const detailed = T.shapeRowDetailed(hebCols, { 'Full Name': 'x', total: 'בערך חמישים' });
+ok(detailed.unknown[0] === 'Full Name', 'a column the table has not is named, not swallowed', JSON.stringify(detailed));
+ok(detailed.refused[0] && detailed.refused[0].column === 'Total',
+   'and a value the column cannot hold is named too', JSON.stringify(detailed.refused));
+
+/* ── nothing is ever reported as saved when it was not ── */
+const hebTable = await T.createTable('u-1', {
+  name: 'משתתפי אירועים',
+  columns: [{ name: 'שם מלא' }, { name: 'תאריך רישום', type: 'date' }],
+});
+const events = { tables: [hebTable.id] };
+const heb = (toolName, inputs) => T.runAgentTableTool({ toolName, inputs, agent: events, ownerId: 'u-1', writtenBy: 'a-1' });
+
+const hebrew = await heb('table_add_row', { table: 'משתתפי אירועים', row: { 'שם מלא': 'דנה כהן', 'תאריך רישום': '9.1.2025' } });
+ok(hebrew.startsWith('Added a row'), 'a row in Hebrew is a row', hebrew);
+const stored = db.rows.at(-1).data;
+ok(stored['שם_מלא'] === 'דנה כהן', 'the Hebrew value is stored', JSON.stringify(stored));
+ok(stored['תאריך_רישום'] === '2025-01-09', 'and 9.1.2025 is the 9th of January', JSON.stringify(stored));
+
+const nonsense = await heb('table_add_row', { table: 'משתתפי אירועים', row: { attendee: 'דנה', when: 'tomorrow' } });
+ok(nonsense.startsWith('Nothing was saved'),
+   'a row where nothing matched does NOT come back as "Added a row"', nonsense);
+ok(nonsense.includes('שם מלא'), 'and the answer names the columns the table does have', nonsense);
+ok(Object.keys(db.rows.at(-1).data).length === 0, 'the empty row is still there to be fixed, with its row_id given');
+
+const partial = await heb('table_add_row', { table: 'משתתפי אירועים', row: { 'שם מלא': 'רון', nickname: 'רוני' } });
+ok(partial.startsWith('Added a row') && partial.includes('BUT'),
+   'a row that half landed says which half did not', partial);
+
 /* ── the two things a conversation must never do ── */
 const names = T.TABLE_TOOLS.map(t => t.name);
 ok(!names.some(n => /delete|drop|remove|column/.test(n)),

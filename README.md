@@ -261,6 +261,41 @@ the agent is not allowed to touch and stop telling you the truth about your agen
 Every row records who wrote it (`written_by`: `user`, or the agent's id), which is what the
 sheet's footer reads back.
 
+### What a field name means, and what a date is
+
+Two things here were quietly losing people's data, both of them worse in Hebrew.
+
+A field was matched to a column by its **exact** key or name, and anything else was dropped
+without a word — while `table_add_row` still answered `Added a row`. A chatbot told somebody it
+had registered them for an event and wrote `{}`; there are three such rows in the first table
+anyone built. A field name now also matches with case, spaces, underscores and hyphens folded
+(`שם מלא`, `שם_מלא`, `Full Name`, `full-name` are one column), and a tool that could not place
+what it was given says so and lists the columns that exist instead of reporting a save.
+
+Dates went through `new Date(value)`, which reads `9.1.2025` as the ninth month and then loses a
+day converting a local midnight to UTC: the 9th of January was stored as **2025-08-31**.
+`21/01/2025` was rejected outright and left in a date column as raw text. `parseDay` now reads
+ISO as ISO and anything dot- or slash-separated day-first, which is how it is written here, and
+assembles the day from its parts so no timezone can move it. A value that is not a day is
+refused and named, rather than stored in a date column as prose.
+
+## Gmail, and why only one address connects
+
+`send_email` sends from the mailbox connected on that AI Chatbot (Tools tab), over
+`https://www.googleapis.com/auth/gmail.send`. That is a **sensitive** scope, and while the Google
+Cloud project's OAuth consent screen is in **Testing**, Google lets only the accounts listed under
+**Test users** authorise it. Every other address is refused at Google's own screen and comes back
+as `access_denied`, which reads as "no permission" and sends people looking for a setting here.
+There isn't one — it is set in the Cloud Console, under APIs & Services -> OAuth consent screen.
+
+Two ways out: add each address as a Test user (up to 100, quick), or publish the consent screen
+and put the app through verification (slower, but the only thing that lifts the limit).
+
+The same Testing status has a second effect worth knowing: Google **expires refresh tokens after
+7 days** for an unverified app, so even a mailbox that works stops sending about once a week with
+`invalid_grant`. `api/_gmail.js` reports that as TOKEN_EXPIRED and says to reconnect; publishing
+the consent screen is what stops it recurring.
+
 ## Crawling a site
 
 One URL on an AI Chatbot's **Knowledge** tab means the domain behind it, not the page. The crawl

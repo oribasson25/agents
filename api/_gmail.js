@@ -42,7 +42,20 @@ async function refreshAccessToken(agentId, refreshToken) {
     }),
   });
   const data = await res.json();
-  if (!res.ok) throw fail(data.error_description || 'Failed to refresh Gmail token', 'REFRESH_FAILED');
+  if (!res.ok) {
+    /* An OAuth consent screen still in "Testing" is treated as unverified, and
+       Google expires every refresh token it issued after seven days. The
+       mailbox then stops sending with `invalid_grant` and nothing on screen
+       says why — it looks like the platform lost the connection. */
+    if (data.error === 'invalid_grant') {
+      throw fail(
+        'Google has expired this mailbox\'s permission. Reconnect Gmail in the AI Chatbot\'s Tools tab. '
+        + 'If this keeps happening every week, the Google Cloud project\'s OAuth consent screen is still in '
+        + '"Testing", where Google expires the permission after 7 days — publishing it stops that.',
+        'TOKEN_EXPIRED');
+    }
+    throw fail(data.error_description || 'Failed to refresh Gmail token', 'REFRESH_FAILED');
+  }
 
   const expiry = Math.floor(Date.now() / 1000) + (data.expires_in || 3600);
   await sql`

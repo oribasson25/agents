@@ -36,32 +36,127 @@ export function normalizeColumns(columns) {
     }));
 }
 
-/** A value is stored in the shape its column promises, or not at all. */
-export function coerce(value, type) {
+const YES = ['true', 'yes', 'y', '1', 'כן'];
+const NO = ['false', 'no', 'n', '0', 'לא'];
+
+function twoDigits(n) { return String(n).padStart(2, '0'); }
+
+/**
+ * A day, written the way it is written here.
+ *
+ * `new Date('9.1.2025')` reads that as the ninth month and hands back
+ * 2025-08-31 — September the first, pushed back a day because `toISOString`
+ * converts a local midnight to UTC and Israel is ahead of it. Someone
+ * registering for an event on the 9th of January ended up in August. And
+ * `21/01/2025` was rejected outright and left in a date column as raw text.
+ *
+ * So: ISO is read as ISO, and anything separated by dots or slashes is read
+ * day-first, which is the convention here. The day is assembled from its parts
+ * rather than round-tripped through UTC, so no timezone can move it.
+ */
+export function parseDay(value) {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : `${value.getFullYear()}-${twoDigits(value.getMonth() + 1)}-${twoDigits(value.getDate())}`;
+  }
+  const s = String(value).trim();
+  if (!s) return null;
+
+  const build = (y, m, d) => {
+    y = Number(y); m = Number(m); d = Number(d);
+    // 21/01 can only be day-first; 01/21 can only be month-first.
+    if (m > 12 && d <= 12) [m, d] = [d, m];
+    if (!(m >= 1 && m <= 12 && d >= 1 && d <= 31 && y >= 1900 && y <= 2999)) return null;
+    return `${y}-${twoDigits(m)}-${twoDigits(d)}`;
+  };
+
+  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ]|$)/.exec(s);
+  if (m) return build(m[1], m[2], m[3]);
+
+  m = /^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/.exec(s);
+  if (m) {
+    const year = m[3].length <= 2 ? 2000 + Number(m[3]) : m[3];
+    return build(year, m[2], m[1]);
+  }
+
+  const parsed = new Date(s);
+  if (Number.isNaN(parsed.getTime())) return null;
+  // An instant carries its own zone; a bare date was read as a local midnight.
+  return /Z$|[+-]\d{2}:?\d{2}$/.test(s)
+    ? parsed.toISOString().slice(0, 10)
+    : `${parsed.getFullYear()}-${twoDigits(parsed.getMonth() + 1)}-${twoDigits(parsed.getDate())}`;
+}
+
+/**
+ * A value in the shape its column promises.
+ *
+ * Returns `null` when the value cannot be that shape — which the caller reports
+ * rather than swallowing. A number column used to turn "בערך חמישים" into an
+ * empty cell and say nothing, so the row looked saved and was not.
+ */
+export function coerceOrNull(value, type) {
   if (value === null || value === undefined || value === '') return '';
   if (type === 'number') {
-    const n = Number(String(value).replace(/,/g, ''));
-    return Number.isFinite(n) ? n : '';
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    const n = Number(String(value).replace(/[,\s\u00a0]/g, ''));
+    return Number.isFinite(n) ? n : null;
   }
   if (type === 'boolean') {
     if (typeof value === 'boolean') return value;
-    return ['true', 'yes', '1', 'כן'].includes(String(value).trim().toLowerCase());
+    const v = String(value).trim().toLowerCase();
+    if (YES.includes(v)) return true;
+    if (NO.includes(v)) return false;
+    return null;
   }
-  if (type === 'date') {
-    const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? String(value).slice(0, 40) : d.toISOString().slice(0, 10);
-  }
+  if (type === 'date') return parseDay(value);
   return String(value).slice(0, 4000);
 }
 
-/** Only the columns the table has, each in its own type. */
-export function shapeRow(columns, input) {
-  const out = {};
-  for (const col of columns) {
-    if (Object.prototype.hasOwnProperty.call(input || {}, col.key)) out[col.key] = coerce(input[col.key], col.type);
-    else if (Object.prototype.hasOwnProperty.call(input || {}, col.name)) out[col.key] = coerce(input[col.name], col.type);
+/** The forgiving form, kept for callers that only want a value. */
+export function coerce(value, type) {
+  const out = coerceOrNull(value, type);
+  return out === null ? '' : out;
+}
+
+/** Case, spaces, underscores and hyphens are not what a column is. */
+function matchable(name) {
+  return String(name || '').trim().toLowerCase().replace(/[\s_\-.]+/g, '');
+}
+
+/**
+ * Which column a field name means.
+ *
+ * The exact key or name first, then the same folded. A model writing into
+ * `שם מלא` will try `שם_מלא`, `שם מלא`, `full name` and `Full Name`, and the
+ * exact-match lookup this replaces silently dropped every near miss — leaving a
+ * row the chatbot had just told the user it had saved.
+ */
+export function findColumn(columns, field) {
+  const exact = columns.find(c => c.key === field || c.name === field);
+  if (exact) return exact;
+  const folded = matchable(field);
+  return columns.find(c => matchable(c.key) === folded || matchable(c.name) === folded) || null;
+}
+
+/**
+ * Only the columns the table has, each in its own type — and an account of
+ * what would not go in, so nothing is reported as saved when it was not.
+ */
+export function shapeRowDetailed(columns, input) {
+  const data = {};
+  const unknown = [];
+  const refused = [];
+  for (const [field, value] of Object.entries(input || {})) {
+    const col = findColumn(columns, field);
+    if (!col) { unknown.push(field); continue; }
+    const out = coerceOrNull(value, col.type);
+    if (out === null) { refused.push({ column: col.name, type: col.type, value: String(value).slice(0, 60) }); continue; }
+    data[col.key] = out;
   }
-  return out;
+  return { data, unknown, refused };
+}
+
+export function shapeRow(columns, input) {
+  return shapeRowDetailed(columns, input).data;
 }
 
 /* ─────────────────── tables ─────────────────── */
@@ -149,13 +244,13 @@ export async function listRows(tableId, { q = '', limit = 100, offset = 0 } = {}
 
 export async function addRow(table, input, writtenBy = 'user') {
   const id = crypto.randomUUID();
-  const data = shapeRow(table.columns, input);
+  const { data, unknown, refused } = shapeRowDetailed(table.columns, input);
   await sql`
     insert into data_table_rows (id, table_id, data, written_by)
     values (${id}, ${table.id}, ${JSON.stringify(data)}::jsonb, ${writtenBy})
   `;
   await sql`update data_tables set updated_at = now() where id = ${table.id}`;
-  return { id, data };
+  return { id, data, unknown, refused };
 }
 
 /** Only the fields passed are touched; the rest of the row stays as it was. */
@@ -164,14 +259,15 @@ export async function updateRow(table, rowId, input, writtenBy = 'user') {
     select id, data from data_table_rows where id = ${rowId} and table_id = ${table.id}
   `;
   if (!existing) return { error: 'No such row.' };
-  const data = { ...existing.data, ...shapeRow(table.columns, input) };
+  const shaped = shapeRowDetailed(table.columns, input);
+  const data = { ...existing.data, ...shaped.data };
   await sql`
     update data_table_rows
        set data = ${JSON.stringify(data)}::jsonb, written_by = ${writtenBy}, updated_at = now()
      where id = ${rowId} and table_id = ${table.id}
   `;
   await sql`update data_tables set updated_at = now() where id = ${table.id}`;
-  return { id: rowId, data };
+  return { id: rowId, data, changed: Object.keys(shaped.data).length, unknown: shaped.unknown, refused: shaped.refused };
 }
 
 export async function deleteRow(tableId, rowId) {
@@ -256,6 +352,19 @@ export const TABLE_TOOLS = [
   },
 ];
 
+/** What would not go in, and what the columns actually are. */
+function trouble(table, result) {
+  const parts = [];
+  if (result.unknown && result.unknown.length) {
+    parts.push(`"${table.name}" has no column called ${result.unknown.map(u => `"${u}"`).join(', ')}`);
+  }
+  for (const r of (result.refused || [])) {
+    parts.push(`"${r.value}" is not a ${r.type} and column "${r.column}" only holds ${r.type}`);
+  }
+  const columns = (table.columns || []).map(c => `${c.name} (${c.type})`).join(', ');
+  return `${parts.join('; ')}. The columns are: ${columns}.`;
+}
+
 /** A tool's answer to the model is text, including when it went wrong. */
 export async function runAgentTableTool({ toolName, inputs = {}, agent, ownerId, writtenBy = 'agent' }) {
   const tables = await tablesForAgent(agent, ownerId);
@@ -288,14 +397,24 @@ export async function runAgentTableTool({ toolName, inputs = {}, agent, ownerId,
   }
 
   if (toolName === 'table_add_row') {
+    const asked = Object.keys(inputs.row || {}).length;
     const made = await addRow(table, inputs.row || {}, writtenBy);
-    return `Added a row to "${table.name}" (row_id ${made.id}): ${JSON.stringify(made.data)}`;
+    // An empty row reported as "Added a row" is how a chatbot came to tell
+    // someone it had registered them for an event and store nothing at all.
+    if (asked && !Object.keys(made.data).length) {
+      return `Nothing was saved — ${trouble(table, made)} The row was added empty; fix the field names and update it with table_update_row, row_id ${made.id}.`;
+    }
+    return `Added a row to "${table.name}" (row_id ${made.id}): ${JSON.stringify(made.data)}`
+         + (made.unknown.length || made.refused.length ? ` BUT ${trouble(table, made)}` : '');
   }
 
   if (toolName === 'table_update_row') {
+    const asked = Object.keys(inputs.fields || {}).length;
     const saved = await updateRow(table, inputs.row_id, inputs.fields || {}, writtenBy);
     if (saved.error) return `${saved.error} Find the row with table_find first.`;
-    return `Updated row ${saved.id} in "${table.name}": ${JSON.stringify(saved.data)}`;
+    if (asked && !saved.changed) return `Nothing was changed — ${trouble(table, saved)}`;
+    return `Updated row ${saved.id} in "${table.name}": ${JSON.stringify(saved.data)}`
+         + (saved.unknown.length || saved.refused.length ? ` BUT ${trouble(table, saved)}` : '');
   }
 
   return `Unknown table tool: ${toolName}`;

@@ -689,6 +689,36 @@
   }
 
   /* ─────────────────── GMAIL (PER AGENT) ─────────────────── */
+  /**
+   * What Google's refusal actually means.
+   *
+   * `access_denied` is what every mailbox but the ones on the Cloud project's
+   * test-user list gets back while the OAuth consent screen is still in
+   * Testing. It reads as "no permission" and sends people looking for a
+   * setting in this platform, which does not have one.
+   */
+  function gmailFailureText(code) {
+    const raw = String(code || '');
+    if (/access_denied|admin_policy_enforced|org_internal/i.test(raw)) {
+      return L(
+        'Google would not let that mailbox connect.\n\n'
+        + 'This is set on Google\'s side, not here. While the project\'s OAuth consent screen is in '
+        + '"Testing", only the Google accounts listed as Test users may connect — every other address '
+        + 'is refused exactly like this. Add the address under APIs & Services → OAuth consent screen → '
+        + 'Test users, or publish the consent screen and have the app verified.\n\n'
+        + '(If you pressed Cancel on Google\'s screen, this is also what comes back.)\n\n'
+        + `Google said: ${raw}`,
+        'גוגל לא אפשרה לתיבה הזו להתחבר.\n\n'
+        + 'זו הגדרה בצד של גוגל, לא כאן. כל עוד מסך ההסכמה (OAuth consent screen) של הפרויקט במצב '
+        + '"Testing", רק חשבונות גוגל שרשומים כ-Test users יכולים להתחבר — כל כתובת אחרת נדחית בדיוק ככה. '
+        + 'צריך להוסיף את הכתובת ב-APIs & Services ← OAuth consent screen ← Test users, או לפרסם את מסך '
+        + 'ההסכמה ולעבור אימות.\n\n'
+        + '(אם לחצת ביטול במסך של גוגל, זו אותה תשובה.)\n\n'
+        + `גוגל אמרה: ${raw}`);
+    }
+    return L(`Gmail connection failed: ${raw}`, `חיבור Gmail נכשל: ${raw}`);
+  }
+
   async function gmailStatus(agentId) {
     const r = await apiFetch(`/api/gmail/status?agentId=${encodeURIComponent(agentId)}`);
     if (!r.ok) throw new Error('status failed');
@@ -6298,6 +6328,8 @@ npm run migrate            # הרצה בפועל`}</Block>
     { id: 'boolean', label: 'yes/no' },
   ];
 
+  const TYPE_HE = { text: 'טקסט', number: 'מספר', date: 'תאריך', boolean: 'כן/לא' };
+
   /** How a stored value reads in a cell. */
   function cellText(value, type) {
     if (value === '' || value === null || value === undefined) return '';
@@ -6360,7 +6392,8 @@ npm run migrate            # הרצה בפועל`}</Block>
                   <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <input value={c.name} onChange={e => setCol(i, { name: e.target.value })} dir="auto"
                       placeholder={L('column name', 'שם העמודה')} style={{ fontFamily: MONO, fontSize: 13 }} />
-                    <select value={c.type} onChange={e => setCol(i, { type: e.target.value })} style={{ width: 132 }}>
+                    <select value={c.type} onChange={e => setCol(i, { type: e.target.value })} style={{ width: 132 }}
+                      title={c.type === 'date' ? L('Dates are read day first: 9.1.2025 is the 9th of January', 'תאריכים נקראים יום קודם: 9.1.2025 הוא ה-9 בינואר') : ''}>
                       {COLUMN_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
                     </select>
                     <IconBtn danger title={L('Remove', 'הסר')}
@@ -6420,6 +6453,11 @@ npm run migrate            # הרצה בפועל`}</Block>
       try {
         const saved = await apiUpdateTableRow(table.id, row.id, { [col.key]: draft });
         setRows(rs => rs.map(r => (r.id === row.id ? { ...r, data: saved.data } : r)));
+        // A value the column cannot hold used to leave the cell blank and say
+        // nothing, which reads as "it did not save my Hebrew".
+        const no = (saved.refused || [])[0];
+        setError(no ? L(`"${no.value}" is not a ${no.type}, so the ${no.column} cell was left as it was.`,
+                        `"${no.value}" הוא לא ${TYPE_HE[no.type] || no.type}, ולכן התא ${no.column} נשאר כפי שהיה.`) : '');
         onChanged();
       } catch (err) { setError(err.message); }
     }
@@ -11277,7 +11315,7 @@ npm run migrate            # הרצה בפועל`}</Block>
         setEditorTab('tools');
         dispatch({ type: 'SET_VIEW', view: 'editor', editingId: connectedAgent });
       }
-      if (gmailError) alert(`Gmail connection failed: ${gmailError}`);
+      if (gmailError) alert(gmailFailureText(gmailError));
       if (connectedAgent || gmailError) {
         window.history.replaceState({}, '', window.location.pathname);
       }
