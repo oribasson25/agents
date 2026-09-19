@@ -5710,6 +5710,10 @@ function markSvgString(color, size = 30) {
           <P>על כל כרטיס של צ'אטבוט יש <Code>עריכה עם AI</Code> לצד <Code>עריכה</Code>. הוא פותח את הצ'אט בדף הבית עם בקשה שכוללת את <strong>שם הצ'אטבוט</strong>, ומבקשת מהאסיסטנט לקרוא אותו לפני שהוא שואל משהו. משם אפשר לתאר שינוי במילים — ״שיבקש גם מייל״, ״שלא יבטיח מחיר״ — והאסיסטנט מבצע אותו דרך אותם כלים שיש לו ממילא.</P>
           <P>השם בבקשה הוא גם מה שנותן לשיחה כותרת משלה, במקום עמודה של שיחות זהות בהיסטוריה.</P>
 
+          <H3>על איזה צ'אטבוט מדברים</H3>
+          <P>מתחת להצעות בדף הבית יש <strong>רשימת הצ'אטבוטים של החשבון</strong>. לוחצים על אחד, הוא הופך לנושא השיחה — מופיעה שורת <Code>על ⟨שם⟩</Code> מעל שורת הכתיבה, ומה שנכתב אחריה נשלח כ״על ה-AI Chatbot ⟨שם⟩: …״.</P>
+          <P>השם נכנס <strong>לתוך ההודעה</strong> ולא רק לפרומפט המערכת, כדי שגם כשפותחים את השיחה מחדש בעוד חודש עדיין יהיה כתוב על מה דיברו. הנושא נשמר לכל אורך השיחה — אחרת השאלה השנייה הייתה מאבדת אותו בשקט — ונמחק ב״שיחה חדשה״ או בלחיצה על ה-✕.</P>
+
           <H3>טולים — רק כשאין ברירה</H3>
           <P>כמעט שום דבר לא צריך קוד. הידע עונה על שאלות, הטבלה רושמת מה שנאסף, Gmail שולח, והסורק קורא את האתר. טול נחוץ רק לדבר האחד שאף אחד מהם לא מגיע אליו — <strong>מערכת של חברה אחרת</strong>: מעקב משלוח אצל שליח, הפקת חשבונית בתוכנת הנהלת חשבונות, שליחת SMS דרך ספק.</P>
           <P>הזיהוי רץ פעם אחת, ביציאה ממסך 5, ורק אם נכתב טקסט חופשי — אין מקור אחר שיכול לרמז על מערכת חיצונית. המודל מונחה <strong>לסרב כברירת מחדל</strong>: אם אין ודאות, הוא מחזיר רשימה ריקה, ואז מסך 6 בכלל לא מופיע.</P>
@@ -9650,6 +9654,10 @@ npm run migrate            # הרצה בפועל`}</Block>
       thinking: 'חושב…',
       noKey: 'כדי להתחיל צריך להגדיר מפתח API במסך Settings.',
       foot: '8Legs.ai בונה את ה-AI Chatbot בפועל — פרומפט, סקילים וכלים — ולא רק מסביר איך.',
+      pick: 'או על אחד מהקיימים — לחץ עליו ואז כתוב מה לשנות',
+      about: 'על',
+      aboutPlaceholder: name => `מה לשנות ב"${name}"?`,
+      clearSubject: 'לא על צ\'אטבוט מסוים',
       firstChips: [
         'AI Chatbot שירות לקוחות',
         'AI Chatbot שמתאם פגישות',
@@ -9689,6 +9697,10 @@ npm run migrate            # הרצה בפועל`}</Block>
       thinking: 'Thinking…',
       noKey: 'Set an API key in Settings to get started.',
       foot: '8Legs.ai builds the AI Chatbot for real — prompt, skills and tools — not just explains how.',
+      pick: 'Or about one you already have — pick it, then say what to change',
+      about: 'About',
+      aboutPlaceholder: name => `What should change in "${name}"?`,
+      clearSubject: 'Not about one in particular',
       firstChips: [
         'A customer support AI Chatbot',
         'An AI Chatbot that books meetings',
@@ -9869,7 +9881,7 @@ npm run migrate            # הרצה בפועל`}</Block>
   }
 
   /** The one input, centred on an empty screen and docked once a chat starts. */
-  function HomeComposer({ value, onChange, onSend, disabled, placeholder, dir, width = 720 }) {
+  function HomeComposer({ value, onChange, onSend, disabled, placeholder, dir, width = 720, fieldRef }) {
     const [focus, setFocus] = useState(false);
     return (
       <div dir={dir} style={{
@@ -9880,6 +9892,7 @@ npm run migrate            # הרצה בפועל`}</Block>
         transition: 'border-color 0.18s, box-shadow 0.18s',
       }}>
         <textarea
+          ref={fieldRef}
           value={value}
           onChange={e => onChange(e.target.value)}
           onFocus={() => setFocus(true)}
@@ -9920,6 +9933,19 @@ npm run migrate            # הרצה בפועל`}</Block>
     const firstRunRef = useRef(!hasAgents);
     const firstRun = firstRunRef.current;
 
+    /* Which chatbot the conversation is about. Picked from the list below the
+       composer, held for the rest of the conversation, and carried into the
+       message itself rather than only into the system prompt — so the
+       transcript still says what was being talked about when it is reopened
+       weeks later. */
+    const [subject, setSubject] = useState(null);
+    const composerRef = useRef(null);
+    const askAbout = text => {
+      const body = (text || '').trim();
+      if (!body) return;
+      send(subject ? L(`About the AI Chatbot "${subject.name}": ${body}`, `על ה-AI Chatbot "${subject.name}": ${body}`) : body);
+    };
+
     const {
       messages, input, setInput, pending, send, noKey, startNewChat, loadSession, listRef, focusAgentId, sessionId,
     } = usePlatformAssistant({
@@ -9930,6 +9956,7 @@ npm run migrate            # הרצה בפועל`}</Block>
 
     useEffect(() => {
       if (messages.length === 0) firstRunRef.current = !hasAgents;
+      if (messages.length === 0) setSubject(null);
     }, [messages.length, hasAgents]);
 
     /* Two things drive this chat from the outside: the sidebar picking a past
@@ -9972,6 +9999,57 @@ npm run migrate            # הרצה בפועל`}</Block>
       }}>{copy.noKey}</div>
     );
 
+    /* The chatbots themselves, under the suggestions: pick one and the next
+       thing typed is about it. A question about a particular chatbot was
+       otherwise a matter of spelling its name right. */
+    const agentPicker = hasAgents ? (
+      <div dir={dir} style={{ marginTop: 22, width: 'min(760px, 100%)' }}>
+        <div style={{ fontSize: 11.5, color: 'var(--text-muted)', textAlign: 'center', marginBottom: 10 }}>{copy.pick}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
+          {(agents || []).slice(0, 12).map(a => {
+            const on = subject && subject.id === a.id;
+            return (
+              <button key={a.id} disabled={noKey}
+                onClick={() => {
+                  setSubject(on ? null : { id: a.id, name: a.name });
+                  if (composerRef.current) composerRef.current.focus();
+                }}
+                title={on ? copy.clearSubject : a.name}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 8,
+                  background: on ? 'var(--primary-dim)' : 'var(--bg-card)',
+                  border: `1px solid ${on ? 'var(--primary)' : 'var(--border)'}`,
+                  color: on ? 'var(--text)' : 'var(--text-2)',
+                  borderRadius: 999, padding: '6px 8px', paddingInlineEnd: 14, fontSize: 12.5, fontWeight: 600,
+                  maxWidth: 230, transition: 'border-color 0.16s, background 0.16s',
+                }}>
+                <AvatarDisplay value={a.avatar} size={20} />
+                <span dir="auto" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    ) : null;
+
+    /* Once picked it stays visible above the composer, for the rest of the
+       conversation — otherwise the second question silently loses its subject. */
+    const subjectBar = subject ? (
+      <div dir={dir} style={{ width: 'min(720px, 100%)', margin: '0 auto 9px', display: 'flex' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 9,
+        padding: '7px 9px', paddingInlineStart: 14, borderRadius: 999,
+        background: 'var(--primary-dim)', border: '1px solid var(--primary)',
+      }}>
+        <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--warning)' }}>{copy.about}</span>
+        <span dir="auto" style={{ fontSize: 12.5, fontWeight: 700, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subject.name}</span>
+        <IconBtn title={copy.clearSubject} onClick={() => setSubject(null)} style={{ width: 24, height: 24 }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+        </IconBtn>
+      </div>
+      </div>
+    ) : null;
+
     /* ── nothing said yet: the mark in the middle of the screen ── */
     if (!started) {
       return (
@@ -9992,9 +10070,10 @@ npm run migrate            # הרצה בפועל`}</Block>
 
           <div style={{ width: '100%', marginTop: 24 }}>
             {keyWarning}
-            <HomeComposer value={input} onChange={setInput} onSend={() => send(input)}
+            {subjectBar}
+            <HomeComposer value={input} onChange={setInput} onSend={() => askAbout(input)} fieldRef={composerRef}
               disabled={pending || noKey} dir={dir}
-              placeholder={stacked ? copy.placeholderShort : copy.placeholder} />
+              placeholder={subject ? copy.aboutPlaceholder(subject.name) : (stacked ? copy.placeholderShort : copy.placeholder)} />
           </div>
 
           <div dir={dir} style={{
@@ -10012,6 +10091,8 @@ npm run migrate            # הרצה בפועל`}</Block>
               >{text}</button>
             ))}
           </div>
+
+          {agentPicker}
 
           {!stacked && (
             <div dir={dir} style={{ marginTop: 26, fontSize: 11.5, color: 'var(--text-muted)' }}>{copy.foot}</div>
@@ -10132,7 +10213,8 @@ npm run migrate            # הרצה בפועל`}</Block>
 
         <div style={{ flexShrink: 0, padding: stacked ? '6px 16px 14px' : '6px 30px 20px' }}>
           {keyWarning}
-          <HomeComposer value={input} onChange={setInput} onSend={() => send(input)}
+          {subjectBar}
+          <HomeComposer value={input} onChange={setInput} onSend={() => askAbout(input)}
             disabled={pending || noKey} placeholder={copy.answer} dir={dir} />
         </div>
       </div>

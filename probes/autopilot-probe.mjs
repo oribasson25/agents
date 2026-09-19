@@ -182,5 +182,19 @@ const ask = lift('function EDIT_AGENT_ASK(name) {', '\n  /* Conversations are re
 ok(ask.includes('${name}') && ask.split('${name}').length === 3,
    'the chatbot is named in both languages, which also gives the conversation a title of its own');
 
+/* ── picking which chatbot the home chat is about ── */
+ok(src.includes('const agentPicker = hasAgents ? ('),
+   'the home screen lists the account\'s chatbots to pick from');
+ok(src.includes('setSubject(on ? null : { id: a.id, name: a.name });'),
+   'picking one sets it as the subject, and picking it again clears it');
+ok(/send\(subject \? L\(`About the AI Chatbot "\$\{subject\.name\}"/.test(src),
+   'and the name rides in the message itself, so the transcript still says what it was about');
+ok(src.includes('{subjectBar}') && src.split('{subjectBar}').length === 3,
+   'the subject stays on screen in both the empty state and the conversation');
+ok(src.includes('if (messages.length === 0) setSubject(null);'),
+   'a new conversation starts with no subject');
+ok(src.includes('paddingInlineEnd: 14') && src.includes('paddingInlineStart: 14'),
+   'and the chips are padded by logical edge, so Hebrew does not put the tight side outward');
+
 console.log(`\n${failed ? `${failed} FAILURE(S)` : 'all green'}`);
 process.exit(failed ? 1 : 0);
