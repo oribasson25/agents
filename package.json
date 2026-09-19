@@ -11,7 +11,7 @@
     "migrate": "node migrations/run.mjs",
     "probe:roundtrip": "node probes/roundtrip-probe.mjs",
     "probe:files": "node --import ./probes/stub-db.mjs probes/files-api-probe.mjs",
-    "probe": "npm run probe:roundtrip && npm run probe:files && npm run probe:branches && npm run probe:github && npm run probe:cliauth && npm run probe:jsx && npm run probe:render && npm run probe:cli && npm run probe:starters && npm run probe:tables && npm run probe:crawl",
+    "probe": "npm run probe:roundtrip && npm run probe:files && npm run probe:branches && npm run probe:github && npm run probe:cliauth && npm run probe:jsx && npm run probe:render && npm run probe:cli && npm run probe:starters && npm run probe:tables && npm run probe:crawl && npm run probe:autopilot",
     "probe:cli": "node probes/cli-probe.mjs",
     "probe:branches": "node --import ./probes/stub-db.mjs probes/branches-probe.mjs",
     "probe:jsx": "node probes/check-jsx.mjs",
@@ -20,6 +20,7 @@
     "probe:cliauth": "node probes/cli-auth-probe.mjs",
     "probe:starters": "node --import ./probes/stub-db.mjs probes/starters-probe.mjs",
     "probe:tables": "node --import ./probes/stub-db.mjs probes/tables-probe.mjs",
-    "probe:crawl": "node --import ./probes/stub-db.mjs probes/crawl-probe.mjs"
+    "probe:crawl": "node --import ./probes/stub-db.mjs probes/crawl-probe.mjs",
+    "probe:autopilot": "node probes/autopilot-probe.mjs"
   }
 }

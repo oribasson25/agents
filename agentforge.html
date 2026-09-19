@@ -5578,6 +5578,7 @@ function markSvgString(color, size = 30) {
     const sections = [
       { id: 'intro',        label: 'מה זה 8Legs.ai' },
       { id: 'home',         label: 'דף הבית — צ׳אט' },
+      { id: 'autopilot',    label: 'Autopilot — בנייה מודרכת' },
       { id: 'agents',       label: 'AI Chatbots' },
       { id: 'config',       label: 'Configuration' },
       { id: 'skills',       label: 'Skills' },
@@ -5628,6 +5629,41 @@ function markSvgString(color, size = 30) {
 
     const content = {
       /* ─────────────── INTRO ─────────────── */
+      autopilot: (
+        <div dir="rtl">
+          <H2>Autopilot — בנייה מודרכת</H2>
+          <P>וויזרד שבונה AI Chatbot שלם למי שלא יודע לבנות אחד. הוא נפתח לבד בפעם הראשונה שנכנסים לחשבון ריק, ובכל <Code>צ'אטבוט חדש</Code> מוצג קודם מסך בחירה בין <strong>Autopilot</strong> ל־<strong>Advanced</strong> (העורך המלא, כמו שהיה תמיד).</P>
+
+          <H3>העיקרון</H3>
+          <P>לא נשאלת אף שאלה על בניית סוכנים — לא בייס־פרומפט, לא סקילים. נשאלות שאלות על <strong>העסק</strong> ועל <strong>מה שצריך שיקרה</strong>, והוויזרד מתרגם אותן לסוכן. ובסוף אסור שיישאר משהו שמחייב את העורך: המפתח, הידע, הטבלה, Gmail והערוץ — הכל נסגר בתוכו, מול אותן נקודות קצה שהעורך משתמש בהן.</P>
+
+          <H3>המסכים</H3>
+          <UL>
+            <li><strong>1 · העסק</strong> — שש קטגוריות, וגם ״אתאר בעצמי״ בטקסט חופשי</li>
+            <li><strong>2 · תפקידים</strong> — נגזרים ממסך 1. כל בחירה הופכת ל<strong>סקיל</strong>, וזו נקודת ההסתעפות שקובעת את מסכים 4 ו־5</li>
+            <li><strong>3 · המפתח</strong> — ספק ומפתח, נשמרים בהגדרות החשבון מיד</li>
+            <li><strong>4 · ידע</strong> — סריקת אתר (רצה כאן, עם המונה), העלאת קבצים (חילוץ טקסט ושמירה כאן), כתיבה ידנית, ויצירת הטבלה עם עמודות מוצעות</li>
+            <li><strong>5 · יכולות</strong> — כתיבה לטבלה, חיבור Gmail (יוצא לגוגל וחוזר לוויזרד), קריאה חיה מהאתר, העברה לאדם</li>
+            <li><strong>6 · אופי</strong> — שם, צבע, סגנון, וכללים משלך</li>
+            <li><strong>7 · בנייה</strong> — קריאת מודל אחת שמחזירה שם, הודעת פתיחה, בייס־פרומפט וסקילים</li>
+            <li><strong>8 · לולאת אישור</strong> — ראה למטה</li>
+            <li><strong>9 · פרסום</strong> — סניפט לאתר, וואטסאפ, או דילוג</li>
+          </UL>
+
+          <H3>לולאת האישור</H3>
+          <P>המסך שמקיים את ההבטחה. צ'אט אמיתי מול מה שנבנה, ולידו שדה הערות בשפה חופשית. כל <Code>תקן ובנה מחדש</Code> מחזיר את ההערות לתוך הבריף, מייצר מחדש, שומר, ומאפס את השיחה — ומעלה את מונה הסבב. רשימת ״מה כבר תוקן״ נשמרת מולו, כי אחרי שלושה סבבים אדם כבר לא זוכר מה ביקש. <strong>רק</strong> הכפתור הירוק <Code>הכל תקין — לפרסום</Code> מעביר הלאה.</P>
+
+          <H3>דברים ששווה לדעת</H3>
+          <UL>
+            <li>הסוכן נוצר כבר במעבר למסך 4, כי מסמכים, סריקה וטוקן של Gmail חייבים להיתלות על משהו</li>
+            <li>התשובות נשמרות ב־<Code>sessionStorage</Code>, כי חיבור Gmail מוסר את הדפדפן לגוגל ומחזיר אותו אחרי דקה</li>
+            <li>״אני יודע לבנות לבד״ בתחתית כל מסך מעביר לעורך <strong>עם</strong> הסוכן שכבר נוצר — לא משאיר יתום</li>
+            <li>הוויזרד לא יוצר טולים בפייתון. מי שצריך אחד שייך ל־Advanced</li>
+          </UL>
+          <Warn>המסך היחיד שיכול לעצור לקוח לגמרי הוא מסך 3: בלי מפתח של Anthropic או OpenAI אי אפשר לבנות כלום, וזה דורש חשבון פיתוח וכרטיס אשראי.</Warn>
+        </div>
+      ),
+
       intro: (
         <div dir="rtl">
           <H2>מה זה 8Legs.ai</H2>
@@ -6776,6 +6812,1106 @@ npm run migrate            # הרצה בפועל`}</Block>
     );
   }
 
+  /* ═══════════════════════ AUTOPILOT ═══════════════════════
+     Building an AI Chatbot without knowing how to build one.
+
+     The promise is the whole design: when the wizard closes, nothing is left
+     that needs the editor. So every step that would normally send someone to a
+     settings screen — the API key, the crawl, the files, the table, Gmail, the
+     channel — happens inside it, against the same endpoints the editor uses.
+
+     Each screen is shaped by the one before it. The verticals below are not
+     decoration: the jobs picked on screen 2 decide which knowledge sources are
+     offered on 4, which abilities appear on 5, and what the review chat on 8
+     suggests asking. */
+
+  const AUTOPILOT_KEY = 'agentforge_autopilot_v1';
+
+  /** A vertical: what it is called, what it is usually asked, what it needs. */
+  const AUTOPILOT_CATALOG = {
+    shop: {
+      label: () => L('Online shop', 'חנות אונליין'),
+      hint: () => L('products and delivery', 'מוצרים ומשלוחים'),
+      icon: 'M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z M3 6h18 M16 10a4 4 0 0 1-8 0',
+      name: () => L('Shop assistant', 'עוזר החנות'),
+      greeting: () => L('Hi! I can help with an order, sizes or stock.', 'היי! אפשר לעזור עם הזמנה, מידות או מלאי?'),
+      ask: () => L('Where is my order?', 'איפה ההזמנה שלי?'),
+      jobs: [
+        { id: 'order', label: () => L('Where is my order', 'איפה ההזמנה שלי'), hint: () => L('order number to status and date', 'מספר הזמנה ← סטטוס ומועד'), table: () => L('Orders', 'הזמנות') },
+        { id: 'returns', label: () => L('Returns and exchanges', 'החזרות והחלפות'), hint: () => L('the terms, and the form itself', 'התנאים, והטופס עצמו') },
+        { id: 'prices', label: () => L('Prices and availability', 'מחירים וזמינות'), hint: () => L('from the price list on the site', 'מתוך המחירון באתר') },
+        { id: 'mail', label: () => L('Confirmation by email', 'אישור במייל'), hint: () => L('a summary after each enquiry', 'סיכום אחרי כל פנייה'), email: true },
+      ],
+    },
+    clinic: {
+      label: () => L('Clinic or studio', 'קליניקה או סטודיו'),
+      hint: () => L('appointments and treatments', 'תורים וטיפולים'),
+      icon: 'M8 2v4 M16 2v4 M3 10h18 M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z',
+      name: () => L('Clinic assistant', 'עוזר הקליניקה'),
+      greeting: () => L('Hi! I can book an appointment, check availability or answer questions about a treatment.', 'היי! אפשר לקבוע תור, לבדוק זמינות או לשאול על טיפול.'),
+      ask: () => L('Do you have a class on Thursday morning?', 'יש לכם שיעור ביום חמישי בבוקר?'),
+      jobs: [
+        { id: 'book', label: () => L('Booking', 'קביעת תור'), hint: () => L('name, phone and time — straight into a table', 'שם, טלפון ומועד — ישר לטבלה'), table: () => L('Appointments', 'תורים') },
+        { id: 'prices', label: () => L('Prices and treatments', 'מחירון וטיפולים'), hint: () => L('what each one includes and what it costs', 'מה כולל כל טיפול וכמה זה עולה') },
+        { id: 'cancel', label: () => L('Cancellations and changes', 'ביטולים ושינויים'), hint: () => L('the policy, and changing an existing booking', 'מדיניות, ועדכון התור הקיים') },
+        { id: 'mail', label: () => L('Confirmation by email', 'אישור במייל'), hint: () => L('sends a confirmation after booking', 'שולח אישור אחרי קביעה'), email: true },
+      ],
+    },
+    realestate: {
+      label: () => L('Real estate', 'נדל״ן'),
+      hint: () => L('properties and leads', 'נכסים ולידים'),
+      icon: 'M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M9 22V12h6v10',
+      name: () => L('Office assistant', 'עוזר המשרד'),
+      greeting: () => L('Hi! Looking for a property, or selling one? Tell me what you need.', 'היי! מחפש נכס או רוצה למכור? ספר לי מה אתה מחפש.'),
+      ask: () => L('Anything with 4 rooms under 3 million?', 'יש 4 חדרים עד 3 מיליון?'),
+      jobs: [
+        { id: 'lead', label: () => L('Qualifying leads', 'סינון לידים'), hint: () => L('budget, area, size — into a table', 'תקציב, אזור, גודל — לטבלה'), table: () => L('Leads', 'לידים') },
+        { id: 'props', label: () => L('Available properties', 'נכסים זמינים'), hint: () => L('from your own list', 'מתוך הרשימה שלך') },
+        { id: 'tour', label: () => L('Arranging a viewing', 'תיאום סיור'), hint: () => L('a time and contact details', 'מועד ופרטי קשר') },
+        { id: 'mail', label: () => L('Send property details by email', 'שליחת פרטי נכס במייל'), hint: () => L('a document or a link to the client', 'מסמך או קישור ללקוח'), email: true },
+      ],
+    },
+    service: {
+      label: () => L('Technical support', 'שירות טכני'),
+      hint: () => L('faults and help', 'תקלות ותמיכה'),
+      icon: 'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76Z',
+      name: () => L('Support assistant', 'עוזר התמיכה'),
+      greeting: () => L('Hi! Describe the problem and I will try to solve it.', 'היי! תאר לי את התקלה ואני אנסה לפתור.'),
+      ask: () => L('The device will not turn on', 'המכשיר לא נדלק'),
+      jobs: [
+        { id: 'triage', label: () => L('Diagnosing a fault', 'אבחון תקלה'), hint: () => L('guided questions by symptom', 'שאלות מנחות לפי הסימפטום') },
+        { id: 'ticket', label: () => L('Opening a ticket', 'פתיחת קריאה'), hint: () => L('details into a tickets table', 'פרטים ← טבלת קריאות'), table: () => L('Service calls', 'קריאות שירות') },
+        { id: 'docs', label: () => L('Guides and instructions', 'מדריכים והוראות'), hint: () => L('from your own documents', 'מתוך המסמכים שלך') },
+        { id: 'mail', label: () => L('Summary by email', 'סיכום במייל'), hint: () => L('what was done and what happens next', 'מה נעשה ומה הלאה'), email: true },
+      ],
+    },
+    food: {
+      label: () => L('Restaurant', 'מסעדה'),
+      hint: () => L('bookings and menu', 'הזמנות ותפריט'),
+      icon: 'M3 2v7c0 1.1.9 2 2 2h1a2 2 0 0 0 2-2V2 M6 2v20 M18 2v20 M18 11h-3a3 3 0 0 1 0-6h3',
+      name: () => L('Restaurant assistant', 'עוזר המסעדה'),
+      greeting: () => L('Hi! You can book a table or ask about the menu.', 'היי! אפשר להזמין מקום או לשאול על התפריט.'),
+      ask: () => L('Is there a vegan option?', 'יש אופציה טבעונית?'),
+      jobs: [
+        { id: 'table', label: () => L('Booking a table', 'הזמנת מקום'), hint: () => L('date, time, how many', 'תאריך, שעה, כמה סועדים'), table: () => L('Table bookings', 'הזמנות מקום') },
+        { id: 'menu', label: () => L('Menu and allergens', 'תפריט ואלרגנים'), hint: () => L('what there is, and what is in it', 'מה יש ומה יש בתוכו') },
+        { id: 'hours', label: () => L('Hours and address', 'שעות וכתובת'), hint: () => L('from the site', 'מתוך האתר') },
+        { id: 'mail', label: () => L('Booking confirmation by email', 'אישור הזמנה במייל'), hint: () => L('to the guest and to you', 'לסועד ולך'), email: true },
+      ],
+    },
+    other: {
+      label: () => L('Something else', 'משהו אחר'),
+      hint: () => L('I will ask more', 'אני אשאל עוד'),
+      icon: 'M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3 M12 17h.01 M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z',
+      name: () => L('My assistant', 'העוזר שלי'),
+      greeting: () => L('Hi! How can I help?', 'היי! איך אפשר לעזור?'),
+      ask: () => L('What are your opening hours?', 'מה שעות הפעילות?'),
+      jobs: [
+        { id: 'faq', label: () => L('Common questions', 'שאלות נפוצות'), hint: () => L('from the site or a document', 'מתוך האתר או מסמך') },
+        { id: 'lead', label: () => L('Collecting details', 'איסוף פרטים'), hint: () => L('name and phone into a table', 'שם וטלפון לטבלה'), table: () => L('Enquiries', 'פניות') },
+        { id: 'mail', label: () => L('Sending email', 'שליחת מייל'), hint: () => L('a summary of the enquiry, to you', 'סיכום פנייה אליך'), email: true },
+        { id: 'human', label: () => L('Handing over to a person', 'העברה לאדם'), hint: () => L('when it is beyond him', 'כשזה מעבר ליכולת שלו') },
+      ],
+    },
+  };
+
+  const AUTOPILOT_COLUMNS = {
+    book: () => [L('Full name', 'שם מלא'), L('Phone', 'טלפון'), L('Date', 'תאריך'), L('Time', 'שעה'), L('Status', 'סטטוס')],
+    order: () => [L('Order number', 'מספר הזמנה'), L('Customer', 'לקוח'), L('Status', 'סטטוס'), L('Total', 'סכום')],
+    lead: () => [L('Name', 'שם'), L('Phone', 'טלפון'), L('Looking for', 'מה חיפש'), L('Date', 'תאריך')],
+    ticket: () => [L('Name', 'שם'), L('Phone', 'טלפון'), L('The fault', 'התקלה'), L('Date', 'תאריך'), L('Status', 'סטטוס')],
+    table: () => [L('Name', 'שם'), L('Phone', 'טלפון'), L('Date', 'תאריך'), L('Time', 'שעה'), L('Guests', 'סועדים')],
+  };
+  const AUTOPILOT_COLUMN_TYPE = { 'תאריך': 'date', 'Date': 'date', 'סכום': 'number', 'Total': 'number', 'סועדים': 'number', 'Guests': 'number' };
+
+  /* The wizard survives leaving the page, because connecting Gmail means
+     handing the browser to Google and getting it back a minute later. */
+  function loadAutopilot() {
+    try { return JSON.parse(sessionStorage.getItem(AUTOPILOT_KEY) || 'null'); } catch { return null; }
+  }
+  function saveAutopilot(state) {
+    try { sessionStorage.setItem(AUTOPILOT_KEY, JSON.stringify(state)); } catch { /* private window */ }
+  }
+  function clearAutopilot() {
+    try { sessionStorage.removeItem(AUTOPILOT_KEY); } catch { /* private window */ }
+  }
+
+  /**
+   * The one model call that turns the answers into an AI Chatbot.
+   *
+   * It asks for JSON and nothing else. A model that wraps it in prose or a
+   * fence is normal, so the braces are found rather than trusted.
+   */
+  async function autopilotGenerate(brief) {
+    const system = [
+      'You design AI customer-service chatbots. You are given a brief about one business and you return the chatbot.',
+      'Answer with ONE JSON object and nothing else. No prose, no code fence.',
+      'Shape: { "name": string, "openingMessage": string, "basePrompt": string, "skills": [{ "name": string, "description": string, "prompt": string }] }',
+      'name: two or three words, in the language of the brief.',
+      'openingMessage: one or two sentences the customer sees first, in the language of the brief.',
+      'basePrompt: who this chatbot is, the language and tone it answers in, what it may and may not promise, and when to hand over to a person. Write it in English (it is an instruction to a model, not to a person) but state explicitly which language it must ANSWER in. 150-300 words. Do not put step-by-step procedures here — those belong in skills.',
+      'skills: one per job in the brief. Each prompt is the procedure for that one task: what to collect, in what order, what to say at each stage, and when it is done. English, 80-200 words each.',
+      'If the brief says the chatbot writes to a table, the relevant skill must say to call table_find before answering about existing records, and table_add_row once every required column is collected. Never invent a column that is not listed.',
+      'If the brief says it can send email, the relevant skill must say to confirm the address back to the customer before sending.',
+      'Never invent facts about the business — prices, hours, policies. Where a fact is needed, instruct the chatbot to look it up in its knowledge and to say plainly that it does not know rather than guess.',
+    ].join('\n');
+
+    const raw = await callWithToolDefs({
+      system, history: [{ role: 'user', content: brief }], tools: [], execute: async () => '', maxTokens: 4096,
+    });
+    const start = raw.indexOf('{');
+    const end = raw.lastIndexOf('}');
+    if (start < 0 || end < start) throw new Error(L('The model did not answer with a chatbot. Try again.', 'המודל לא החזיר צ\'אטבוט. אפשר לנסות שוב.'));
+    const spec = JSON.parse(raw.slice(start, end + 1));
+    return {
+      name: String(spec.name || '').trim().slice(0, 60),
+      openingMessage: String(spec.openingMessage || '').trim().slice(0, 400),
+      basePrompt: String(spec.basePrompt || '').trim(),
+      skills: (Array.isArray(spec.skills) ? spec.skills : []).slice(0, 8).map(s => ({
+        id: uid(),
+        name: String(s.name || 'Skill').trim().slice(0, 60),
+        description: String(s.description || '').trim().slice(0, 300),
+        prompt: String(s.prompt || '').trim(),
+      })),
+    };
+  }
+
+  /** The brief the generator reads — every answer, in one paragraph. */
+  function autopilotBrief(w) {
+    const v = AUTOPILOT_CATALOG[w.biz];
+    const jobs = v.jobs.filter(j => w.jobs[j.id]);
+    const lines = [
+      `Business: ${v.label()}.`,
+      w.bizFree ? `In the owner's words: ${w.bizFree}` : '',
+      `Interface language: ${uiHe() ? 'Hebrew' : 'English'}. The chatbot must answer in that language.`,
+      `Jobs it must handle: ${jobs.map(j => j.label()).join('; ') || 'answering general questions'}.`,
+      w.jobsFree ? `Also: ${w.jobsFree}` : '',
+      w.ownText ? `Facts the owner supplied: ${w.ownText.slice(0, 2000)}` : '',
+      w.siteUrl && w.sources.site ? `It has a knowledge base crawled from ${w.siteUrl}.` : '',
+      w.uploads.length ? `It has a knowledge base from uploaded documents: ${w.uploads.map(u => u.name).join(', ')}.` : '',
+      w.tableName ? `It can read and write a table called "${w.tableName}" with columns: ${w.tableColumns.join(', ')}.` : '',
+      w.abilities.mail ? 'It can send email on the owner\'s behalf.' : '',
+      w.abilities.web ? 'It can read a page from the website live, mid-conversation.' : '',
+      w.abilities.human ? 'It must hand over to a person when unsure.' : '',
+      `Tone: ${{ warm: 'warm and friendly', short: 'short and to the point', formal: 'formal' }[w.tone]}.`,
+      w.rulesFree ? `Rules the owner insists on: ${w.rulesFree}` : '',
+    ];
+    return lines.filter(Boolean).join('\n');
+  }
+
+  /* ── small pieces, shared by the screens ── */
+
+  function ApCard({ on, onClick, children, style }) {
+    return (
+      <div onClick={onClick} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined}
+        onKeyDown={onClick ? (e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }) : undefined}
+        style={{
+          padding: '15px 17px', borderRadius: 16, cursor: onClick ? 'pointer' : 'default',
+          background: on ? 'var(--primary-dim)' : 'var(--bg-card)',
+          border: on ? '2px solid var(--primary)' : '1px solid var(--border)',
+          ...style,
+        }}>
+        {children}
+      </div>
+    );
+  }
+
+  function ApTick({ on }) {
+    return (
+      <div style={{
+        flexShrink: 0, width: 22, height: 22, borderRadius: 7, marginTop: 1,
+        background: on ? 'var(--primary)' : 'var(--bg-card)',
+        border: on ? '2px solid var(--primary)' : '2px solid var(--text-muted)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
+      }}>
+        {on && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>}
+      </div>
+    );
+  }
+
+  /** The escape hatch, on every screen that offers a choice. */
+  function ApFreeText({ label, hint, placeholder, value, onChange, rows = 2, open, onToggle }) {
+    return (
+      <div style={{ marginTop: 12, padding: '15px 17px', borderRadius: 14, background: 'var(--bg-card)', border: '1px dashed var(--text-muted)' }}>
+        <button onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13.5, fontWeight: 700, color: 'var(--text-2)', padding: '4px 0', background: 'none', border: 'none' }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+            <path d={open ? 'm6 15 6-6 6 6' : 'm6 9 6 6 6-6'} />
+          </svg>
+          {label}
+        </button>
+        {open && (
+          <div style={{ marginTop: 11 }}>
+            {hint && <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>{hint}</div>}
+            <textarea rows={rows} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} dir="auto"
+              style={{ width: '100%', padding: '12px 14px', fontSize: 13.5, lineHeight: 1.6, borderRadius: 11, border: '1px solid var(--border)', background: 'var(--bg-panel)', resize: 'none' }} />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function ApHeading({ step, title, sub }) {
+    return (
+      <div style={{ flexShrink: 0 }}>
+        {step && <Eyebrow>{L(`Question ${step} of 6`, `שאלה ${step} מתוך 6`)}</Eyebrow>}
+        <h1 style={{ margin: '8px 0 6px', fontSize: 32, fontWeight: 800, letterSpacing: '-0.7px' }}>{title}</h1>
+        <p style={{ margin: '0 0 16px', fontSize: 15, color: 'var(--text-2)' }}>{sub}</p>
+      </div>
+    );
+  }
+
+  /* Built rather than written out: a literal closing script tag inside this
+     inline script would end the block the whole app lives in. */
+  function apWidgetTag(agentId) {
+    return `<script src="${window.location.origin}/api/widget/${agentId}"><` + '/script>';
+  }
+
+  /** Forward and back, which swap over in Hebrew. */
+  function ApArrow({ back }) {
+    const right = back ? uiHe() : !uiHe();
+    return right
+      ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>
+      : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5" /><path d="m12 19-7-7 7-7" /></svg>;
+  }
+
+  const AP_STEPS = () => [
+    L('Business', 'העסק'), L('Jobs', 'תפקידים'), L('Key', 'מפתח'),
+    L('Knowledge', 'ידע'), L('Abilities', 'יכולות'), L('Character', 'אופי'), L('Building', 'בנייה'),
+  ];
+
+  /**
+   * The wizard itself.
+   *
+   * `startStep` is 0 for the Autopilot/Advanced fork and 1 to go straight in,
+   * which is what a brand new account gets.
+   */
+  function AutopilotWizard({ startStep = 0, onAdvanced, onClose, onBuilt, resumed }) {
+    const blank = {
+      step: startStep, biz: '', bizFree: '', jobs: {}, jobsFree: '',
+      provider: 'claude', apiKey: '', ollamaHost: '',
+      sources: {}, siteUrl: '', ownText: '', uploads: [],
+      abilities: { web: false, human: true }, abilitiesFree: '',
+      name: '', color: DEFAULT_AVATAR_COLOR, tone: 'warm', rulesFree: '',
+      agentId: '', tableId: '', tableName: '', tableColumns: [],
+      round: 1, fixes: [], channel: '',
+      whatsapp: { phoneNumberId: '', accessToken: '', appSecret: '', verifyToken: '' },
+    };
+    const [w, setW] = useState(() => (resumed ? { ...blank, ...resumed } : blank));
+    const [freeOpen, setFreeOpen] = useState(false);
+    const [busy, setBusy] = useState('');
+    const [error, setError] = useState('');
+    const [keyState, setKeyState] = useState(resumed ? 'ok' : 'idle');   // idle | checking | ok | bad
+    const [crawl, setCrawl] = useState(null);                            // { pagesCrawled, pagesFound, status }
+    const [built, setBuilt] = useState(null);                            // the agent, once generated
+    const [buildAt, setBuildAt] = useState(-1);                          // which build line is running
+    const [chat, setChat] = useState([]);
+    const [draft, setDraft] = useState('');
+    const [notes, setNotes] = useState('');
+    const fileRef = useRef(null);
+    const listRef = useRef(null);
+
+    const set = patch => setW(prev => { const next = { ...prev, ...patch }; saveAutopilot(next); return next; });
+    const go = step => { setFreeOpen(false); setError(''); set({ step }); };
+
+    const vertical = AUTOPILOT_CATALOG[w.biz] || null;
+    const jobs = vertical ? vertical.jobs.filter(j => w.jobs[j.id]) : [];
+    const tableJob = jobs.find(j => j.table);
+    const wantsEmail = jobs.some(j => j.email);
+
+    useEffect(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [chat, busy]);
+
+    /* ── the agent exists from the knowledge screen on, because documents, a
+          crawl and a Gmail token all have to hang off something. ── */
+    async function ensureAgent() {
+      if (w.agentId) return w.agentId;
+      const agent = makeAgent({ name: L('Building…', 'בבנייה…'), avatar: w.color, openingMessage: '' });
+      await apiCreate(agent);
+      set({ agentId: agent.id });
+      return agent.id;
+    }
+
+    async function saveKey() {
+      setKeyState('checking'); setError('');
+      try {
+        const patch = { provider: w.provider, apiKey: w.apiKey.trim(), ollamaHost: w.ollamaHost.trim() };
+        const saved = await apiSaveSettings(patch);
+        ACCOUNT_API = {
+          provider: saved.provider, apiKey: saved.apiKey || patch.apiKey,
+          model: saved.model, ollamaHost: saved.ollamaHost || patch.ollamaHost,
+        };
+        setKeyState('ok');
+        return true;
+      } catch (err) {
+        setKeyState('bad'); setError(err.message);
+        return false;
+      }
+    }
+
+    async function startCrawl() {
+      const url = w.siteUrl.trim();
+      if (!url) return;
+      const id = await ensureAgent();
+      setCrawl({ status: 'running', pagesCrawled: 0, pagesFound: 0 });
+      apiFetch(`/api/agents/${id}/crawl`, { method: 'POST', body: JSON.stringify({ url, maxPages: 100 }) })
+        .catch(() => {});
+      // The request can outlive this screen, so the row is read back rather
+      // than waited on.
+      const poll = setInterval(async () => {
+        try {
+          const cfg = await apiFetch(`/api/agents/${id}/crawl`).then(r => r.json());
+          setCrawl(cfg);
+          if (cfg.status !== 'running') clearInterval(poll);
+        } catch { /* keep polling */ }
+      }, 2500);
+    }
+
+    async function uploadFiles(files) {
+      if (!files || !files.length) return;
+      const id = await ensureAgent();
+      for (const file of Array.from(files).slice(0, 10)) {
+        const entry = { name: file.name, state: 'reading' };
+        setW(prev => { const next = { ...prev, uploads: [...prev.uploads, entry] }; saveAutopilot(next); return next; });
+        try {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          let binary = '';
+          for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+          const data = await apiFetch('/api/extract-file', {
+            method: 'POST', body: JSON.stringify({ filename: file.name, content_b64: btoa(binary) }),
+          }).then(r => r.json());
+          const text = (data.text || '').trim();
+          if (!text) throw new Error(L('no text in the file', 'אין טקסט בקובץ'));
+          await apiFetch(`/api/agents/${id}/documents`, {
+            method: 'POST',
+            body: JSON.stringify({ docId: uid(), skillId: null, title: data.title || file.name, content: text }),
+          });
+          setW(prev => {
+            const next = { ...prev, uploads: prev.uploads.map(u => (u.name === file.name ? { ...u, state: 'done' } : u)) };
+            saveAutopilot(next); return next;
+          });
+        } catch (err) {
+          setW(prev => {
+            const next = { ...prev, uploads: prev.uploads.map(u => (u.name === file.name ? { ...u, state: 'failed', why: err.message } : u)) };
+            saveAutopilot(next); return next;
+          });
+        }
+      }
+    }
+
+    /* Leaving the knowledge screen is what actually writes what was typed and
+       creates the table — doing it on every keystroke would make a document
+       per letter. */
+    async function commitKnowledge() {
+      const id = await ensureAgent();
+      if (w.sources.text && w.ownText.trim()) {
+        await apiFetch(`/api/agents/${id}/documents`, {
+          method: 'POST',
+          body: JSON.stringify({ docId: uid(), skillId: null, title: L('What the owner told me', 'מה שכתבתי בעצמי'), content: w.ownText.trim() }),
+        }).catch(() => {});
+      }
+      if (w.sources.table && tableJob && !w.tableId) {
+        const name = w.tableName || tableJob.table();
+        const cols = (w.tableColumns.length ? w.tableColumns : (AUTOPILOT_COLUMNS[tableJob.id] || AUTOPILOT_COLUMNS.lead)());
+        const made = await apiCreateTable({
+          name, description: L(`What the chatbot collects for ${tableJob.label()}`, `מה שהצ'אטבוט אוסף עבור ${tableJob.label()}`),
+          columns: cols.map(c => ({ name: c, type: AUTOPILOT_COLUMN_TYPE[c] || 'text' })),
+        });
+        set({ tableId: made.id, tableName: name, tableColumns: cols });
+      }
+    }
+
+    function connectGmail() {
+      saveAutopilot({ ...w, step: 5 });
+      window.location.href = gmailConnectUrl(w.agentId);
+    }
+
+    /* ── the build ── */
+    const buildLines = () => [
+      { key: 'prompt', label: L('Writing its character and rules', 'כותב את האופי והכללים') },
+      { key: 'skills', label: L(`Building ${Math.max(jobs.length, 1)} skills`, `בונה ${Math.max(jobs.length, 1)} מיומנויות`) },
+      { key: 'table', label: w.tableId ? L(`Wiring up the "${w.tableName}" table`, `מחבר את טבלת "${w.tableName}"`) : L('Organising the knowledge', 'מארגן את הידע') },
+      { key: 'save', label: L('Saving the chatbot', 'שומר את הצ\'אטבוט') },
+    ];
+
+    async function build() {
+      setError(''); setBuildAt(0);
+      try {
+        const id = await ensureAgent();
+        const spec = await autopilotGenerate(autopilotBrief({ ...w, tableName: w.tableName, tableColumns: w.tableColumns, abilities: { ...w.abilities, mail: wantsEmail || w.abilities.mail } }));
+        setBuildAt(2);
+        const agent = makeAgent({
+          id,
+          name: (w.name || spec.name || vertical.name()).slice(0, 60),
+          avatar: w.color,
+          openingMessage: spec.openingMessage || vertical.greeting(),
+          basePrompt: spec.basePrompt,
+          skills: spec.skills,
+          tables: w.tableId ? [w.tableId] : [],
+          emailEnabled: !!(wantsEmail || w.abilities.mail),
+          scrapeUrls: w.abilities.web && w.siteUrl ? [w.siteUrl.trim()] : [],
+        });
+        setBuildAt(3);
+        await apiUpdate(agent);
+        setBuilt(agent);
+        setChat([{ role: 'assistant', content: agent.openingMessage }]);
+        setBuildAt(4);
+        go(8);
+      } catch (err) {
+        setError(err.message); setBuildAt(-1);
+      }
+    }
+
+    async function send(text) {
+      const body = (text || '').trim();
+      if (!body || !built || busy) return;
+      const next = [...chat, { role: 'user', content: body }];
+      setChat(next); setDraft(''); setBusy('chat');
+      try {
+        const reply = await callWithTools(built, next.map(m => ({ role: m.role, content: m.content })), () => {});
+        setChat(c => [...c, { role: 'assistant', content: reply }]);
+      } catch (err) {
+        setChat(c => [...c, { role: 'assistant', content: `⚠ ${err.message}` }]);
+      } finally { setBusy(''); }
+    }
+
+    /** A round of the loop: the notes go back into the brief and it is rebuilt. */
+    async function applyFix() {
+      const note = notes.trim();
+      if (!note || busy) return;
+      setBusy('fix'); setError('');
+      try {
+        const brief = autopilotBrief({ ...w, tableName: w.tableName, tableColumns: w.tableColumns })
+          + `\n\nThis is revision ${w.round + 1}. The owner has read the chatbot's answers and asked for these changes — honour every one of them, and keep everything else as it was:\n${note}`
+          + `\nThe current base prompt is:\n${built.basePrompt}`;
+        const spec = await autopilotGenerate(brief);
+        const agent = { ...built, basePrompt: spec.basePrompt, skills: spec.skills, openingMessage: spec.openingMessage || built.openingMessage };
+        await apiUpdate(agent);
+        setBuilt(agent);
+        setChat([{ role: 'assistant', content: agent.openingMessage }]);
+        set({ round: w.round + 1, fixes: [...w.fixes, { text: note.slice(0, 160) }] });
+        setNotes('');
+      } catch (err) { setError(err.message); } finally { setBusy(''); }
+    }
+
+    async function finish(publish) {
+      setBusy('finish');
+      try {
+        if (publish && w.channel === 'whatsapp') {
+          await apiUpdate({ ...built, whatsapp: { ...w.whatsapp, enabled: true } });
+        }
+        clearAutopilot();
+        onBuilt(built);
+      } finally { setBusy(''); }
+    }
+
+    /* ── chrome ── */
+    const stepNames = AP_STEPS();
+    const onRail = w.step >= 1 && w.step <= 7;
+    const canNext = (() => {
+      if (w.step === 1) return !!w.biz || !!w.bizFree.trim();
+      if (w.step === 2) return jobs.length > 0 || !!w.jobsFree.trim();
+      // The button is what verifies the key, so it cannot wait for a verified
+      // key to become pressable.
+      if (w.step === 3) return keyState !== 'checking' && !!(w.provider === 'ollama' ? w.ollamaHost.trim() : w.apiKey.trim());
+      if (w.step === 4) return Object.keys(w.sources).some(k => w.sources[k]);
+      return true;
+    })();
+
+    async function next() {
+      if (w.step === 3) { if (keyState !== 'ok' && !(await saveKey())) return; go(4); return; }
+      if (w.step === 4) { setBusy('know'); try { await commitKnowledge(); } finally { setBusy(''); } go(5); return; }
+      if (w.step === 6) { go(7); build(); return; }
+      if (w.step === 8) { go(9); return; }
+      if (w.step === 9) { finish(true); return; }
+      go(w.step + 1);
+    }
+
+    const nextLabel = [
+      '', L('Continue', 'ממשיכים'), L('Continue', 'ממשיכים'), L('Verify and continue', 'אימות והמשך'),
+      L('Continue', 'ממשיכים'), L('Continue', 'ממשיכים'), L('Build it for me', 'בנה לי אותו'),
+      L('Building…', 'בונה…'), L('It all looks right', 'הכל תקין — לפרסום'), L('Done', 'סיימנו'),
+    ][w.step];
+
+    const skipLabel = w.step === 8
+      ? L('Save and finish without publishing', 'שמור וסיים בלי לפרסם')
+      : (w.step === 9 ? L('Skip — do not publish now', 'לדלג — לא מפרסם עכשיו') : L('I know how to build one — take me to the editor', 'אני יודע לבנות לבד — קחו אותי לעורך'));
+
+    function onSkip() {
+      if (w.step >= 8) { clearAutopilot(); onBuilt(built); return; }
+      clearAutopilot();
+      onAdvanced(w.agentId);
+    }
+
+    const panel = { flexGrow: 1, minHeight: 0, overflowY: 'auto', paddingInlineEnd: 6, display: 'flex', flexDirection: 'column', gap: 10 };
+    const tallStep = w.step === 4 || w.step === 5 || w.step === 8;
+
+    return (
+      <div dir={uiDir()} style={{
+        position: 'fixed', inset: 0, zIndex: 400, background: 'var(--bg-app)',
+        display: 'flex', flexDirection: 'column',
+      }}>
+        {/* rail */}
+        <div style={{ flexShrink: 0, height: 64, padding: '0 32px', display: 'flex', alignItems: 'center', gap: 18, background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <SpiderLogo size={38} still />
+            <span style={{ fontWeight: 800, fontSize: 15, letterSpacing: '-0.2px' }}>{w.step === 0 ? '8Legs' : 'Autopilot'}</span>
+          </div>
+          {onRail ? (
+            <React.Fragment>
+              <div style={{ flexGrow: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
+                {stepNames.map((_, i) => (
+                  <div key={i} style={{ flexGrow: 1, height: 4, borderRadius: 99, background: i < w.step ? 'var(--primary)' : 'var(--bg-hover)' }} />
+                ))}
+              </div>
+              <span style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600, whiteSpace: 'nowrap', minWidth: 92, textAlign: 'end' }}>{stepNames[w.step - 1]}</span>
+            </React.Fragment>
+          ) : <div style={{ flexGrow: 1 }} />}
+          <IconBtn title={w.step === 0 ? L('Close', 'סגירה') : L('Back', 'חזרה')}
+            onClick={() => (w.step === 0 ? onClose() : go(Math.max(w.step === 8 ? 8 : 0, w.step - 1)))}>
+            {w.step === 0
+              ? <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+              : <ApArrow back />}
+          </IconBtn>
+        </div>
+
+        {/* body */}
+        <div style={{ flexGrow: 1, minHeight: 0, overflow: 'hidden', display: 'flex', alignItems: tallStep ? 'stretch' : 'center', justifyContent: 'center', padding: '26px 32px' }}>
+          {/* A question is easier to read narrow; a screen you work in wants
+              the window. */}
+          <div style={{ width: '100%', maxWidth: tallStep ? 1180 : 940, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+
+            {/* 0 · the fork */}
+            {w.step === 0 && (
+              <div>
+                <div style={{ textAlign: 'center', marginBottom: 30 }}>
+                  <h1 style={{ margin: '0 0 9px', fontSize: 34, fontWeight: 800, letterSpacing: '-0.8px' }}>{L('New AI Chatbot', 'צ\'אטבוט חדש')}</h1>
+                  <p style={{ margin: 0, fontSize: 16, color: 'var(--text-2)' }}>{L('How would you like to build it?', 'איך בא לך לבנות אותו?')}</p>
+                </div>
+                <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+                  <button onClick={() => go(1)} style={{ flexGrow: 1, flexBasis: 320, textAlign: 'start', padding: 28, borderRadius: 20, background: 'var(--bg-card)', border: '2px solid var(--primary)', boxShadow: 'var(--shadow-lg)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 13, marginBottom: 16 }}>
+                      <div style={{ width: 44, height: 44, borderRadius: 13, background: 'var(--primary-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--warning)' }}>
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3 9.8 8.8 4 11l5.8 2.2L12 19l2.2-5.8L20 11l-5.8-2.2Z" /></svg>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 19, fontWeight: 800 }}>Autopilot</div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--warning)' }}>{L('recommended', 'מומלץ')}</div>
+                      </div>
+                    </div>
+                    <p style={{ margin: '0 0 18px', fontSize: 14.5, lineHeight: 1.65, color: 'var(--text-2)' }}>
+                      {L('Answer a few questions about the business and the chatbot builds itself — knowledge, tables, email and going live included.',
+                        'עונים על כמה שאלות על העסק, והצ\'אטבוט נבנה לבד — כולל הידע, הטבלאות, החיבור למייל וההעלאה לאוויר.')}
+                    </p>
+                    <div style={{ fontSize: 12.5, color: 'var(--text-muted)', fontWeight: 600 }}>{L('7 screens · about 4 minutes', '7 מסכים · בערך 4 דקות')}</div>
+                  </button>
+                  <button onClick={() => { clearAutopilot(); onAdvanced(''); }} style={{ flexGrow: 1, flexBasis: 320, textAlign: 'start', padding: 28, borderRadius: 20, background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 13, marginBottom: 16 }}>
+                      <div style={{ width: 44, height: 44, borderRadius: 13, background: 'var(--bg-input)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-2)' }}>
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16 18 6-6-6-6" /><path d="m8 6-6 6 6 6" /></svg>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 19, fontWeight: 800 }}>Advanced</div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)' }}>{L('for people who build chatbots', 'לבוני סוכנים')}</div>
+                      </div>
+                    </div>
+                    <p style={{ margin: '0 0 18px', fontSize: 14.5, lineHeight: 1.65, color: 'var(--text-2)' }}>
+                      {L('Straight to the editor: base prompt, skills, Python tools, documents, tables and channels — all by hand.',
+                        'ישר לעורך: בייס־פרומפט, סקילים, טולים בפייתון, מסמכים, טבלאות וערוצים — הכל ידני.')}
+                    </p>
+                    <div style={{ fontSize: 12.5, color: 'var(--text-muted)', fontWeight: 600 }}>{L('The full editor, as it is today', 'העורך המלא, כמו היום')}</div>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 1 · the business */}
+            {w.step === 1 && (
+              <div>
+                <ApHeading step={1} title={L('What does your business do?', 'במה העסק שלך עוסק?')} sub={L('Everything else is built from this.', 'מכאן אני בונה את כל השאר.')} />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12 }}>
+                  {Object.keys(AUTOPILOT_CATALOG).map(k => {
+                    const item = AUTOPILOT_CATALOG[k];
+                    const sel = w.biz === k;
+                    return (
+                      <ApCard key={k} on={sel} onClick={() => set({ biz: k, jobs: {} })} style={{ minHeight: 84 }}>
+                        <div style={{ color: sel ? 'var(--warning)' : 'var(--text-muted)', marginBottom: 8 }}>
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={item.icon} /></svg>
+                        </div>
+                        <div style={{ fontSize: 14.5, fontWeight: 700 }}>{item.label()}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{item.hint()}</div>
+                      </ApCard>
+                    );
+                  })}
+                </div>
+                <ApFreeText open={freeOpen} onToggle={() => setFreeOpen(!freeOpen)}
+                  label={L('None of them quite fits? I will describe it', 'אף אחת לא מדויקת? אתאר בעצמי')}
+                  hint={L('A few lines about the business — the more you give, the sharper it comes out', 'כמה שורות על העסק — ככל שתפרט יותר, הצ\'אטבוט יֵצא מדויק יותר')}
+                  placeholder={L('A pilates studio with three instructors. People mostly ask about hours, prices and cancellations.', 'סטודיו לפילאטיס עם שלוש מדריכות. הלקוחות שואלים בעיקר על שעות, מחירים וביטולים.')}
+                  rows={3} value={w.bizFree} onChange={v => set({ bizFree: v })} />
+              </div>
+            )}
+
+            {/* 2 · the jobs */}
+            {w.step === 2 && vertical && (
+              <div>
+                <ApHeading step={2} title={L('What will it handle?', 'במה הוא יטפל?')}
+                  sub={L(`You chose ${vertical.label()} — these are the things people ask most. Each one becomes its own skill.`,
+                    `בחרת ${vertical.label()} — אלה הדברים שנשאלים הכי הרבה. כל בחירה הופכת למיומנות נפרדת.`)} />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 12 }}>
+                  {vertical.jobs.map(j => (
+                    <ApCard key={j.id} on={!!w.jobs[j.id]} style={{ display: 'flex', gap: 13, alignItems: 'flex-start', minHeight: 74 }}
+                      onClick={() => { const n = { ...w.jobs }; if (n[j.id]) delete n[j.id]; else n[j.id] = true; set({ jobs: n }); }}>
+                      <ApTick on={!!w.jobs[j.id]} />
+                      <div>
+                        <div style={{ fontSize: 14.5, fontWeight: 700 }}>{j.label()}</div>
+                        <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.5 }}>{j.hint()}</div>
+                      </div>
+                    </ApCard>
+                  ))}
+                </div>
+                <ApFreeText open={freeOpen} onToggle={() => setFreeOpen(!freeOpen)}
+                  label={L('Something missing? I will describe it', 'חסר משהו? אתאר בעצמי')}
+                  hint={L('Another job it has to do', 'תפקיד נוסף שהוא צריך למלא')}
+                  placeholder={L('Explain how to get here and where to park', 'להסביר איך מגיעים ואיפה חונים')}
+                  value={w.jobsFree} onChange={v => set({ jobsFree: v })} />
+                <div style={{ marginTop: 12, padding: '13px 16px', borderRadius: 12, background: 'var(--teal-dim)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <div style={{ color: 'var(--teal)', flexShrink: 0, marginTop: 1 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
+                  </div>
+                  <p style={{ margin: 0, fontSize: 12.5, color: 'var(--teal)', lineHeight: 1.6 }}>
+                    {jobs.length === 0
+                      ? L('With nothing chosen I will build a chatbot that only answers questions.', 'בלי בחירה אבנה צ\'אטבוט שעונה על שאלות בלבד.')
+                      : L(`I will build ${jobs.length} skills${tableJob ? `, a "${tableJob.table()}" table` : ''}${wantsEmail ? ', and an email connection' : ''} — in the screens ahead.`,
+                        `לפי הבחירה הזו אבנה ${jobs.length} מיומנויות${tableJob ? `, טבלת "${tableJob.table()}" לרישום` : ''}${wantsEmail ? ', וחיבור למייל' : ''} — במסכים הבאים.`)}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* 3 · the key */}
+            {w.step === 3 && (
+              <div>
+                <ApHeading step={3} title={L('Which brain should it have?', 'איזה מוח לתת לו?')}
+                  sub={L('The chatbot thinks with a model from another company, so it needs a key of your own. This is the only technical step here.',
+                    'הצ\'אטבוט חושב עם מודל של חברה חיצונית, ולכן צריך מפתח משלך. זה הדבר הטכני היחיד כאן.')} />
+                <div style={{ display: 'flex', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
+                  {[{ k: 'claude', l: 'Claude', h: 'Anthropic · ' + L('recommended', 'מומלץ') },
+                    { k: 'openai', l: 'ChatGPT', h: 'OpenAI' },
+                    { k: 'ollama', l: L('My own server', 'שרת משלי'), h: 'Ollama' }].map(p => (
+                    <ApCard key={p.k} on={w.provider === p.k} onClick={() => { set({ provider: p.k }); setKeyState('idle'); }} style={{ flexGrow: 1, flexBasis: 160 }}>
+                      <div style={{ fontSize: 14.5, fontWeight: 700 }}>{p.l}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>{p.h}</div>
+                    </ApCard>
+                  ))}
+                </div>
+                <label className="field-label">{w.provider === 'ollama' ? L('Server address', 'כתובת השרת') : L('The key', 'המפתח')}</label>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <input type={w.provider === 'ollama' ? 'text' : 'password'} dir="ltr"
+                    value={w.provider === 'ollama' ? w.ollamaHost : w.apiKey}
+                    onChange={e => { setKeyState('idle'); set(w.provider === 'ollama' ? { ollamaHost: e.target.value } : { apiKey: e.target.value }); }}
+                    placeholder={w.provider === 'ollama' ? 'http://localhost:11434' : 'sk-ant-api03-…'}
+                    style={{ flexGrow: 1, fontFamily: MONO, fontSize: 13.5 }} />
+                  {keyState === 'ok' && (
+                    <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, padding: '0 14px', height: 44, borderRadius: 12, background: 'rgba(22,163,74,0.10)', color: 'var(--success)', fontSize: 13, fontWeight: 700 }}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+                      {L('key saved', 'המפתח נשמר')}
+                    </div>
+                  )}
+                </div>
+                {w.provider !== 'ollama' && (
+                  <div style={{ marginTop: 16, padding: '18px 20px', borderRadius: 16, background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 11 }}>{L('No key yet? Two minutes.', 'אין לך מפתח? זה לוקח שתי דקות')}</div>
+                    <ol style={{ margin: 0, paddingInlineStart: 20, fontSize: 13, color: 'var(--text-2)', lineHeight: 2 }}>
+                      <li>{L('Sign up at', 'נכנסים ל־')} <a href={w.provider === 'claude' ? 'https://console.anthropic.com' : 'https://platform.openai.com'} target="_blank" rel="noreferrer">{w.provider === 'claude' ? 'console.anthropic.com' : 'platform.openai.com'}</a></li>
+                      <li>{L('Billing — add a starting amount ($5 is plenty)', 'Billing ← טוענים סכום התחלתי (5$ מספיקים להתחלה)')}</li>
+                      <li>{L('API Keys — Create Key — copy it and paste it here', 'API Keys ← Create Key ← מעתיקים ומדביקים כאן')}</li>
+                    </ol>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 4 · knowledge */}
+            {w.step === 4 && (
+              <React.Fragment>
+                <ApHeading step={4} title={L('Where will it know the answers from?', 'מאיפה הוא יֵדע את התשובות?')}
+                  sub={L(`You chose ${jobs.map(j => j.label()).join(', ') || 'general answering'}. You can pick more than one source.`,
+                    `בחרת ${jobs.map(j => j.label()).join(', ') || 'מענה כללי'}. אפשר לבחור כמה מקורות יחד.`)} />
+                {/* Four sources open at once do not fit one screen, so the
+                    question stays put and only the answers scroll. */}
+                <div style={panel}>
+                  {[
+                    { k: 'site', label: L('From my website', 'מהאתר שלי'), hint: L('I crawl the whole domain and learn from it', 'אני סורק את כל הדומיין ולומד ממנו'), tag: L('fastest', 'הכי מהיר') },
+                    { k: 'file', label: L('From files', 'מקבצים'), hint: L('PDF or Word — price list, policies, FAQ', 'PDF או Word — מחירון, נהלים, שאלות נפוצות') },
+                    { k: 'text', label: L('I will describe it myself', 'אתאר בעצמי'), hint: L('type it in — always available, with or without a site', 'לכתוב ידנית — תמיד זמין, גם בלי אתר וקבצים') },
+                    tableJob ? { k: 'table', label: L('A table to write into', 'טבלה לרישום'), hint: L('where it records what it collects from customers', 'כאן הוא ירשום את מה שיאסוף מהלקוחות'), tag: L(`needed for ${tableJob.label()}`, `נדרש ל${tableJob.label()}`), warn: true } : null,
+                  ].filter(Boolean).map(src => {
+                    const on = !!w.sources[src.k];
+                    return (
+                      <ApCard key={src.k} on={on}>
+                        <div onClick={() => { const n = { ...w.sources }; if (n[src.k]) delete n[src.k]; else n[src.k] = true; set({ sources: n }); }}
+                          role="button" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.click(); }}
+                          style={{ display: 'flex', gap: 13, alignItems: 'center', cursor: 'pointer' }}>
+                          <ApTick on={on} />
+                          <div style={{ flexGrow: 1 }}>
+                            <div style={{ fontSize: 14.5, fontWeight: 700 }}>{src.label}</div>
+                            <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 2 }}>{src.hint}</div>
+                          </div>
+                          {src.tag && <Chip tone={src.warn ? 'draft' : 'teal'}>{src.tag}</Chip>}
+                        </div>
+
+                        {on && src.k === 'site' && (
+                          <div style={{ marginTop: 13, paddingTop: 13, borderTop: '1px solid var(--border)' }}>
+                            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                              <input type="url" dir="ltr" value={w.siteUrl} onChange={e => set({ siteUrl: e.target.value })}
+                                placeholder="https://example.com" style={{ flexGrow: 1, minWidth: 200, fontSize: 13 }} />
+                              <Btn variant="primary" disabled={!w.siteUrl.trim() || (crawl && crawl.status === 'running')} onClick={startCrawl}>
+                                {crawl && crawl.status === 'running'
+                                  ? L(`Crawling… ${crawl.pagesCrawled || 0} of ${crawl.pagesFound || '?'}`, `סורק… ${crawl.pagesCrawled || 0} מתוך ${crawl.pagesFound || '?'}`)
+                                  : L('Read the site', 'קרא את האתר')}
+                              </Btn>
+                            </div>
+                            {crawl && crawl.status === 'done' && (
+                              <div style={{ marginTop: 9, fontSize: 12.5, color: 'var(--teal)', fontWeight: 600 }}>
+                                ✓ {L(`${crawl.pagesCrawled} pages read`, `${crawl.pagesCrawled} עמודים נקראו`)}
+                              </div>
+                            )}
+                            {crawl && crawl.status === 'error' && (
+                              <div style={{ marginTop: 9, fontSize: 12.5, color: 'var(--danger)' }}>{crawl.errorMessage}</div>
+                            )}
+                          </div>
+                        )}
+
+                        {on && src.k === 'file' && (
+                          <div style={{ marginTop: 13, paddingTop: 13, borderTop: '1px solid var(--border)' }}>
+                            <button onClick={() => fileRef.current && fileRef.current.click()}
+                              style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: 17, borderRadius: 12, border: '2px dashed var(--primary)', background: 'rgba(255,255,255,0.6)' }}>
+                              <span style={{ color: 'var(--warning)' }}>
+                                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12" /><path d="m7 8 5-5 5 5" /><path d="M20 21H4a2 2 0 0 1-2-2v-4" /><path d="M22 15v4a2 2 0 0 1-2 2" /></svg>
+                              </span>
+                              <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--warning)' }}>{L('Choose files', 'לחצו לבחירת קבצים')}</span>
+                              <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{L('PDF, Word · up to 20MB each', 'PDF, Word · עד 20MB לקובץ')}</span>
+                            </button>
+                            <input ref={fileRef} type="file" multiple accept=".pdf,.docx,.doc,.txt" style={{ display: 'none' }}
+                              onChange={e => { uploadFiles(e.target.files); e.target.value = ''; }} />
+                            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 7 }}>
+                              {w.uploads.map((f, i) => (
+                                <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '9px 12px', borderRadius: 10, background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                                  <span style={{ flexGrow: 1, fontSize: 13, fontWeight: 600 }}>{f.name}</span>
+                                  <span style={{ fontSize: 11.5, fontWeight: 600, color: f.state === 'done' ? 'var(--success)' : (f.state === 'failed' ? 'var(--danger)' : 'var(--warning)') }}>
+                                    {f.state === 'done' ? L('read', 'נקרא') : (f.state === 'failed' ? (f.why || L('failed', 'נכשל')) : L('extracting…', 'מחלץ טקסט…'))}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {on && src.k === 'text' && (
+                          <div style={{ marginTop: 13, paddingTop: 13, borderTop: '1px solid var(--border)' }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>{L('What it needs to know, in your words', 'מה שהוא צריך לדעת, במילים שלך')}</div>
+                            <textarea rows={4} dir="auto" value={w.ownText} onChange={e => set({ ownText: e.target.value })}
+                              placeholder={L('Mat class 70, reformer 110. A card of 10 gets 10% off. Cancel up to 12 hours before or the class is used up.', 'שיעור מזרן 70₪, רפורמר 110₪. כרטיסייה של 10 — 10% הנחה. ביטול עד 12 שעות לפני, אחרת השיעור נגרע.')}
+                              style={{ width: '100%', fontSize: 13.5, lineHeight: 1.6, resize: 'none' }} />
+                          </div>
+                        )}
+
+                        {on && src.k === 'table' && (
+                          <div style={{ marginTop: 13, paddingTop: 13, borderTop: '1px solid var(--border)' }}>
+                            <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 10 }}>
+                              {w.tableId
+                                ? L(`Created: "${w.tableName}".`, `נוצרה: "${w.tableName}".`)
+                                : L(`I will make a table called "${w.tableName || tableJob.table()}" with these columns.`, `אצור טבלה בשם "${w.tableName || tableJob.table()}" עם העמודות האלה.`)}
+                            </div>
+                            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                              {(w.tableColumns.length ? w.tableColumns : (AUTOPILOT_COLUMNS[tableJob.id] || AUTOPILOT_COLUMNS.lead)()).map((c, i) => (
+                                <span key={i} style={{ fontSize: 12.5, fontWeight: 600, background: 'var(--bg-card)', border: '1px solid var(--border)', padding: '7px 12px', borderRadius: 99, display: 'inline-flex', gap: 7, alignItems: 'baseline' }}>
+                                  {c}<span style={{ fontSize: 10.5, color: 'var(--text-muted)', fontWeight: 500 }}>{AUTOPILOT_COLUMN_TYPE[c] === 'date' ? L('date', 'תאריך') : (AUTOPILOT_COLUMN_TYPE[c] === 'number' ? L('number', 'מספר') : L('text', 'טקסט'))}</span>
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </ApCard>
+                    );
+                  })}
+                </div>
+              </React.Fragment>
+            )}
+
+            {/* 5 · abilities */}
+            {w.step === 5 && (
+              <React.Fragment>
+                <ApHeading step={5} title={L('What may it actually do?', 'מה מותר לו לעשות בפועל?')}
+                  sub={L('Not only answer — act. Anything that needs connecting, we connect here and now.', 'לא רק לענות — גם לפעול. כל מה שצריך חיבור, נחבר כאן ועכשיו.')} />
+                <div style={panel}>
+                  {w.tableId && (
+                    <ApCard on={false} style={{ background: 'var(--teal-dim)', border: '1px solid rgba(13,148,136,0.35)', display: 'flex', gap: 14, alignItems: 'center' }}>
+                      <div style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 11, background: 'rgba(13,148,136,0.14)', color: 'var(--teal)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{Icons.rows}</div>
+                      <div style={{ flexGrow: 1 }}>
+                        <div style={{ fontSize: 14.5, fontWeight: 700 }}>{L(`Write into "${w.tableName}"`, `לרשום לטבלת "${w.tableName}"`)}</div>
+                        <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 2 }}>{L('everything it collects becomes a row', 'כל מה שיאסוף נכנס לשורה')}</div>
+                      </div>
+                      <Chip tone="teal">{L('on', 'פעיל')}</Chip>
+                    </ApCard>
+                  )}
+
+                  {(wantsEmail || w.abilities.mail) && (
+                    <ApCard on={false} style={{ background: w.gmail ? 'var(--teal-dim)' : 'var(--bg-card)', border: w.gmail ? '1px solid rgba(13,148,136,0.35)' : '1px solid var(--border)' }}>
+                      <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+                        <div style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 11, background: w.gmail ? 'rgba(13,148,136,0.14)' : 'var(--bg-input)', color: w.gmail ? 'var(--teal)' : 'var(--text-2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 7 13.03 12.7a2 2 0 0 1-2.06 0L2 7" /><rect x="2" y="4" width="20" height="16" rx="2" /></svg>
+                        </div>
+                        <div style={{ flexGrow: 1 }}>
+                          <div style={{ fontSize: 14.5, fontWeight: 700 }}>{L('Send email on your behalf', 'לשלוח מייל בשמך')}</div>
+                          <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                            {w.gmail ? L(`connected to ${w.gmail}`, `מחובר ל־${w.gmail}`) : L('confirmations and summaries from your own address', 'אישורים וסיכומים מהכתובת שלך')}
+                          </div>
+                        </div>
+                        <Btn variant={w.gmail ? undefined : 'primary'} onClick={connectGmail}>
+                          {w.gmail ? L('Change mailbox', 'החלף תיבה') : L('Connect Gmail', 'חבר Gmail')}
+                        </Btn>
+                      </div>
+                      {!w.gmail && (
+                        <div style={{ marginTop: 12, padding: '11px 14px', borderRadius: 11, background: 'rgba(180,83,9,0.10)', fontSize: 12.5, color: 'var(--warning)', lineHeight: 1.6 }}>
+                          {L('This goes through Google. If Google refuses the mailbox, it is a setting in the Google Cloud project, not here — you can skip this and connect it later.',
+                            'החיבור עובר דרך גוגל. אם גוגל דוחה את התיבה — זו הגדרה בפרויקט של גוגל, לא כאן. אפשר לדלג ולחבר אחר כך.')}
+                        </div>
+                      )}
+                    </ApCard>
+                  )}
+
+                  {[{ k: 'web', label: L('Read the site live', 'לקרוא מהאתר בזמן אמת'), hint: L('when something changes daily, like stock', 'כשמשהו משתנה כל יום, כמו מלאי'), icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20Z" /></svg> },
+                    { k: 'human', label: L('Hand over to a person', 'להעביר לאדם'), hint: L('when it is not sure — it says so instead of guessing', 'כשהוא לא בטוח — אומר את זה במקום לנחש'), icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /></svg> }].map(a => (
+                    <ApCard key={a.k} on={!!w.abilities[a.k]} style={{ display: 'flex', gap: 14, alignItems: 'center' }}
+                      onClick={() => set({ abilities: { ...w.abilities, [a.k]: !w.abilities[a.k] } })}>
+                      <div style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 11, background: 'var(--bg-input)', color: 'var(--text-2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{a.icon}</div>
+                      <div style={{ flexGrow: 1 }}>
+                        <div style={{ fontSize: 14.5, fontWeight: 700 }}>{a.label}</div>
+                        <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 2 }}>{a.hint}</div>
+                      </div>
+                      <ApTick on={!!w.abilities[a.k]} />
+                    </ApCard>
+                  ))}
+
+                  <ApFreeText open={freeOpen} onToggle={() => setFreeOpen(!freeOpen)}
+                    label={L('Need something else? I will describe it', 'צריך משהו אחר? אתאר בעצמי')}
+                    hint={L('What else it has to know how to do', 'מה עוד הוא צריך לדעת לעשות')}
+                    placeholder={L('Tell me on WhatsApp when someone cancels less than 12 hours before', 'לשלוח לי הודעה כשמישהו מבטל פחות מ-12 שעות לפני')}
+                    value={w.abilitiesFree} onChange={v => set({ abilitiesFree: v })} />
+                </div>
+              </React.Fragment>
+            )}
+
+            {/* 6 · tone */}
+            {w.step === 6 && vertical && (
+              <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
+                <div style={{ flexGrow: 1, flexBasis: 420 }}>
+                  <ApHeading step={6} title={L('How does it talk?', 'איך הוא מדבר?')} sub={L('All of it is a suggestion from your answers.', 'הכל מוצע לפי מה שענית.')} />
+                  <label className="field-label">{L('Name', 'שם')}</label>
+                  <input value={w.name} dir="auto" onChange={e => set({ name: e.target.value })} placeholder={vertical.name()} style={{ marginBottom: 16 }} />
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-2)', marginBottom: 8 }}>{L('Colour', 'צבע')}</div>
+                  <div style={{ display: 'flex', gap: 9, marginBottom: 18, flexWrap: 'wrap' }}>
+                    {AVATAR_COLORS.map(hex => (
+                      <button key={hex} aria-label={L('Pick colour', 'בחירת צבע')} onClick={() => set({ color: hex })}
+                        style={{ width: 40, height: 40, borderRadius: 12, background: hex, border: w.color === hex ? '3px solid var(--text)' : '1px solid rgba(13,15,20,0.10)' }} />
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-2)', marginBottom: 8 }}>{L('Style', 'סגנון')}</div>
+                  <div style={{ display: 'flex', gap: 9, marginBottom: 16, flexWrap: 'wrap' }}>
+                    {[{ k: 'warm', l: L('warm and friendly', 'חם וידידותי') }, { k: 'short', l: L('short and to the point', 'קצר ולעניין') }, { k: 'formal', l: L('formal', 'רשמי') }].map(t => (
+                      <button key={t.k} onClick={() => set({ tone: t.k })}
+                        style={{ padding: '11px 18px', borderRadius: 99, fontSize: 13.5, fontWeight: 700, background: w.tone === t.k ? 'var(--sel)' : 'var(--bg-card)', color: w.tone === t.k ? 'var(--sel-ink)' : 'var(--text-2)', border: w.tone === t.k ? 'none' : '1px solid var(--border)' }}>{t.l}</button>
+                    ))}
+                  </div>
+                  <div style={{ padding: '14px 16px', borderRadius: 14, background: 'var(--bg-card)', border: '1px dashed var(--text-muted)' }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-2)', marginBottom: 7 }}>{L('Your own rules — what it must and must not do', 'כללים משלך — מה שהוא חייב או אסור לו')}</div>
+                    <textarea rows={2} dir="auto" value={w.rulesFree} onChange={e => set({ rulesFree: e.target.value })}
+                      placeholder={L('Never promise a price without checking', 'לא להבטיח מחיר בלי לבדוק')}
+                      style={{ width: '100%', fontSize: 13.5, lineHeight: 1.6, resize: 'none', background: 'var(--bg-panel)' }} />
+                  </div>
+                </div>
+                <div style={{ flexGrow: 1, flexBasis: 280, maxWidth: 340, padding: 20, borderRadius: 20, background: 'var(--bg-card)', border: '1px solid var(--border)', alignSelf: 'flex-start' }}>
+                  <Eyebrow>{L('What the customer sees', 'כך זה ייראה ללקוח')}</Eyebrow>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginTop: 14 }}>
+                    <AvatarDisplay value={w.color} size={34} />
+                    <div style={{ background: 'var(--bg-panel)', borderRadius: 16, borderTopRightRadius: uiHe() ? 5 : 16, borderTopLeftRadius: uiHe() ? 16 : 5, padding: '13px 15px', fontSize: 13.5, lineHeight: 1.65, unicodeBidi: 'plaintext' }}>
+                      {w.tone === 'short' ? L('Hi. How can I help?', 'היי. במה לעזור?') : (w.tone === 'formal' ? L('Hello, and welcome. How may we assist?', 'שלום וברוכים הבאים. כיצד נוכל לסייע?') : vertical.greeting())}
+                    </div>
+                  </div>
+                  <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-start' }}>
+                    <div style={{ background: 'var(--sel)', color: 'var(--sel-ink)', borderRadius: 16, padding: '11px 15px', fontSize: 13.5, unicodeBidi: 'plaintext' }}>{vertical.ask()}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 7 · building */}
+            {w.step === 7 && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <SpiderLogo size={116} busy />
+                <h1 style={{ margin: '0 0 6px', fontSize: 28, fontWeight: 800, letterSpacing: '-0.6px' }}>
+                  {L(`Building ${w.name || (vertical && vertical.name()) || ''}…`, `בונה את ${w.name || (vertical && vertical.name()) || ''}…`)}
+                </h1>
+                <p style={{ margin: '0 0 22px', fontSize: 14.5, color: 'var(--text-2)' }}>{L('About forty seconds.', 'בערך 40 שניות.')}</p>
+                <div style={{ width: '100%', maxWidth: 520, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {buildLines().map((b, i) => (
+                    <div key={b.key} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 16px', borderRadius: 12, background: i === buildAt ? 'var(--primary-dim)' : 'transparent' }}>
+                      <div style={{ flexShrink: 0, width: 20, height: 20, borderRadius: '50%', background: i < buildAt ? 'var(--success)' : 'var(--bg-card)', border: i < buildAt ? '2px solid var(--success)' : (i === buildAt ? '2px solid var(--primary)' : '2px solid var(--border)'), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+                        {i < buildAt && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>}
+                      </div>
+                      <span style={{ fontSize: 13.5, fontWeight: i === buildAt ? 700 : 500, color: i <= buildAt ? 'var(--text)' : 'var(--text-muted)' }}>{b.label}</span>
+                    </div>
+                  ))}
+                </div>
+                {error && (
+                  <div style={{ marginTop: 18, display: 'flex', gap: 10, alignItems: 'center' }}>
+                    <span style={{ fontSize: 13, color: 'var(--danger)' }}>{error}</span>
+                    <Btn variant="primary" onClick={build}>{L('Try again', 'נסה שוב')}</Btn>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 8 · the review loop */}
+            {w.step === 8 && built && (
+              <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flexGrow: 1 }}>
+                <div style={{ flexShrink: 0, display: 'flex', alignItems: 'flex-end', gap: 14, marginBottom: 14, flexWrap: 'wrap' }}>
+                  <div style={{ flexGrow: 1 }}>
+                    <h1 style={{ margin: '0 0 6px', fontSize: 30, fontWeight: 800, letterSpacing: '-0.7px' }}>{L('Talk to it. What is off?', 'תדבר איתו. מה לא מדויק?')}</h1>
+                    <p style={{ margin: 0, fontSize: 14.5, color: 'var(--text-2)' }}>
+                      {L('Every note you write, I fix and rebuild, and we come back here. Only when you approve do we move on to publishing.',
+                        'כל הערה שתכתוב — אני מתקן ובונה מחדש, וחוזרים לכאן. רק כשתאשר נעבור לפרסום.')}
+                    </p>
+                  </div>
+                  <Chip tone="draft">{L(`round ${w.round}`, `סבב ${w.round}`)}</Chip>
+                </div>
+
+                <div style={{ flexGrow: 1, minHeight: 0, display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+                  <div style={{ flexGrow: 1, flexBasis: 420, minHeight: 320, maxHeight: 540, borderRadius: 20, background: 'var(--bg-card)', border: '1px solid var(--border)', padding: 18, display: 'flex', flexDirection: 'column', gap: 11 }}>
+                    <div ref={listRef} style={{ flexGrow: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 11 }}>
+                      {chat.map((m, i) => (
+                        <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', justifyContent: m.role === 'user' ? 'flex-start' : 'initial', flexDirection: m.role === 'user' ? 'row-reverse' : 'row' }}>
+                          {m.role !== 'user' && <AvatarDisplay value={w.color} size={30} />}
+                          <div style={{ maxWidth: '78%', background: m.role === 'user' ? 'var(--sel)' : 'var(--bg-panel)', color: m.role === 'user' ? 'var(--sel-ink)' : 'var(--text)', borderRadius: 16, padding: '12px 14px', fontSize: 13.5, lineHeight: 1.6, whiteSpace: 'pre-wrap', unicodeBidi: 'plaintext' }}>{m.content}</div>
+                        </div>
+                      ))}
+                      {busy === 'chat' && <div style={{ fontSize: 12.5, color: 'var(--text-muted)', paddingInlineStart: 40 }}>{L('typing…', 'מקליד…')}</div>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <input value={draft} dir="auto" onChange={e => setDraft(e.target.value)} onKeyDown={e => e.key === 'Enter' && send(draft)}
+                        placeholder={L('Ask it something…', 'תשאל אותו משהו…')} style={{ flexGrow: 1, fontSize: 13 }} />
+                      <IconBtn title={L('Send', 'שליחה')} onClick={() => send(draft)}>
+                        <ApArrow />
+                      </IconBtn>
+                    </div>
+                  </div>
+
+                  <div style={{ flexGrow: 1, flexBasis: 300, maxWidth: 380, minHeight: 320, maxHeight: 540, display: 'flex', flexDirection: 'column', gap: 11 }}>
+                    <div style={{ padding: '15px 17px', borderRadius: 16, background: 'var(--primary-dim)', border: '1px solid var(--primary)' }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 800, marginBottom: 4 }}>{L('Notes to fix', 'הערות לתיקון')}</div>
+                      <p style={{ margin: '0 0 9px', fontSize: 12, color: 'var(--warning)', lineHeight: 1.5 }}>{L('Plain words, as many as you like at once.', 'בשפה חופשית, כמה שרוצים בבת אחת.')}</p>
+                      <textarea rows={3} dir="auto" value={notes} onChange={e => setNotes(e.target.value)}
+                        placeholder={L('Never promise a price before checking · ask for an email too, not only a phone', 'שלא יבטיח מחיר לפני שבדק · שיבקש גם מייל ולא רק טלפון')}
+                        style={{ width: '100%', fontSize: 13, lineHeight: 1.6, resize: 'none', background: 'var(--bg-card)' }} />
+                      <Btn variant="primary" disabled={!notes.trim() || !!busy} onClick={applyFix} style={{ marginTop: 9, width: '100%', justifyContent: 'center' }}>
+                        {busy === 'fix' ? L('Rebuilding…', 'בונה מחדש…') : L('Fix and rebuild', 'תקן ובנה מחדש')}
+                      </Btn>
+                    </div>
+                    <div style={{ flexGrow: 1, minHeight: 0, overflowY: 'auto', padding: '15px 17px', borderRadius: 16, background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                      <Eyebrow>{L('Already fixed', 'מה כבר תוקן')}</Eyebrow>
+                      {w.fixes.length === 0
+                        ? <p style={{ margin: '10px 0 0', fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.6 }}>{L('No notes yet. If it already answers well, approve and move on.', 'עוד לא כתבת הערות. אם הוא כבר עונה טוב — אפשר לאשר ולעבור הלאה.')}</p>
+                        : w.fixes.map((f, i) => (
+                          <div key={i} style={{ display: 'flex', gap: 9, alignItems: 'flex-start', padding: '5px 0', marginTop: i === 0 ? 10 : 0 }}>
+                            <span style={{ color: 'var(--success)', flexShrink: 0, fontSize: 13 }}>✓</span>
+                            <span style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.5, unicodeBidi: 'plaintext' }}>{f.text}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 9 · publish */}
+            {w.step === 9 && built && (
+              <div>
+                <h1 style={{ margin: '0 0 6px', fontSize: 32, fontWeight: 800, letterSpacing: '-0.7px' }}>{L('Where will customers talk to it?', 'איפה הלקוחות ידברו איתו?')}</h1>
+                <p style={{ margin: '0 0 20px', fontSize: 15, color: 'var(--text-2)' }}>{L(`${built.name} already exists and is saved. This is only where it appears.`, `${built.name} כבר קיים ושמור. זה רק איפה הוא יופיע.`)}</p>
+                <div style={{ display: 'flex', gap: 14, marginBottom: 16, flexWrap: 'wrap' }}>
+                  {[{ k: 'site', label: L('On my website', 'באתר שלי'), hint: L('a bubble in the corner. One line of code', 'בועה בפינה. שורת קוד אחת'), icon: 'M2 12h20 M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20Z M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z' },
+                    { k: 'whatsapp', label: L('On WhatsApp', 'בוואטסאפ'), hint: L('a business number — four details from Meta', 'מספר עסקי — 4 פרטים ממטא'), icon: 'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.68 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.32 1.85.55 2.81.68A2 2 0 0 1 22 16.92Z' },
+                    { k: 'later', label: L('Not now', 'לא עכשיו'), hint: L('you can put it live whenever you like', 'אפשר להעלות אותו מתי שתרצה'), icon: 'M12 6v6l4 2 M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z' }].map(ch => (
+                    <ApCard key={ch.k} on={w.channel === ch.k} onClick={() => set({ channel: ch.k })} style={{ flexGrow: 1, flexBasis: 220, minHeight: 132, padding: 20 }}>
+                      <div style={{ width: 38, height: 38, borderRadius: 11, background: w.channel === ch.k ? 'var(--primary-glow)' : 'var(--bg-input)', color: w.channel === ch.k ? 'var(--warning)' : 'var(--text-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={ch.icon} /></svg>
+                      </div>
+                      <div style={{ fontSize: 15, fontWeight: 700 }}>{ch.label}</div>
+                      <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.5 }}>{ch.hint}</div>
+                    </ApCard>
+                  ))}
+                </div>
+
+                {w.channel === 'site' && (
+                  <div style={{ padding: '17px 20px', borderRadius: 16, background: 'var(--sel)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)' }}>{L('Paste before </body> on your site', 'להדביק לפני ‎</body>‎ באתר')}</span>
+                      <Btn size="sm" onClick={() => navigator.clipboard && navigator.clipboard.writeText(apWidgetTag(built.id))}>{L('Copy', 'העתק')}</Btn>
+                    </div>
+                    <code dir="ltr" style={{ display: 'block', fontFamily: MONO, fontSize: 12.5, color: '#cfd6e4', lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                      {apWidgetTag(built.id)}
+                    </code>
+                  </div>
+                )}
+
+                {w.channel === 'whatsapp' && (
+                  <div style={{ padding: '17px 20px', borderRadius: 16, background: 'var(--bg-card)', border: '1px solid var(--border)', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
+                    {[['phoneNumberId', 'Phone number ID'], ['accessToken', 'Access token'], ['appSecret', 'App secret'], ['verifyToken', L('Verify token (you choose it)', 'Verify token (אתה בוחר)')]].map(([k, label]) => (
+                      <div key={k}>
+                        <label className="field-label">{label}</label>
+                        <input dir="ltr" value={w.whatsapp[k]} onChange={e => set({ whatsapp: { ...w.whatsapp, [k]: e.target.value } })} style={{ fontFamily: MONO, fontSize: 12.5 }} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {w.channel === 'later' && (
+                  <div style={{ padding: '17px 20px', borderRadius: 16, background: 'var(--bg-card)', border: '1px solid var(--border)', display: 'flex', gap: 11, alignItems: 'flex-start' }}>
+                    <span style={{ color: 'var(--teal)', flexShrink: 0, marginTop: 1 }}>
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+                    </span>
+                    <p style={{ margin: 0, fontSize: 13, color: 'var(--text-2)', lineHeight: 1.65 }}>
+                      {L('Good. It is saved on your account and you can put it live any time — the button is on its card.',
+                        'מצוין. הצ\'אטבוט שמור אצלך ואפשר להעלות אותו לאוויר בכל רגע — הכפתור מחכה בכרטיס שלו.')}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* footer */}
+        {w.step !== 0 && (
+          <div style={{ flexShrink: 0, minHeight: 84, padding: '0 32px', display: 'flex', alignItems: 'center', gap: 14, background: 'var(--bg-card)', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
+            <button onClick={onSkip} style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', textDecoration: 'underline', textUnderlineOffset: 3, padding: '12px 4px', background: 'none', border: 'none' }}>{skipLabel}</button>
+            <div style={{ flexGrow: 1 }} />
+            {error && w.step !== 7 && <span style={{ fontSize: 12.5, color: 'var(--danger)' }}>{error}</span>}
+            {w.step === 2 && <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{L(`${jobs.length} chosen`, `${jobs.length} נבחרו`)}</span>}
+            {w.step === 8 && <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{L('as many rounds as you need', 'אין הגבלה על מספר הסבבים')}</span>}
+            {w.step === 9 && <Btn onClick={() => finish(false)}>{L('Later', 'אחר כך')}</Btn>}
+            <Btn variant="primary" disabled={!canNext || w.step === 7 || !!busy} onClick={next}
+              style={w.step === 8
+                ? { height: 48, padding: '0 28px', fontSize: 14.5, background: 'var(--success)', color: '#fff', boxShadow: 'none' }
+                : { height: 48, padding: '0 28px', fontSize: 14.5 }}>
+              {busy === 'know' ? L('Saving…', 'שומר…') : nextLabel}
+            </Btn>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   function AgentListView({ agents, onNew, onEdit, onTest, onDuplicate, onDelete, onExport, onBuildInChat }) {
     const [query, setQuery]   = useState('');
     const [branch, setBranch] = useState('');
@@ -7594,6 +8730,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     '- Parameter types are string, number, integer or boolean.',
     '- send_email is a built-in tool, switched on per AI Chatbot, that sends from a Gmail account connected on that AI Chatbot (Tools tab). You cannot connect Gmail for the user — say where to do it.',
     "- KNOWLEDGE is documents (pasted, PDF/DOCX upload, or crawled sites). On upload each one is rewritten by the model into short titled sections with a bilingual keyword line, then split into chunks; a question retrieves chunks by full-text search into the prompt. The search is LEXICAL, not semantic — it matches words, so a document only answers questions phrased with words it contains. You cannot upload files for the user, but you can tell them to press the tidy button on a document to have it reorganised.",
+    "- AUTOPILOT is a wizard that builds a whole AI Chatbot from questions about the business: it opens by itself on an empty account, and 'new chatbot' offers Autopilot or Advanced (the editor). It writes the base prompt and skills itself, and does the API key, the site crawl, file uploads, the table, Gmail and the channel inside itself. It ends in a loop: a test chat plus a notes field that rebuilds the chatbot until the person approves. You cannot run it for them; tell them to press New AI Chatbot and pick Autopilot.",
     "- The CRAWLER on the Knowledge tab takes one URL and reads the whole domain from it: every internal link, plus the site's sitemap.xml, up to the page limit chosen beside the field. It follows the redirect the URL makes, treats example.com and www.example.com as one site, and obeys robots.txt. A subdomain is a different site and needs its own URL. It does not run JavaScript, so a site rendered in the browser comes back near-empty — the screen says how many such pages there were. You cannot start a crawl for the user; tell them where the field is.",
     "- TABLES are rows the account keeps — a price list, orders, leads — shared across its AI Chatbots rather than owned by one. Each chatbot is ticked onto the tables it may use, in its own Tables tab, and then it can read, add and update rows mid-conversation; it can never delete one or change a table's shape. You can make tables and read and write their rows yourself.",
     '- CHANNELS: the in-app test chat, an embeddable website widget (Export tab), and WhatsApp via Meta Cloud API (Whatsapp tab, needs a phone number id, access token, app secret and verify token from Meta). A WhatsApp number belongs to one AI Chatbot only.',
@@ -11310,6 +12447,23 @@ npm run migrate            # הרצה בפועל`}</Block>
       const connectedAgent = params.get('gmail_connected') ? params.get('agent') : null;
       const gmailError = params.get('gmail_error');
 
+      /* Connecting Gmail hands the browser to Google, so a wizard that was
+         mid-flight comes back here rather than in the editor. It left its
+         answers behind on the way out. */
+      const midWizard = loadAutopilot();
+      if (midWizard && (connectedAgent || gmailError)) {
+        if (connectedAgent) {
+          gmailStatus(connectedAgent)
+            .then(d => setAutopilot({ startStep: 5, resumed: { ...midWizard, gmail: d.email || true } }))
+            .catch(() => setAutopilot({ startStep: 5, resumed: { ...midWizard, gmail: true } }));
+        } else {
+          setAutopilot({ startStep: 5, resumed: midWizard });
+          alert(gmailFailureText(gmailError));
+        }
+        window.history.replaceState({}, '', window.location.pathname);
+        return;
+      }
+
       if (connectedAgent) {
         setNav('agents');
         setEditorTab('tools');
@@ -11320,6 +12474,25 @@ npm run migrate            # הרצה בפועל`}</Block>
         window.history.replaceState({}, '', window.location.pathname);
       }
     }, []);
+
+    /* ── Autopilot ──
+       `null` when closed; otherwise { startStep, resumed } — 0 opens on the
+       Autopilot/Advanced fork, 1 goes straight in, which is what a brand new
+       account gets. */
+    const [autopilot, setAutopilot] = useState(null);
+
+    /* An account with nothing in it gets the wizard rather than an empty list:
+       the whole point is that a first chatbot needs no prior knowledge. Only
+       once, and only after the agents have actually been read back. */
+    const firstRunDone = useRef(false);
+    useEffect(() => {
+      if (firstRunDone.current || loading || autopilot) return;
+      if (state.agents.length > 0) { firstRunDone.current = true; return; }
+      if (localStorage.getItem('agentforge_autopilot_seen') === '1') { firstRunDone.current = true; return; }
+      firstRunDone.current = true;
+      try { localStorage.setItem('agentforge_autopilot_seen', '1'); } catch { /* private window */ }
+      setAutopilot({ startStep: 1, resumed: null });
+    }, [loading, state.agents.length, autopilot]);
 
     // Debounced save
     const saveErrorRef = useRef('');
@@ -11354,7 +12527,20 @@ npm run migrate            # הרצה בפועל`}</Block>
       saveAgentDebounced(agent);
     }
 
-    async function handleCreate() {
+    /** The fork. Advanced is what this used to do on its own. */
+    function handleCreate() {
+      setAutopilot({ startStep: 0, resumed: null });
+    }
+
+    async function handleCreateAdvanced(existingId) {
+      // A wizard abandoned partway has already made an agent; carry on with it
+      // rather than leaving an orphan behind.
+      if (existingId) {
+        const rows = await apiList().catch(() => []);
+        dispatch({ type: 'HYDRATE', agents: rows });
+        dispatch({ type: 'SET_VIEW', view: 'editor', editingId: existingId });
+        return;
+      }
       const agent = makeAgent();
       dispatch({ type: 'UPDATE_AGENT', agent });
       dispatch({ type: 'SET_VIEW', view: 'editor', editingId: agent.id });
@@ -11459,6 +12645,20 @@ npm run migrate            # הרצה בפועל`}</Block>
         onReload={hydrate}
       />
       {deleteDialog}
+      {autopilot && (
+        <AutopilotWizard
+          startStep={autopilot.startStep}
+          resumed={autopilot.resumed}
+          onClose={() => setAutopilot(null)}
+          onAdvanced={existingId => { setAutopilot(null); handleCreateAdvanced(existingId); }}
+          onBuilt={agent => {
+            setAutopilot(null);
+            setNav('agents');
+            apiList().then(list => dispatch({ type: 'HYDRATE', agents: list })).catch(() => {});
+            if (agent) dispatch({ type: 'SET_VIEW', view: 'editor', editingId: agent.id });
+          }}
+        />
+      )}
       </React.Fragment>
     );
 
@@ -11590,6 +12790,20 @@ npm run migrate            # הרצה בפועל`}</Block>
           />
         )}
       </div>
+        {autopilot && (
+          <AutopilotWizard
+            startStep={autopilot.startStep}
+            resumed={autopilot.resumed}
+            onClose={() => setAutopilot(null)}
+            onAdvanced={existingId => { setAutopilot(null); handleCreateAdvanced(existingId); }}
+            onBuilt={agent => {
+              setAutopilot(null);
+              setNav('agents');
+              apiList().then(list => dispatch({ type: 'HYDRATE', agents: list })).catch(() => {});
+              if (agent) dispatch({ type: 'SET_VIEW', view: 'editor', editingId: agent.id });
+            }}
+          />
+        )}
       </React.Fragment>
     );
   }

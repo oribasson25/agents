@@ -118,6 +118,40 @@ language. The one thing that does not follow it is the **Documentation** tab, wh
 in Hebrew either way — translating that manual is its own piece of work, and Settings says so
 under the switch.
 
+## Autopilot
+
+A wizard that builds a whole AI Chatbot for somebody who does not know how to build one. It
+opens by itself the first time an account with no chatbots is used, and **New AI Chatbot** now
+shows a fork first: **Autopilot**, or **Advanced** — the editor, exactly as it was.
+
+The design rests on one rule: when the wizard closes, nothing may be left that needs the editor.
+So the API key, the site crawl, the file uploads, the table, the Gmail connection and the channel
+all happen inside it, against the same endpoints the editor calls.
+
+Nobody is asked about a base prompt or a skill. They are asked about the business and about what
+has to happen, and `autopilotBrief` turns every answer into one paragraph that `autopilotGenerate`
+sends to the account's model, which returns the name, opening message, base prompt and skills as
+JSON.
+
+Each screen is shaped by the one before it. `AUTOPILOT_CATALOG` holds six verticals, each with
+four jobs; the jobs ticked on screen 2 decide which knowledge sources screen 4 offers, whether
+screen 5 shows a Gmail button at all, and which columns a proposed table gets. Every vertical has
+at least one job that needs a table and one that needs email, so there is always something to
+branch on — `probes/autopilot-probe.mjs` holds that, along with the brief carrying every answer.
+
+**The review loop** is what makes "no going back to settings" true. Screen 8 is a real test chat
+beside a free-text notes field; each *Fix and rebuild* folds the notes back into the brief,
+regenerates, saves and resets the chat, and raises the round counter. What has already been fixed
+stays listed next to it, because after three rounds nobody remembers what they asked for. Only the
+green **It all looks right** moves on to publishing, and publishing can be skipped.
+
+Two things worth knowing about the plumbing. The agent row is created on the way into screen 4,
+because documents, a crawl and a Gmail token all need something to hang off. And the answers live
+in `sessionStorage`, because connecting Gmail hands the browser to Google and gets it back a
+minute later — the return lands back in the wizard rather than in the editor.
+
+The wizard does not write Python tools. Someone who needs one belongs in Advanced.
+
 ## The home screen
 
 The first screen after login is a conversation, not a list: the mark animated in the middle of

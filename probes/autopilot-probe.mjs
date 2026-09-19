@@ -1,0 +1,108 @@
+/**
+ * Autopilot — the rules the wizard rests on.
+ *
+ * The parts worth holding still are the ones that decide what a later screen
+ * shows: every vertical offers a job that needs a table and a job that needs
+ * email (or screens 4 and 5 have nothing to branch on), every column a table
+ * is proposed with has a type the table API accepts, and the brief handed to
+ * the model carries every answer — because anything missing from it is an
+ * answer the person gave for nothing.
+ */
+import fs from 'fs';
+
+let failed = 0;
+const ok = (cond, label, detail = '') => {
+  if (cond) console.log(`✓ ${label}`);
+  else { console.log(`✗ ${label}${detail ? ` — ${detail}` : ''}`); failed++; }
+};
+
+const src = fs.readFileSync(new URL('../agentforge.html', import.meta.url), 'utf8');
+
+/* The catalog and the brief are lifted out of the page and run for real: the
+   app is one file with no exports, so a probe either reads it or tests
+   nothing. */
+function lift(startMarker, endMarker) {
+  const a = src.indexOf(startMarker);
+  const b = src.indexOf(endMarker, a);
+  if (a < 0 || b < 0) throw new Error(`could not lift ${startMarker}`);
+  return src.slice(a, b);
+}
+
+const catalogSrc = lift('const AUTOPILOT_CATALOG = {', '\n  const AUTOPILOT_COLUMNS');
+const columnsSrc = lift('const AUTOPILOT_COLUMNS = {', '\n\n  /* The wizard survives');
+const briefSrc = lift('function autopilotBrief(w) {', '\n  /* ── small pieces');
+
+const L = (en, he) => en;
+const uiHe = () => false;
+// eslint-disable-next-line no-new-func
+const { AUTOPILOT_CATALOG, AUTOPILOT_COLUMNS, AUTOPILOT_COLUMN_TYPE, autopilotBrief } =
+  new Function('L', 'uiHe', `${catalogSrc}\n${columnsSrc}\n${briefSrc}\nreturn { AUTOPILOT_CATALOG, AUTOPILOT_COLUMNS, AUTOPILOT_COLUMN_TYPE, autopilotBrief };`)(L, uiHe);
+
+const keys = Object.keys(AUTOPILOT_CATALOG);
+ok(keys.length >= 5, 'there is a vertical for most people to recognise', keys.join(', '));
+
+/* ── every vertical must be able to branch ── */
+for (const k of keys) {
+  const v = AUTOPILOT_CATALOG[k];
+  ok(v.jobs.length >= 3, `${k}: enough jobs to choose between`, String(v.jobs.length));
+  ok(v.jobs.some(j => j.table), `${k}: one job needs a table, so screen 4 has something to offer`);
+  ok(v.jobs.some(j => j.email), `${k}: one job needs email, so screen 5 has something to connect`);
+  ok(typeof v.name() === 'string' && v.name().length > 2, `${k}: a proposed name`);
+  ok(typeof v.greeting() === 'string' && v.greeting().length > 10, `${k}: a proposed opening line`);
+  ok(v.jobs.every(j => j.label() && j.hint()), `${k}: every job says what it is and what it does`);
+  ok(new Set(v.jobs.map(j => j.id)).size === v.jobs.length, `${k}: job ids are distinct`);
+}
+
+/* ── a proposed table must be one the table API will take ── */
+const TYPES = ['text', 'number', 'date', 'boolean'];
+for (const k of Object.keys(AUTOPILOT_COLUMNS)) {
+  const cols = AUTOPILOT_COLUMNS[k]();
+  ok(cols.length >= 3 && cols.length <= 8, `${k}: a workable number of columns`, String(cols.length));
+  ok(new Set(cols).size === cols.length, `${k}: no column is proposed twice`, cols.join(', '));
+  ok(cols.every(c => TYPES.includes(AUTOPILOT_COLUMN_TYPE[c] || 'text')), `${k}: every column has a type the table accepts`);
+}
+// every job that asks for a table must have columns to propose, or the wizard
+// falls back to a generic shape that fits nobody
+for (const k of keys) {
+  const job = AUTOPILOT_CATALOG[k].jobs.find(j => j.table);
+  ok(!!AUTOPILOT_COLUMNS[job.id], `${k}: the table job "${job.id}" has columns of its own`, Object.keys(AUTOPILOT_COLUMNS).join(', '));
+}
+
+/* ── the brief is the only thing the model sees ── */
+const answered = {
+  biz: 'clinic', bizFree: 'A pilates studio with three instructors',
+  jobs: { book: true, prices: true, mail: true }, jobsFree: 'Explain where to park',
+  ownText: 'Mat 70, reformer 110', siteUrl: 'https://example.com', sources: { site: true },
+  uploads: [{ name: 'prices.pdf' }],
+  tableName: 'Appointments', tableColumns: ['Full name', 'Phone', 'Date'],
+  abilities: { mail: true, web: true, human: true },
+  tone: 'warm', rulesFree: 'Never promise a price',
+};
+const brief = autopilotBrief(answered);
+for (const [what, needle] of [
+  ['the vertical', 'Clinic'], ['what the owner typed', 'three instructors'],
+  ['the jobs', 'Booking'], ['the extra job', 'where to park'],
+  ['the facts typed in', 'reformer 110'], ['the crawled site', 'example.com'],
+  ['the uploaded file', 'prices.pdf'], ['the table and its columns', 'Full name'],
+  ['email', 'send email'], ['live reading', 'read a page'], ['handover', 'hand over'],
+  ['the tone', 'warm'], ['the owner\'s own rule', 'Never promise a price'],
+]) {
+  ok(brief.includes(needle), `the brief carries ${what}`, needle);
+}
+ok(brief.includes('answer in that language'), 'and tells the model which language to answer in');
+
+const bare = autopilotBrief({ ...answered, bizFree: '', jobsFree: '', ownText: '', siteUrl: '', sources: {}, uploads: [], tableName: '', tableColumns: [], abilities: {}, rulesFree: '' });
+ok(!bare.includes('undefined') && !bare.includes('null'), 'an unanswered question leaves no hole in the brief', bare);
+ok(bare.split('\n').every(line => line.trim()), 'and no blank lines either');
+
+/* ── the wizard must not be reachable without its wiring ── */
+ok(src.includes('function AutopilotWizard('), 'the wizard is in the page');
+ok(src.includes('setAutopilot({ startStep: 0'), 'and "new chatbot" opens the fork');
+ok(src.includes("setAutopilot({ startStep: 1, resumed: null })"), 'and an empty account goes straight in');
+ok(src.includes('loadAutopilot()') && src.includes('gmail_connected'),
+   'and the Gmail round trip comes back into the wizard, not the editor');
+ok(/onAdvanced=\{existingId =>/.test(src), 'skipping hands the half-built chatbot to the editor rather than orphaning it');
+ok(src.includes('sessionStorage.setItem(AUTOPILOT_KEY'), 'the answers survive leaving the page');
+
+console.log(`\n${failed ? `${failed} FAILURE(S)` : 'all green'}`);
+process.exit(failed ? 1 : 0);
