@@ -136,6 +136,12 @@ omits it just produces a message without them.
 The screen opens on the time of day and the user's name — `greeting()` — with night counted as
 evening, since "good night" is a goodbye.
 
+Two things reach this screen from elsewhere: a conversation picked in the sidebar, and a
+question a "build it for me" button asked. They are instructions, not state, so the screen
+reports back through `onHandoffUsed` and App clears them. Without that, leaving Home and
+returning replays the last one — the screen never opens fresh, and a seeded question is asked
+again, and paid for again, on every visit.
+
 Beside the thread, `AgentBuildCard` shows the agent this conversation created or changed —
 role, skills, tools, channel — filling in as answers arrive. It appears only when there is
 something to show, and on a phone it rides inside the thread instead of in a column.

@@ -6229,7 +6229,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             </div>
             <Btn variant="primary" icon={Icons.sparkle}
               onClick={() => onBuildInChat(FIRST_AGENT_ASK())}>
-              Build my first agent with the assistant
+              Build my first AI Chatbot with the assistant
             </Btn>
             <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>or press “New AI Chatbot” to build it yourself</div>
           </div>
@@ -6250,7 +6250,7 @@ npm run migrate            # הרצה בפועל`}</Block>
 
         {agents.length > 0 && shown.length === 0 && (
           <div style={{ marginTop: 18, padding: '28px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, background: 'var(--bg-card)', border: '1px dashed var(--border)', borderRadius: 'var(--r-lg)' }}>
-            No agent matches this search.
+            No AI Chatbot matches this search.
           </div>
         )}
       </div>
@@ -6328,7 +6328,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             {onOpenAgent && (
               <button onClick={() => onOpenAgent(openSession.agent_id)}
                 style={{ marginLeft: 'auto', background: 'var(--bg-hover)', color: 'var(--text-2)', padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 13, border: '1px solid var(--border)' }}>
-                Open agent
+                Open AI Chatbot
               </button>
             )}
           </div>
@@ -6986,7 +6986,7 @@ npm run migrate            # הרצה בפועל`}</Block>
    * first-agent interview), and `focusAgentId` is whichever agent this
    * conversation last created or changed, so a screen can show it being built.
    */
-  function usePlatformAssistant({ agents, onAgentsChanged, language, seed, systemExtra, onSaved }) {
+  function usePlatformAssistant({ agents, onAgentsChanged, language, seed, systemExtra, onSaved, onSeedUsed }) {
     const [messages, setMessages] = useState([]);   // { id, role: user|assistant|tool|error, … }
     const [input, setInput] = useState('');
     const [pending, setPending] = useState(false);
@@ -7010,6 +7010,9 @@ npm run migrate            # הרצה בפועל`}</Block>
       seededRef.current = seed.nonce;
       if (accountApiUsable()) send(seed.text, { fresh: seed.fresh, seeded: true });
       else setInput(seed.text);
+      /* Used up. A question that outlives the screen it was asked on gets
+         asked again the next time the screen is opened — and pays for it. */
+      if (onSeedUsed) onSeedUsed();
     }, [seed]);
 
     const noKey = !accountApiUsable();
@@ -7683,7 +7686,7 @@ npm run migrate            # הרצה בפועל`}</Block>
 
   function HomeChatView({
     agents, user, onAgentsChanged, language, onOpenAgent, onTestAgent,
-    onSaved, onSessionChange, restore, newChatNonce, seed, stacked,
+    onSaved, onSessionChange, onHandoffUsed, restore, newChatNonce, seed, stacked,
   }) {
     const copy = HOME_COPY[language === 'en' ? 'en' : 'he'];
     const dir = language === 'en' ? 'ltr' : 'rtl';
@@ -7700,6 +7703,7 @@ npm run migrate            # הרצה בפועל`}</Block>
       messages, input, setInput, pending, send, noKey, startNewChat, loadSession, listRef, focusAgentId, sessionId,
     } = usePlatformAssistant({
       agents, onAgentsChanged, language, onSaved, seed,
+      onSeedUsed: () => onHandoffUsed && onHandoffUsed('seed'),
       systemExtra: homeSystemExtra(!firstRunRef.current, language),
     });
 
@@ -7712,11 +7716,16 @@ npm run migrate            # הרצה בפועל`}</Block>
        the same pick twice still takes. */
     useEffect(() => { if (onSessionChange) onSessionChange(sessionId); }, [sessionId]);
 
+    /* These arrive from elsewhere in the app — a conversation picked in the
+       sidebar, a question a button asked. They are instructions, not state:
+       once carried out they have to be cleared, or leaving this screen and
+       coming back replays them and the home screen never opens fresh. */
     const restoredRef = useRef(null);
     useEffect(() => {
       if (!restore || restore.nonce === restoredRef.current) return;
       restoredRef.current = restore.nonce;
       loadSession(restore.session);
+      if (onHandoffUsed) onHandoffUsed('restore');
     }, [restore]);
 
     const clearedRef = useRef(newChatNonce);
@@ -8163,7 +8172,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             {open.agent_id && onOpenAgent && (
               <button onClick={() => onOpenAgent(open.agent_id)}
                 style={{ marginLeft: 'auto', background: 'var(--bg-hover)', color: 'var(--text-2)', padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 13, border: '1px solid var(--border)' }}>
-                Open agent
+                Open AI Chatbot
               </button>
             )}
           </div>
@@ -9925,7 +9934,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             {shown.map(a => <MobileAgentRow key={a.id} agent={a} onOpen={() => onEdit(a.id)} />)}
             {shown.length === 0 && (
               <div style={{ padding: '30px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, border: '1px dashed var(--border)', borderRadius: 'var(--r-lg)' }}>
-                No agent matches this search.
+                No AI Chatbot matches this search.
               </div>
             )}
           </div>
@@ -10442,6 +10451,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             onAgentsChanged={onReload}
             language={language}
             seed={homeSeed}
+            onHandoffUsed={() => setHomeSeed(null)}
             onOpenAgent={openAgent}
             onTestAgent={id => dispatch({ type: 'OPEN_CHAT', id, live: true })}
             stacked
@@ -10728,6 +10738,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             onTestAgent={id => dispatch({ type: 'OPEN_CHAT', id, live: true })}
             onSaved={refreshRecents}
             onSessionChange={setHomeSessionId}
+            onHandoffUsed={kind => (kind === 'seed' ? setHomeSeed(null) : setRestore(null))}
             restore={restore}
             seed={homeSeed}
             newChatNonce={newChatNonce}
