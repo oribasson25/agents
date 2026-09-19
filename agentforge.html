@@ -701,6 +701,47 @@
     return apiFetch(`/api/gmail/disconnect?agentId=${encodeURIComponent(agentId)}`, { method: 'DELETE' });
   }
 
+  /* ─────────────────── TABLES API ─────────────────── */
+  async function apiListTables() {
+    const r = await apiFetch('/api/tables');
+    if (!r.ok) throw new Error(`Could not load the tables (${r.status})`);
+    return r.json();
+  }
+  async function apiCreateTable(spec) {
+    const r = await apiFetch('/api/tables', { method: 'POST', body: JSON.stringify(spec) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `Could not create the table (${r.status})`);
+    return d;
+  }
+  async function apiDeleteTable(id) {
+    const r = await apiFetch(`/api/tables/${id}`, { method: 'DELETE' });
+    if (!r.ok) throw new Error(`Could not delete the table (${r.status})`);
+    return r.json();
+  }
+  async function apiTableRows(id, { q = '', limit = 200, offset = 0 } = {}) {
+    const qs = new URLSearchParams({ q, limit, offset });
+    const r = await apiFetch(`/api/tables/${id}?${qs}`);
+    if (!r.ok) throw new Error(`Could not load the rows (${r.status})`);
+    return r.json();
+  }
+  async function apiAddTableRow(id, row) {
+    const r = await apiFetch(`/api/tables/${id}/rows`, { method: 'POST', body: JSON.stringify({ row }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `Could not add the row (${r.status})`);
+    return d;
+  }
+  async function apiUpdateTableRow(id, rowId, row) {
+    const r = await apiFetch(`/api/tables/${id}/rows`, { method: 'PUT', body: JSON.stringify({ rowId, row }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `Could not save the row (${r.status})`);
+    return d;
+  }
+  async function apiDeleteTableRow(id, rowId) {
+    const r = await apiFetch(`/api/tables/${id}/rows?rowId=${encodeURIComponent(rowId)}`, { method: 'DELETE' });
+    if (!r.ok) throw new Error(`Could not delete the row (${r.status})`);
+    return r.json();
+  }
+
   /* ─────────────────── ADMIN API ─────────────────── */
   async function adminListUsers() { return apiFetch('/api/admin/users').then(r => r.json()); }
   async function adminListUserAgents(userId) { return apiFetch(`/api/admin/users/${userId}/agents`).then(r => r.json()); }
@@ -3046,6 +3087,35 @@ function markSvgString(color, size = 30) {
 
   /* ─────────────────── TOOL CALLING ENGINE ─────────────────── */
   // onToolCall(name, inputs) — called before executing, so the UI can show a bubble
+  /* The same four the server offers. Kept here as well as in api/_tables.js
+     because the test chat runs its tool loop in the browser — the wording has
+     to match, or testing a chatbot tells you about a chatbot you do not have. */
+  const TABLE_TOOL_DEFS = [
+    { name: 'table_list',
+      description: "List the tables you can use, with their columns. Call this first when you do not already know a table's columns.",
+      schema: { type: 'object', properties: {}, required: [] } },
+    { name: 'table_find',
+      description: 'Search one table and get back matching rows, each with its row_id. Leave search empty to get the first rows.',
+      schema: { type: 'object', properties: {
+        table: { type: 'string', description: 'The table name' },
+        search: { type: 'string', description: 'Text to look for in any column' },
+        limit: { type: 'number', description: 'How many rows, at most 25' },
+      }, required: ['table'] } },
+    { name: 'table_add_row',
+      description: 'Add one row to a table. Pass the columns you know; the rest are left empty.',
+      schema: { type: 'object', properties: {
+        table: { type: 'string', description: 'The table name' },
+        row: { type: 'object', description: 'The row, as column name to value' },
+      }, required: ['table', 'row'] } },
+    { name: 'table_update_row',
+      description: 'Change one row. Find it with table_find first — you need its row_id. Only the fields you pass are touched.',
+      schema: { type: 'object', properties: {
+        table: { type: 'string', description: 'The table name' },
+        row_id: { type: 'string', description: 'The row_id from table_find' },
+        fields: { type: 'object', description: 'The columns to change, as column name to value' },
+      }, required: ['table', 'row_id', 'fields'] } },
+  ];
+
   async function callWithTools(agent, history, onToolCall, activeSkillId = null) {
     const { apiKey, provider, model } = accountApi();
 
@@ -3124,6 +3194,9 @@ function markSvgString(color, size = 30) {
           required: ['to', 'subject', 'body'],
         },
       });
+      if ((agent.tables || []).length > 0) {
+        for (const t of TABLE_TOOL_DEFS) tools.push({ name: t.name, description: t.description, input_schema: t.schema });
+      }
       return tools;
     }
 
@@ -3168,6 +3241,11 @@ function markSvgString(color, size = 30) {
           },
         },
       });
+      if ((agent.tables || []).length > 0) {
+        for (const t of TABLE_TOOL_DEFS) {
+          tools.push({ type: 'function', function: { name: t.name, description: t.description, parameters: t.schema } });
+        }
+      }
       return tools;
     }
 
@@ -3177,6 +3255,14 @@ function markSvgString(color, size = 30) {
         const r = await apiFetch('/api/gmail/send', { method: 'POST', body: JSON.stringify({ ...inputs, agentId: agent.id }) });
         const d = await r.json();
         return r.ok ? `Email sent to ${inputs.to}` : `Error: ${d.error}`;
+      }
+      if (toolName.startsWith('table_')) {
+        const r = await apiFetch(`/api/agents/${agent.id}/tables`, {
+          method: 'POST',
+          body: JSON.stringify({ tool: toolName, inputs, tables: agent.tables || [] }),
+        });
+        const d = await r.json().catch(() => ({}));
+        return r.ok ? d.result : `Error: ${d.error || r.status}`;
       }
       const tool = (agent.tools || []).find(t => t.name === toolName);
       const predefinedUrls = (agent.scrapeUrls || (agent.scrapeUrl ? [agent.scrapeUrl] : [])).map(u => u.trim()).filter(Boolean);
@@ -5076,6 +5162,7 @@ function markSvgString(color, size = 30) {
     { id: 'skills',        label: 'Skills',        icon: Icons.hash },
     { id: 'tools',         label: 'Tools',         icon: Icons.code },
     { id: 'knowledge',     label: 'Knowledge',     icon: Icons.database },
+    { id: 'tables',        label: 'Tables',        icon: Icons.rows },
     { id: 'manual tests',  label: 'Manual tests',  icon: Icons.flask },
     { id: 'export',        label: 'Export',        icon: Icons.export },
     { id: 'whatsapp',      label: 'WhatsApp',      icon: Icons.phone },
@@ -5261,6 +5348,7 @@ function markSvgString(color, size = 30) {
             {tab === 'skills' && <SkillsTab agent={agent} onUpdate={update} onRailList={setRailList} />}
             {tab === 'tools' && <ToolsTab agent={agent} onUpdate={update} onRailList={setRailList} />}
             {tab === 'knowledge' && <KnowledgeTab agent={agent} />}
+            {tab === 'tables' && <AgentTablesTab agent={agent} onUpdate={update} />}
             {tab === 'export' && <ExportTab agent={agent} />}
             {tab === 'manual tests' && <ManualTestsTab agent={agent} onTest={testThis} />}
             {tab === 'whatsapp' && <WhatsAppTab agent={agent} onUpdate={update} />}
@@ -5447,6 +5535,7 @@ function markSvgString(color, size = 30) {
       { id: 'history',      label: 'היסטוריית אסיסטנטים' },
       { id: 'assistant',    label: 'אסיסטנט הבנייה' },
       { id: 'knowledge',    label: 'Knowledge (RAG)' },
+      { id: 'tables',       label: 'Tables' },
       { id: 'test',         label: 'בדיקה ו-Manual tests' },
       { id: 'cli',          label: '⌨ עריכה מ-IDE (CLI)' },
       { id: 'widget',       label: 'הטמעה באתר' },
@@ -5772,6 +5861,38 @@ def run(**kwargs):
           </UL>
           <P>השיחה נשמרת אוטומטית אחרי כל תור. שיחה חדשה מתחילה כשלוחצים "שיחה חדשה" בדף הבית או בצ'אט הצף, או כשעוברים לכלי או לסקיל אחר.</P>
           <Tip>ההיסטוריה שימושית במיוחד כדי לחזור לקוד או לפרומפט שאסיסטנט כתב לך לפני שבוע, ולראות מה בדיוק הוא שינה ולמה.</Tip>
+        </div>
+      ),
+
+      /* ─────────────── TABLES ─────────────── */
+      tables: (
+        <div dir="rtl">
+          <H2>Tables</H2>
+          <P>טבלה היא שורות שהחשבון שלך מחזיק — מחירון, הזמנות, לידים, מלאי — וה-AI Chatbots קוראים מהן וכותבים אליהן תוך כדי שיחה. בניגוד ל-Knowledge, שהוא טקסט שנשלף לפי הקשר, טבלה היא נתונים מובנים שאפשר לחפש בהם, להוסיף אליהם ולעדכן אותם.</P>
+          <P>הטבלה שייכת <strong>לחשבון ולא ל-AI Chatbot אחד</strong>. כמה מהם יכולים לקרוא מאותה טבלה, וזה כל הרעיון: אותו מחירון משרת את סוכן המכירות ואת סוכן השירות.</P>
+
+          <H3>יצירה</H3>
+          <P>בטאב <strong>Tables</strong>: שם, משפט שמסביר מה יש בטבלה, ועמודות. לכל עמודה טיפוס — <Code>text</Code>, <Code>number</Code>, <Code>date</Code> או <Code>yes/no</Code> — והערכים נשמרים בצורה הזאת. מספר שאינו מספר לא נשמר, ותאריך נשמר כיום.</P>
+          <Tip>המשפט שמסביר מה יש בטבלה הוא מה שה-AI Chatbot קורא כדי להחליט מתי להשתמש בה. שווה להשקיע בו.</Tip>
+
+          <H3>מי ניגש אליה</H3>
+          <P>בכל AI Chatbot יש טאב <strong>Tables</strong> משלו, ושם מסמנים אילו טבלאות מותר לו לגעת בהן. לא מסומן — לא קיים בשבילו, והוא לא מקבל בכלל את הכלים.</P>
+
+          <H3>מה הוא רשאי לעשות</H3>
+          <UL>
+            <li><Code>table_list</Code> — אילו טבלאות יש לו ומה העמודות שלהן</li>
+            <li><Code>table_find</Code> — חיפוש בטבלה; כל שורה חוזרת עם <Code>row_id</Code></li>
+            <li><Code>table_add_row</Code> — הוספת שורה</li>
+            <li><Code>table_update_row</Code> — עדכון שורה לפי ה-<Code>row_id</Code>; רק השדות שנשלחו משתנים</li>
+          </UL>
+          <Warn>AI Chatbot לעולם לא מוחק שורה ולא משנה את מבנה הטבלה. מחיקה היא שלך בלבד, במסך Tables.</Warn>
+          <P>זה עובד בכל הערוצים באותה צורה — צ'אט הבדיקה, הווידג'ט באתר ו-WhatsApp מריצים את אותו קוד.</P>
+
+          <H3>מי כתב מה</H3>
+          <P>כל שורה זוכרת מי הוסיף אותה — אתה, או ה-AI Chatbot ששמו מופיע בתחתית הגיליון. שורה שנראית מוזרה היא שורה שאפשר לאתר.</P>
+
+          <H3>גם האסיסטנט</H3>
+          <P>אפשר לבקש מאסיסטנט המערכת "תבנה לי טבלת הזמנות עם מספר, לקוח וסטטוס" והיא תיווצר. הוא גם קורא וכותב שורות, ויכול לחבר טבלה ל-AI Chatbot.</P>
         </div>
       ),
 
@@ -6138,6 +6259,461 @@ npm run migrate            # הרצה בפועל`}</Block>
   }
 
   /* ─────────────────── AGENT LIST VIEW ─────────────────── */
+  /* ─────────────────── TABLES ─────────────────── */
+  /*
+   * Rows an account keeps and its AI Chatbots read and write. A table belongs
+   * to the account rather than to one chatbot, so several of them can answer
+   * from the same rows; which chatbot may touch which is ticked per chatbot,
+   * in the editor's own Tables tab.
+   */
+
+  const COLUMN_TYPES = [
+    { id: 'text',    label: 'text' },
+    { id: 'number',  label: 'number' },
+    { id: 'date',    label: 'date' },
+    { id: 'boolean', label: 'yes/no' },
+  ];
+
+  /** How a stored value reads in a cell. */
+  function cellText(value, type) {
+    if (value === '' || value === null || value === undefined) return '';
+    if (type === 'boolean') return value ? L('yes', 'כן') : L('no', 'לא');
+    return String(value);
+  }
+
+  function NewTableDialog({ onCancel, onCreate }) {
+    const [name, setName] = useState('');
+    const [description, setDescription] = useState('');
+    const [columns, setColumns] = useState([{ name: '', type: 'text' }]);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState('');
+
+    function setCol(i, patch) {
+      setColumns(cs => cs.map((c, n) => (n === i ? { ...c, ...patch } : c)));
+    }
+    const filled = columns.filter(c => c.name.trim());
+
+    async function create() {
+      setBusy(true); setError('');
+      try {
+        await onCreate({ name: name.trim(), description: description.trim(), columns: filled });
+      } catch (err) { setError(err.message); setBusy(false); }
+    }
+
+    return (
+      <div onClick={onCancel} style={{
+        position: 'fixed', inset: 0, background: 'rgba(13,15,20,0.45)', zIndex: 300,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 30,
+      }}>
+        <div className="fade-in" onClick={e => e.stopPropagation()} dir={uiDir()} style={{
+          width: 'min(620px, 100%)', maxHeight: '90%', overflowY: 'auto',
+          background: 'var(--bg-card)', border: '1px solid var(--border)',
+          borderRadius: 'var(--r-xl)', boxShadow: 'var(--shadow-lg)',
+        }}>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', fontWeight: 800, fontSize: 16 }}>
+            {L('New table', 'טבלה חדשה')}
+          </div>
+          <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label className="field-label">{L('Name', 'שם')}</label>
+              <input value={name} onChange={e => setName(e.target.value)} dir="auto" autoFocus
+                placeholder={L('e.g. Orders', 'למשל הזמנות')} />
+            </div>
+            <div>
+              <label className="field-label">
+                {L('What is in it', 'מה יש בה')}{' '}
+                <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
+                  {L('— the AI Chatbots read this to decide when to use it', '— ה-AI Chatbots קוראים את זה כדי להחליט מתי להשתמש בה')}
+                </span>
+              </label>
+              <input value={description} onChange={e => setDescription(e.target.value)} dir="auto"
+                placeholder={L('e.g. every order, its status and when it is due', 'למשל כל הזמנה, הסטטוס שלה ומתי היא אמורה להגיע')} />
+            </div>
+            <div>
+              <label className="field-label">{L('Columns', 'עמודות')}</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {columns.map((c, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input value={c.name} onChange={e => setCol(i, { name: e.target.value })} dir="auto"
+                      placeholder={L('column name', 'שם העמודה')} style={{ fontFamily: MONO, fontSize: 13 }} />
+                    <select value={c.type} onChange={e => setCol(i, { type: e.target.value })} style={{ width: 132 }}>
+                      {COLUMN_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                    </select>
+                    <IconBtn danger title={L('Remove', 'הסר')}
+                      onClick={() => setColumns(cs => cs.filter((_, n) => n !== i))}>✕</IconBtn>
+                  </div>
+                ))}
+              </div>
+              <Btn size="sm" icon={Icons.plus} style={{ marginTop: 8 }}
+                onClick={() => setColumns(cs => [...cs, { name: '', type: 'text' }])}>
+                {L('Add column', 'הוסף עמודה')}
+              </Btn>
+            </div>
+            {error && <div style={{ color: 'var(--danger)', fontSize: 12.5 }}>{error}</div>}
+          </div>
+          <div style={{
+            padding: '14px 20px', borderTop: '1px solid var(--border)', background: 'var(--bg-panel)',
+            display: 'flex', justifyContent: 'flex-end', gap: 10,
+          }}>
+            <Btn onClick={onCancel}>{L('Cancel', 'ביטול')}</Btn>
+            <Btn variant="primary" disabled={busy || !name.trim() || !filled.length} onClick={create}>
+              {busy ? L('Creating…', 'יוצר…') : L('Create table', 'צור טבלה')}
+            </Btn>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /** One table as a sheet: search, edit a cell in place, add and remove rows. */
+  function TableSheet({ table, agents, onBack, onChanged }) {
+    const [rows, setRows] = useState([]);
+    const [total, setTotal] = useState(0);
+    const [query, setQuery] = useState('');
+    const [loading, setLoading] = useState(true);
+    const [editing, setEditing] = useState(null);   // { rowId, key }
+    const [draft, setDraft] = useState('');
+    const [error, setError] = useState('');
+    const [pendingDelete, setPendingDelete] = useState(false);
+
+    const columns = table.columns || [];
+
+    const load = useCallback(() => {
+      setLoading(true);
+      return apiTableRows(table.id, { q: query, limit: 200 })
+        .then(d => { setRows(d.rows || []); setTotal(d.total || 0); setLoading(false); })
+        .catch(err => { setError(err.message); setLoading(false); });
+    }, [table.id, query]);
+
+    useEffect(() => {
+      const t = setTimeout(load, query ? 250 : 0);
+      return () => clearTimeout(t);
+    }, [load]);
+
+    async function commit(row, col) {
+      setEditing(null);
+      if (String(row.data[col.key] ?? '') === draft) return;
+      try {
+        const saved = await apiUpdateTableRow(table.id, row.id, { [col.key]: draft });
+        setRows(rs => rs.map(r => (r.id === row.id ? { ...r, data: saved.data } : r)));
+        onChanged();
+      } catch (err) { setError(err.message); }
+    }
+
+    async function addRow() {
+      try {
+        const made = await apiAddTableRow(table.id, {});
+        setRows(rs => [...rs, { id: made.id, data: made.data, written_by: 'user' }]);
+        setTotal(t => t + 1);
+        onChanged();
+      } catch (err) { setError(err.message); }
+    }
+
+    async function removeRow(rowId) {
+      try {
+        await apiDeleteTableRow(table.id, rowId);
+        setRows(rs => rs.filter(r => r.id !== rowId));
+        setTotal(t => Math.max(0, t - 1));
+        onChanged();
+      } catch (err) { setError(err.message); }
+    }
+
+    /* Who reads it, by name — the reason a table is worth keeping shared. */
+    const readers = (agents || []).filter(a => (a.tables || []).includes(table.id));
+    const writerName = id => {
+      if (id === 'user') return L('you', 'אתה');
+      const a = (agents || []).find(x => x.id === id);
+      return a ? a.name : L('an AI Chatbot', 'AI Chatbot');
+    };
+
+    const th = { padding: '11px 14px', textAlign: 'start', whiteSpace: 'nowrap', borderBottom: '1px solid var(--border)', background: 'var(--bg-card)', position: 'sticky', top: 0 };
+    const td = { padding: '8px 14px', borderTop: '1px solid var(--border)', fontSize: 13, verticalAlign: 'middle' };
+
+    return (
+      /* flex:1 rather than height:100% — the column around it is sized by its
+         content, so a percentage here collapses and the sheet ends mid-screen. */
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, gap: 14 }}>
+        <PageHeader
+          eyebrow={L('Table', 'טבלה')}
+          title={table.name}
+          subtitle={`${plural(total, L('row', 'שורה'))} · ${plural(columns.length, L('column', 'עמודה'))}`}
+          actions={
+            <React.Fragment>
+              <Btn onClick={onBack}>{L('← All tables', '← כל הטבלאות')}</Btn>
+              <Btn danger icon={Icons.trash} onClick={() => setPendingDelete(true)}>{L('Delete', 'מחק')}</Btn>
+            </React.Fragment>
+          }
+        />
+
+        <div style={{ ...WORKSPACE_PANEL, flex: 1, minHeight: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)', flexWrap: 'wrap', flexShrink: 0 }}>
+            <SearchField value={query} onChange={setQuery} placeholder={L('Search every cell', 'חיפוש בכל התאים')} style={{ maxWidth: 300, height: 34 }} />
+            <span style={{ marginInlineStart: 'auto', fontSize: 11.5, color: 'var(--text-muted)' }}>
+              {loading ? L('Loading…', 'טוען…') : `${rows.length} / ${total}`}
+            </span>
+          </div>
+
+          <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={{ ...th, width: 42 }}></th>
+                  {columns.map(c => (
+                    <th key={c.key} style={th}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
+                        <Eyebrow>{c.name}</Eyebrow>
+                        <span style={{ fontSize: 9.5, color: 'var(--text-muted)', opacity: 0.75 }}>{c.type}</span>
+                      </div>
+                    </th>
+                  ))}
+                  <th style={{ ...th, width: 56 }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, i) => (
+                  <tr key={row.id}>
+                    <td style={{ ...td, color: 'var(--text-muted)', fontSize: 11, fontFamily: MONO }}>{i + 1}</td>
+                    {columns.map(c => {
+                      const open = editing && editing.rowId === row.id && editing.key === c.key;
+                      return (
+                        <td key={c.key} style={td}>
+                          {open ? (
+                            <input autoFocus value={draft} onChange={e => setDraft(e.target.value)}
+                              onBlur={() => commit(row, c)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') { e.preventDefault(); commit(row, c); }
+                                if (e.key === 'Escape') setEditing(null);
+                              }}
+                              dir="auto" style={{ height: 30, fontSize: 13, padding: '0 8px' }} />
+                          ) : (
+                            <div dir="auto" tabIndex={0}
+                              onClick={() => { setEditing({ rowId: row.id, key: c.key }); setDraft(String(row.data[c.key] ?? '')); }}
+                              style={{ minHeight: 24, display: 'flex', alignItems: 'center', padding: '2px 6px', margin: '-2px -6px', borderRadius: 6, cursor: 'text', fontFamily: c.type === 'number' || c.type === 'date' ? MONO : 'inherit' }}
+                              onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                              {cellText(row.data[c.key], c.type) || <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                            </div>
+                          )}
+                        </td>
+                      );
+                    })}
+                    <td style={td}>
+                      <IconBtn danger title={L('Delete row', 'מחק שורה')} onClick={() => removeRow(row.id)}>{Icons.trash}</IconBtn>
+                    </td>
+                  </tr>
+                ))}
+                {!loading && rows.length === 0 && (
+                  <tr><td colSpan={columns.length + 2} style={{ ...td, textAlign: 'center', color: 'var(--text-muted)', padding: 30 }}>
+                    {query ? L('No row matches that search.', 'אין שורה שתואמת את החיפוש.') : L('No rows yet.', 'אין עדיין שורות.')}
+                  </td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <button onClick={addRow} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderTop: '1px solid var(--border)', color: 'var(--primary)', fontWeight: 650, fontSize: 12.5, width: '100%', background: 'transparent', flexShrink: 0 }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-panel)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+            {Icons.plus} {L('Add row', 'הוסף שורה')}
+          </button>
+
+          <div style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', background: 'var(--bg-panel)', fontSize: 11.5, color: 'var(--text-muted)', display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', flexShrink: 0 }}>
+            <span>
+              {readers.length
+                ? <React.Fragment>{L('Read and written by', 'קוראים וכותבים')} {readers.map(a => <Chip key={a.id} tone="teal" style={{ marginInlineStart: 6 }}>{a.name}</Chip>)}</React.Fragment>
+                : L('No AI Chatbot uses this yet — tick it in a chatbot’s Tables tab.', 'שום AI Chatbot לא משתמש בה עדיין — סמן אותה בטאב Tables של אחד מהם.')}
+            </span>
+            {rows.length > 0 && rows[rows.length - 1].updated_at && (
+              <span style={{ marginInlineStart: 'auto' }}>
+                {L('Last written by', 'נכתב לאחרונה על ידי')} <b style={{ color: 'var(--text-2)' }}>{writerName(rows[rows.length - 1].written_by)}</b>
+              </span>
+            )}
+          </div>
+        </div>
+
+        {error && <div style={{ color: 'var(--danger)', fontSize: 12.5 }}>{error}</div>}
+
+        {pendingDelete && (
+          <ConfirmDialog
+            title={L(`Delete "${table.name}"?`, `למחוק את "${table.name}"?`)}
+            body={L('Every row goes with it, and any AI Chatbot that was reading it stops being able to. This cannot be undone.',
+                    'כל השורות נמחקות איתה, וכל AI Chatbot שקרא ממנה מפסיק לקרוא. אין ביטול.')}
+            confirmLabel={L('Delete table', 'מחק טבלה')}
+            onConfirm={async () => { await apiDeleteTable(table.id); setPendingDelete(false); onChanged(); onBack(); }}
+            onCancel={() => setPendingDelete(false)} />
+        )}
+      </div>
+    );
+  }
+
+  function TablesView({ agents, onChanged }) {
+    const [tables, setTables] = useState(null);
+    const [openId, setOpenId] = useState(null);
+    const [creating, setCreating] = useState(false);
+    const [error, setError] = useState('');
+
+    const load = useCallback(() => (
+      apiListTables()
+        .then(d => { setTables(d.tables || []); setError(''); })
+        .catch(err => { setTables([]); setError(err.message); })
+    ), []);
+    useEffect(() => { load(); }, [load]);
+
+    const open = (tables || []).find(t => t.id === openId);
+    if (open) {
+      return <TableSheet table={open} agents={agents} onBack={() => setOpenId(null)}
+                onChanged={() => { load(); onChanged && onChanged(); }} />;
+    }
+
+    return (
+      <div style={{ position: 'relative' }}>
+        <PageHeader
+          eyebrow={L('Shared knowledge', 'ידע משותף')}
+          title="Tables"
+          subtitle={L('Rows your AI Chatbots can read and write, shared across all of them',
+                      'שורות שה-AI Chatbots שלך קוראים וכותבים, משותפות לכולם')}
+          actions={<Btn variant="primary" icon={Icons.plus} onClick={() => setCreating(true)}>{L('New table', 'טבלה חדשה')}</Btn>}
+        />
+
+        {error && <div style={{ color: 'var(--danger)', fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
+
+        {tables === null ? (
+          <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{L('Loading…', 'טוען…')}</div>
+        ) : tables.length === 0 ? (
+          <EmptyState icon="▤" title={L('No tables yet', 'אין עדיין טבלאות')}
+            subtitle={L('A table is rows every AI Chatbot you tick can read and add to — a price list, orders, leads. Make one here, or ask the assistant for it.',
+                        'טבלה היא שורות שכל AI Chatbot שתסמן יכול לקרוא ולהוסיף אליהן — מחירון, הזמנות, לידים. צור אחת כאן, או בקש מהאסיסטנט.')} />
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))', gap: 16 }}>
+            {tables.map(t => {
+              const readers = (agents || []).filter(a => (a.tables || []).includes(t.id));
+              return (
+                <div key={t.id} onClick={() => setOpenId(t.id)} style={{
+                  background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)',
+                  padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12, cursor: 'pointer',
+                }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(239,159,39,0.35)'; e.currentTarget.style.boxShadow = 'var(--shadow)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = 'none'; }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: 'var(--teal-dim)', color: 'var(--teal)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {Icons.database}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div dir="auto" style={{ fontWeight: 700, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</div>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>{plural(t.row_count, L('row', 'שורה'))}</div>
+                    </div>
+                  </div>
+                  {t.description && (
+                    <div dir="auto" style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6 }}>{t.description}</div>
+                  )}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                    {(t.columns || []).slice(0, 6).map(c => (
+                      <span key={c.key} style={{ fontFamily: MONO, fontSize: 11, padding: '3px 8px', borderRadius: 999, background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text-2)' }}>
+                        {c.name} <span style={{ color: 'var(--text-muted)' }}>{c.type}</span>
+                      </span>
+                    ))}
+                    {(t.columns || []).length > 6 && (
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', alignSelf: 'center' }}>+{t.columns.length - 6}</span>
+                    )}
+                  </div>
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 11, fontSize: 11.5, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    {readers.length
+                      ? <React.Fragment>{L('Used by', 'בשימוש')} {readers.slice(0, 3).map(a => <Chip key={a.id} tone="teal">{a.name}</Chip>)}</React.Fragment>
+                      : L('Not used by any AI Chatbot yet', 'עדיין לא בשימוש')}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {creating && (
+          <NewTableDialog
+            onCancel={() => setCreating(false)}
+            onCreate={async spec => {
+              const made = await apiCreateTable(spec);
+              setCreating(false);
+              await load();
+              setOpenId(made.id);
+              onChanged && onChanged();
+            }} />
+        )}
+      </div>
+    );
+  }
+
+  /** Which tables one AI Chatbot may read and write. */
+  function AgentTablesTab({ agent, onUpdate }) {
+    const [tables, setTables] = useState(null);
+    useEffect(() => { apiListTables().then(d => setTables(d.tables || [])).catch(() => setTables([])); }, []);
+
+    const ticked = agent.tables || [];
+    function toggle(id) {
+      const next = ticked.includes(id) ? ticked.filter(x => x !== id) : [...ticked, id];
+      onUpdate({ ...agent, tables: next });
+    }
+
+    return (
+      <div style={{ maxWidth: 720 }}>
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>
+            {L('Which tables this AI Chatbot can use', 'אילו טבלאות ה-AI Chatbot הזה יכול להשתמש בהן')}
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.65 }}>
+            {L('It can read from and write to the ones you tick, in any conversation — the website widget, WhatsApp and the test chat alike. It can never delete a row.',
+               'הוא קורא וכותב לאלה שתסמן, בכל שיחה — בווידג׳ט באתר, בוואטסאפ ובצ׳אט הבדיקה. הוא לעולם לא מוחק שורה.')}
+          </div>
+        </div>
+
+        {tables === null ? (
+          <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{L('Loading…', 'טוען…')}</div>
+        ) : tables.length === 0 ? (
+          <EmptyState icon="▤" title={L('No tables yet', 'אין עדיין טבלאות')}
+            subtitle={L('Make one in the Tables tab first, then come back and tick it here.',
+                        'צור אחת בטאב Tables, ואז חזור לכאן וסמן אותה.')} />
+        ) : (
+          <React.Fragment>
+            {tables.map(t => {
+              const on = ticked.includes(t.id);
+              return (
+                <button key={t.id} onClick={() => toggle(t.id)} style={{
+                  display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'start',
+                  padding: '11px 12px', borderRadius: 'var(--r-md)', marginBottom: 8,
+                  border: `1px solid ${on ? 'rgba(239,159,39,0.45)' : 'var(--border)'}`,
+                  background: on ? 'rgba(239,159,39,0.06)' : 'var(--bg-panel)',
+                }}>
+                  <span style={{
+                    width: 18, height: 18, borderRadius: 5, flexShrink: 0, fontSize: 11, fontWeight: 800,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    border: `1.5px solid ${on ? 'var(--primary)' : 'var(--border)'}`,
+                    background: on ? 'var(--primary)' : 'var(--bg-card)', color: '#0a0a0a',
+                  }}>{on ? '✓' : ''}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span dir="auto" style={{ display: 'block', fontWeight: 650, fontSize: 13.5, color: 'var(--text)' }}>{t.name}</span>
+                    <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {plural(t.row_count, L('row', 'שורה'))} · {(t.columns || []).map(c => c.name).join(', ')}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+            {ticked.length > 0 && (
+              <div style={{ marginTop: 14, padding: '11px 13px', borderRadius: 'var(--r-md)', background: 'var(--bg-panel)', border: '1px solid var(--border)', fontSize: 12, color: 'var(--text-2)', lineHeight: 1.7 }}>
+                {L('With one ticked, this AI Chatbot gets four tools it can call mid-conversation:', 'כשמסומנת טבלה, ה-AI Chatbot מקבל ארבעה כלים שהוא יכול לקרוא להם תוך כדי שיחה:')}{' '}
+                <code style={{ fontFamily: MONO, color: 'var(--teal)' }}>table_list</code>,{' '}
+                <code style={{ fontFamily: MONO, color: 'var(--teal)' }}>table_find</code>,{' '}
+                <code style={{ fontFamily: MONO, color: 'var(--teal)' }}>table_add_row</code>{' '}
+                {L('and', 'ו-')}{' '}
+                <code style={{ fontFamily: MONO, color: 'var(--teal)' }}>table_update_row</code>.{' '}
+                {L('Say in its prompt when to use them, or it will decide for itself.', 'כתוב בפרומפט שלו מתי להשתמש בהם, אחרת הוא יחליט בעצמו.')}
+              </div>
+            )}
+          </React.Fragment>
+        )}
+      </div>
+    );
+  }
+
   function AgentListView({ agents, onNew, onEdit, onTest, onDuplicate, onDelete, onExport, onBuildInChat }) {
     const [query, setQuery]   = useState('');
     const [branch, setBranch] = useState('');
@@ -6888,6 +7464,61 @@ npm run migrate            # הרצה בפועל`}</Block>
         required: [],
       },
     },
+    {
+      name: 'list_tables',
+      description: "The account's tables, with their columns and how many rows each has, and which AI Chatbots are allowed to use each one.",
+      input_schema: { type: 'object', properties: {}, required: [] },
+    },
+    {
+      name: 'create_table',
+      description: 'Make a table for the account. Give it a name, a sentence saying what is in it — the AI Chatbots read that to decide when to use it — and its columns. Afterwards, tick it onto the AI Chatbots that need it with update_agent.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          name: STR('What the table is called'),
+          description: STR('One sentence: what is in it'),
+          columns: {
+            type: 'array',
+            description: 'Its columns, in order',
+            items: {
+              type: 'object',
+              properties: {
+                name: STR('Column name'),
+                type: { type: 'string', enum: ['text', 'number', 'date', 'boolean'], description: 'text, number, date or boolean' },
+              },
+              required: ['name'],
+            },
+          },
+        },
+        required: ['name', 'columns'],
+      },
+    },
+    {
+      name: 'read_table',
+      description: 'Rows from one table, each with its row_id. Search across every column, or leave it empty for the first rows.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          table: STR('The table name'),
+          search: STR('Text to look for in any column'),
+          limit: { type: 'integer', description: 'How many (default 20, max 100)' },
+        },
+        required: ['table'],
+      },
+    },
+    {
+      name: 'write_table_row',
+      description: 'Add a row to a table, or change one by passing its row_id from read_table. Only the fields you pass are touched.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          table: STR('The table name'),
+          row_id: STR('To change a row, its row_id from read_table. Leave out to add a new one.'),
+          row: { type: 'object', description: 'The columns to set, as column name to value' },
+        },
+        required: ['table', 'row'],
+      },
+    },
   ];
 
   const PLATFORM_REFERENCE = [
@@ -6901,6 +7532,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     '- Parameter types are string, number, integer or boolean.',
     '- send_email is a built-in tool, switched on per AI Chatbot, that sends from a Gmail account connected on that AI Chatbot (Tools tab). You cannot connect Gmail for the user — say where to do it.',
     "- KNOWLEDGE is documents (pasted, PDF/DOCX upload, or crawled sites). On upload each one is rewritten by the model into short titled sections with a bilingual keyword line, then split into chunks; a question retrieves chunks by full-text search into the prompt. The search is LEXICAL, not semantic — it matches words, so a document only answers questions phrased with words it contains. You cannot upload files for the user, but you can tell them to press the tidy button on a document to have it reorganised.",
+    "- TABLES are rows the account keeps — a price list, orders, leads — shared across its AI Chatbots rather than owned by one. Each chatbot is ticked onto the tables it may use, in its own Tables tab, and then it can read, add and update rows mid-conversation; it can never delete one or change a table's shape. You can make tables and read and write their rows yourself.",
     '- CHANNELS: the in-app test chat, an embeddable website widget (Export tab), and WhatsApp via Meta Cloud API (Whatsapp tab, needs a phone number id, access token, app secret and verify token from Meta). A WhatsApp number belongs to one AI Chatbot only.',
     '- DLP can mask credit-card and Israeli-ID numbers before they reach the model and before history is stored.',
     '- INTERACTIONS lists every conversation real end users had across channels, filterable and searchable.',
@@ -7209,6 +7841,57 @@ npm run migrate            # הרצה בפועל`}</Block>
           const rows = data.sessions || [];
           if (rows.length === 0) return done('No manual test conversations for that agent yet.');
           return done(formatTestConversations(rows, 20));
+        }
+
+        /* Tables. The assistant works on the account's own, so it is not
+           bound by what any one AI Chatbot has ticked — but it says which
+           chatbots can reach a table, because that is the thing people
+           forget after making one. */
+        if (name === 'list_tables') {
+          const { tables } = await apiListTables();
+          if (!tables.length) return done('The account has no tables yet.');
+          const known = agentsRef.current || [];
+          return done(JSON.stringify(tables.map(t => ({
+            table: t.name,
+            about: t.description || undefined,
+            columns: (t.columns || []).map(c => `${c.name} (${c.type})`),
+            rows: t.row_count,
+            used_by: known.filter(a => (a.tables || []).includes(t.id)).map(a => a.name),
+          })), null, 1));
+        }
+
+        if (name === 'create_table') {
+          const made = await apiCreateTable({
+            name: input.name,
+            description: input.description || '',
+            columns: (input.columns || []).map(c => ({ name: c.name, type: c.type || 'text' })),
+          });
+          return done(`Created the table "${input.name}" with columns ${made.columns.map(c => c.name).join(', ')}. `
+            + 'It is not attached to any AI Chatbot yet — use update_agent with its tables list, or tell the user to tick it in the chatbot\'s Tables tab.');
+        }
+
+        if (name === 'read_table' || name === 'write_table_row') {
+          const { tables } = await apiListTables();
+          const wanted = String(input.table || '').trim().toLowerCase();
+          const table = tables.find(t => t.id === input.table)
+                     || tables.find(t => (t.name || '').trim().toLowerCase() === wanted);
+          if (!table) return done(`No table called "${input.table}". There is: ${tables.map(t => t.name).join(', ') || 'none'}.`);
+
+          if (name === 'read_table') {
+            const data = await apiTableRows(table.id, {
+              q: input.search || '', limit: Math.min(parseInt(input.limit, 10) || 20, 100),
+            });
+            if (!data.rows.length) return done(`No rows in "${table.name}" match that.`);
+            return done(JSON.stringify({
+              total: data.total,
+              rows: data.rows.map(r => ({ row_id: r.id, ...r.data })),
+            }, null, 1));
+          }
+
+          const saved = input.row_id
+            ? await apiUpdateTableRow(table.id, input.row_id, input.row || {})
+            : await apiAddTableRow(table.id, input.row || {});
+          return done(`${input.row_id ? 'Updated' : 'Added'} a row in "${table.name}" (row_id ${saved.id}): ${JSON.stringify(saved.data)}`);
         }
 
         if (name === 'list_interactions') {
@@ -8446,6 +9129,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     const items = [
       { id: 'home',         label: 'Home',          icon: Icons.home },
       { id: 'agents',       label: 'AI Chatbots', icon: Icons.agents },
+      { id: 'tables',       label: 'Tables',        icon: Icons.rows },
       { id: 'interactions', label: 'Interactions',  icon: Icons.interactions },
       { id: 'docs',         label: 'Documentation', icon: Icons.docs },
       { id: 'settings',     label: 'Settings',      icon: Icons.settings },
@@ -9967,6 +10651,7 @@ npm run migrate            # הרצה בפועל`}</Block>
         <div style={{ marginBottom: 6 }}>
           <RuntimeCard settings={accountApi()} onOpenSettings={() => onOpen('settings')} />
         </div>
+        <Row icon={Icons.rows} label="Tables" hint={L('Shared rows your AI Chatbots read and write', 'שורות משותפות שה-AI Chatbots קוראים וכותבים')} onClick={() => onOpen('tables')} />
         <Row icon={Icons.docs} label="Documentation" hint={L('How every part of this works', 'איך כל חלק במערכת עובד')} onClick={() => onOpen('docs')} />
         {user.isAdmin && <Row icon={Icons.admin} label="Admin" hint={L('Users and the template AI Chatbots', 'משתמשים וAI Chatbots של התבנית')} onClick={() => onOpen('admin')} />}
         <div style={{ height: 6 }} />
@@ -10309,6 +10994,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             {tab === 'skills' && <MobileSkillsTab agent={agent} onUpdate={onUpdate} onDetail={setDetail} />}
             {tab === 'tools' && <MobileToolsTab agent={agent} onUpdate={onUpdate} onDetail={setDetail} />}
             {tab === 'knowledge' && <KnowledgeTab agent={agent} />}
+            {tab === 'tables' && <AgentTablesTab agent={agent} onUpdate={onUpdate} />}
             {tab === 'manual tests' && <ManualTestsTab agent={agent} onTest={onTest} />}
             {tab === 'export' && <ExportTab agent={agent} stacked />}
             {tab === 'whatsapp' && <WhatsAppTab agent={agent} onUpdate={onUpdate} />}
@@ -10403,6 +11089,15 @@ npm run migrate            # הרצה בפועל`}</Block>
           <MobileTopBar left={burger} title="Assistant" center />
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '10px 16px 24px' }}>
             <AssistantHistoryView onOpenAgent={openAgent} stacked />
+          </div>
+        </div>
+      );
+    } else if (nav === 'tables') {
+      screen = (
+        <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <MobileTopBar title="Tables" onBack={() => go('home')} />
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px 16px 24px' }}>
+            <TablesView agents={state.agents} onChanged={onReload} />
           </div>
         </div>
       );
@@ -10707,6 +11402,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     const NAV_CRUMBS = {
       home: ['Workspace', 'Home'],
       agents: ['Workspace', 'AI Chatbots'],
+      tables: ['Workspace', 'Tables'],
       assistant: ['Workspace', 'Assistant'],
       interactions: ['Workspace', 'Interactions'],
       docs: ['Workspace', 'Documentation'],
@@ -10766,6 +11462,8 @@ npm run migrate            # הרצה בפועל`}</Block>
               user={user}
               onOpenAgent={openAgent}
             />
+          ) : nav === 'tables' ? (
+            <TablesView agents={state.agents} onChanged={hydrate} />
           ) : nav === 'docs' ? (
             <DocsView />
           ) : nav === 'admin' ? (

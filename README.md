@@ -233,6 +233,33 @@ as JSX, `markSvgString(color)` in the browser for the embed snippet it hands out
 `api/_mark.js` for the widget the server renders into somebody else's site. The palette is
 duplicated in the last of those; `probes/render-probe.mjs` checks the two lists still match.
 
+## Tables
+
+Rows an account keeps and its agents read and write — a price list, orders, leads. A table
+belongs to the account, not to one agent, so several can answer from the same rows; which
+agent may touch which is a list of table ids on the agent itself (`data->'tables'`), so it
+travels with the agent through export, branches and the CLI.
+
+Rows are JSONB against a column definition (`data_tables.columns`), not real Postgres columns:
+a table per user table would mean running DDL on somebody's input at runtime and a migration
+every time they add a field. Values are coerced to their column's type on the way in, so a
+number column never holds `"about fifty"`. Renaming a column keeps its key and the rows follow
+it; dropping one leaves the value in the row, invisible but recoverable.
+
+An agent gets four tools, and only when it has a table ticked: `table_list`, `table_find`,
+`table_add_row`, `table_update_row`. There is no tool that deletes a row or reshapes a table —
+those belong to the person whose account it is. Access is gated twice: the table must be the
+owner's *and* ticked on the agent, so a ticked id belonging to somebody else opens nothing.
+
+`api/_tables.js` holds the logic, and all three callers run it: `_agentRunner.js` for the
+widget and WhatsApp, `api/agents/[id]/tables.js` for the browser's own tool loop in the test
+chat, and the platform assistant, which additionally gets `create_table`. The test chat goes
+through the server rather than calling the table endpoints directly, or it would reach tables
+the agent is not allowed to touch and stop telling you the truth about your agent.
+
+Every row records who wrote it (`written_by`: `user`, or the agent's id), which is what the
+sheet's footer reads back.
+
 ## Starter agents
 
 Every new account is seeded with a copy of each row in `starter_agents` (migration `018`), the

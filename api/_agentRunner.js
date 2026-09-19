@@ -2,6 +2,7 @@ import { sql } from './_db.js';
 import { searchDocuments } from './_knowledge.js';
 import { sendGmail } from './_gmail.js';
 import { logError } from './_errorLog.js';
+import { TABLE_TOOLS, runAgentTableTool } from './_tables.js';
 
 function applyDlp(text, dlp) {
   if (!dlp || typeof text !== 'string') return text;
@@ -101,6 +102,12 @@ function buildClaudeTools(agent) {
       },
     });
   }
+
+  if ((agent.tables || []).length > 0) {
+    for (const t of TABLE_TOOLS) {
+      tools.push({ name: t.name, description: t.description, input_schema: t.schema });
+    }
+  }
   return tools;
 }
 
@@ -140,11 +147,29 @@ function buildOpenAITools(agent) {
       },
     });
   }
+
+  if ((agent.tables || []).length > 0) {
+    for (const t of TABLE_TOOLS) {
+      tools.push({ type: 'function', function: { name: t.name, description: t.description, parameters: t.schema } });
+    }
+  }
   return tools;
 }
 
 async function executeTool(toolName, inputs, agent, baseUrl, agentId) {
   if (toolName === 'switch_skill') return 'OK';
+
+  if (toolName.startsWith('table_')) {
+    try {
+      const [owner] = await sql`select user_id from agents where id = ${agentId}`;
+      return await runAgentTableTool({
+        toolName, inputs, agent, ownerId: owner && owner.user_id, writtenBy: agentId,
+      });
+    } catch (err) {
+      await logError({ agentId, source: 'tool', message: `${toolName}: ${err.message}`, context: { tool: toolName } });
+      return `The table tool failed: ${err.message}`;
+    }
+  }
 
   if (toolName === 'send_email') {
     if (!agent.emailEnabled) return 'The send_email tool is disabled for this agent.';
