@@ -5651,7 +5651,7 @@ function markSvgString(color, size = 30) {
   }
 
   /* ─────────────────── DOCS VIEW ─────────────────── */
-  function DocsView({ stacked, initialSection }) {
+  function DocsView({ stacked, initialSection, onReplayTour }) {
     /* initialSection lets something else point at a page — the CLI section
        from Settings, for instance — instead of always opening on the intro. */
     const [active, setActive] = useState(initialSection || 'intro');
@@ -5713,6 +5713,19 @@ function markSvgString(color, size = 30) {
       autopilot: (
         <div dir="rtl">
           <H2>Autopilot — בנייה מודרכת</H2>
+
+          <H3>לפניו: הסיור</H3>
+          <P>בכניסה הראשונה של משתמש נפתח <strong>סיור של חמישה שלבים על גבי הפלטפורמה עצמה</strong> — זרקור על אלמנט אחד בכל פעם, כרטיס הסבר לידו, ו<Code>הבא</Code> כדי להמשיך. הסיור מחליף מסכים תוך כדי: צ'אט הבית ← AI Chatbots ← Tables ← Interactions ← Settings.</P>
+          <P>למה הסיור ראשון ו-Autopilot אחריו: כל חשבון חדש נפתח עם צ'אטבוטים מוכנים (ראה <strong>Starter agents</strong>), אז <strong>יש כבר תוכן אמיתי להצביע עליו</strong> מהשנייה הראשונה. והקלף האחרון של הסיור הוא זה שמציע ״בנה לי אחד משלי״ — כלומר פותח את Autopilot. וויזרד אחד בכל רגע.</P>
+          <Warn>עד לשינוי הזה, Autopilot נפתח לבד רק כשלחשבון לא היה אף צ'אטבוט — תנאי שלא התקיים אצל אף משתמש אמיתי בגלל ה-Starter agents. כלומר הוא לא נפתח לבד לאף אחד.</Warn>
+          <UL>
+            <li>היעדים הם תגיות <Code>data-tour</Code> על אלמנטים אמיתיים, לא סלקטורים של CSS — סלקטור נשבר בשקט, תגית נשברת בבדיקה</li>
+            <li>לכל שלב יש יעד מועדף (התוכן) ונפילה לאחור (פריט התפריט), כך שגם חשבון בלי טבלאות מקבל סיור שלם</li>
+            <li>שלב שהיעד שלו לא מופיע תוך 2.5 שניות מדלג לבד במקום להיתקע</li>
+            <li>אפשר להריץ שוב מהתיעוד, בכרטיס בראש העמוד הזה</li>
+            <li>בטלפון הסיור לא רץ — הטלפון הוא עץ נפרד עם ניווט תחתון, וזרקור שם הוא עיצוב אחר. מסומן כנצפה כדי שלא יקפוץ אחר כך בדסקטופ</li>
+          </UL>
+
           <P>וויזרד שבונה AI Chatbot שלם למי שלא יודע לבנות אחד. הוא נפתח לבד בפעם הראשונה שנכנסים לחשבון ריק, ובכל <Code>צ'אטבוט חדש</Code> מוצג קודם מסך בחירה בין <strong>Autopilot</strong> ל־<strong>Advanced</strong> (העורך המלא, כמו שהיה תמיד).</P>
 
           <H3>העיקרון</H3>
@@ -5779,6 +5792,15 @@ function markSvgString(color, size = 30) {
 
       intro: (
         <div dir="rtl">
+          {onReplayTour && (
+            <div style={{ marginBottom: 18, padding: '14px 18px', borderRadius: 'var(--r-lg)', background: 'var(--primary-dim)', border: '1px solid rgba(239,159,39,0.35)', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+              <div style={{ flexGrow: 1, minWidth: 200 }}>
+                <div style={{ fontWeight: 800, fontSize: 14.5, marginBottom: 3 }}>הסיור המודרך</div>
+                <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>חמישה שלבים על גבי הפלטפורמה עצמה, מסמנים כל פעם משהו אחר. אפשר להריץ שוב מתי שרוצים.</div>
+              </div>
+              <Btn variant="primary" icon={Icons.sparkle} onClick={onReplayTour}>הרץ את הסיור</Btn>
+            </div>
+          )}
           <H2>מה זה 8Legs.ai</H2>
           <P>פלטפורמה לבניית AI Chatbots בלי לכתוב תשתית. כל AI Chatbot הוא הגדרה אחת שכוללת פרומפט, מודל, סקילים, כלי Python, בסיס ידע וערוצי הפצה — והוא זמין מיד בצ'אט בדיקה, כווידג'ט באתר וכמספר WhatsApp.</P>
 
@@ -6795,7 +6817,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             subtitle={L('A table is rows every AI Chatbot you tick can read and add to — a price list, orders, leads. Make one here, or ask the assistant for it.',
                         'טבלה היא שורות שכל AI Chatbot שתסמן יכול לקרוא ולהוסיף אליהן — מחירון, הזמנות, לידים. צור אחת כאן, או בקש מהאסיסטנט.')} />
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))', gap: 16 }}>
+          <div data-tour="tables-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))', gap: 16 }}>
             {tables.map(t => {
               const readers = (agents || []).filter(a => (a.tables || []).includes(t.id));
               return (
@@ -6922,6 +6944,205 @@ npm run migrate            # הרצה בפועל`}</Block>
           </React.Fragment>
         )}
       </div>
+    );
+  }
+
+  /* ═══════════════════════ THE TOUR ═══════════════════════
+     Five things pointed at, on the platform itself, the first time somebody
+     arrives.
+
+     It runs before Autopilot rather than after, and that is only possible
+     because a new account is not empty: registration seeds it with the
+     starter chatbots, so there is real work of theirs to point at from the
+     first second. The last card is what offers to build one of their own,
+     which is where Autopilot comes in — one wizard at a time, in an order
+     that explains itself.
+
+     Targets are `data-tour` attributes on real elements, never CSS selectors:
+     a selector breaks silently the next time something is restyled, and an
+     attribute breaks loudly, in the probe. Each step names the content it
+     would rather point at and the sidebar item it settles for when that
+     content is not there — an account with no tables still gets a tour. */
+
+  const TOUR_KEY = 'agentforge_tour_v1';
+
+  function tourSeen() {
+    try { return localStorage.getItem(TOUR_KEY) === '1'; } catch { return true; }
+  }
+  function markTourSeen() {
+    try { localStorage.setItem(TOUR_KEY, '1'); } catch { /* private window */ }
+  }
+
+  const TOUR_STEPS = () => [
+    {
+      nav: 'home',
+      target: ['home-composer', 'nav-home'],
+      title: L('Ask for it in words', 'פשוט לבקש במילים'),
+      body: L('This is where everything starts. Describe what you want — build a new chatbot, change one you have, ask what happened yesterday — and it gets done. You do not have to know how any of it works.',
+              'כאן הכל מתחיל. מתארים מה רוצים — לבנות צ\'אטבוט חדש, לשנות קיים, לשאול מה קרה אתמול — וזה נעשה. לא צריך לדעת איך שום דבר מזה עובד.'),
+    },
+    {
+      nav: 'agents',
+      target: ['agent-list', 'nav-agents'],
+      title: L('The chatbots you already have', 'הצ\'אטבוטים שכבר יש לך'),
+      body: L('Your account came with a couple, ready to use. Each card can be edited by hand, tested on a real conversation, or changed in plain words with Edit with AI.',
+              'החשבון שלך נפתח עם כמה, מוכנים לשימוש. כל כרטיס אפשר לערוך ידנית, לבדוק בשיחה אמיתית, או לשנות במילים עם Edit with AI.'),
+    },
+    {
+      nav: 'tables',
+      target: ['tables-list', 'nav-tables'],
+      title: L('Rows they all share', 'הטבלאות שכולם חולקים'),
+      body: L('A table belongs to you, not to one chatbot — a price list, bookings, leads. Every chatbot you tick onto it can read it and write into it mid-conversation, so what one collects the next one already knows.',
+              'טבלה שייכת לך, לא לצ\'אטבוט אחד — מחירון, תורים, לידים. כל צ\'אטבוט שתסמן יכול לקרוא ממנה ולכתוב אליה תוך כדי שיחה, כך שמה שאחד אסף השני כבר יודע.'),
+    },
+    {
+      nav: 'interactions',
+      target: ['interactions-list', 'nav-interactions'],
+      title: L('What customers actually said', 'מה הלקוחות באמת אמרו'),
+      body: L('Every real conversation — from your website or WhatsApp — lands here in full. This is where you find out what a chatbot got wrong, and it is the fastest way to know what to fix.',
+              'כל שיחה אמיתית — מהאתר או מוואטסאפ — נוחתת כאן במלואה. כאן מגלים במה צ\'אטבוט טעה, וזו הדרך המהירה ביותר לדעת מה לתקן.'),
+    },
+    {
+      nav: 'settings',
+      target: ['api-key', 'nav-settings'],
+      title: L('One key runs all of it', 'מפתח אחד מפעיל את הכל'),
+      body: L('Every chatbot thinks with the key on this screen. If it is wrong or runs out, nothing answers anywhere — so it is the first place to look when everything goes quiet at once.',
+              'כל צ\'אטבוט חושב עם המפתח שבמסך הזה. אם הוא שגוי או נגמר, שום דבר לא עונה בשום מקום — אז זה המקום הראשון לבדוק כשהכל משתתק בבת אחת.'),
+    },
+  ];
+
+  /**
+   * The spotlight.
+   *
+   * Four dark panels around a hole rather than an SVG mask: it is fewer moving
+   * parts and it survives the `zoom` on <body>, which is the thing that makes
+   * this harder than it looks. `getBoundingClientRect` reports visual pixels,
+   * and a fixed box drawn inside the zoomed subtree is scaled again — so every
+   * measurement is divided by the zoom before it is used, or the ring lands
+   * 28% too small and up and to the left of what it is pointing at.
+   */
+  function PlatformTour({ onNav, onClose, onBuild }) {
+    const steps = TOUR_STEPS();
+    const [i, setI] = useState(0);
+    const [box, setBox] = useState(null);
+    const [view, setView] = useState({ w: 0, h: 0 });
+    const step = steps[i];
+    const missingSince = useRef(0);
+
+    useEffect(() => { onNav(step.nav); }, [i]);
+
+    /* Measured every frame rather than on events. The target arrives a tick
+       after the screen switches, moves while a list loads, and moves again
+       when something scrolls; one loop covers all of it. */
+    useEffect(() => {
+      let raf = 0;
+      let scrolled = false;
+      missingSince.current = Date.now();
+      const tick = () => {
+        const z = Number(getComputedStyle(document.body).zoom) || 1;
+        const el = step.target.map(t => document.querySelector(`[data-tour="${t}"]`)).find(Boolean);
+        if (el) {
+          missingSince.current = 0;
+          // A ring drawn below the fold is a ring pointing at nothing.
+          if (!scrolled) { scrolled = true; el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+          const r = el.getBoundingClientRect();
+          setBox({ x: r.left / z, y: r.top / z, w: r.width / z, h: r.height / z });
+        } else if (missingSince.current && Date.now() - missingSince.current > 2500) {
+          // Nothing to point at and nothing coming: rather than a tour that
+          // stalls on a blank screen, move on.
+          missingSince.current = 0;
+          setI(n => (n + 1 < steps.length ? n + 1 : n));
+        }
+        setView({ w: window.innerWidth / z, h: window.innerHeight / z });
+        raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+      return () => cancelAnimationFrame(raf);
+    }, [i]);
+
+    function finish(then) {
+      markTourSeen();
+      onClose();
+      if (then) then();
+    }
+
+    const last = i === steps.length - 1;
+    const pad = 8;
+    const hole = box
+      ? {
+          x: Math.max(box.x - pad, 0),
+          y: Math.max(box.y - pad, 0),
+          w: box.w + pad * 2,
+          // A list longer than the screen would otherwise fill it, and the card
+          // would have nowhere left to stand.
+          h: Math.min(box.h + pad * 2, Math.max(view.h - 300, 120)),
+        }
+      : { x: view.w / 2, y: view.h / 2, w: 0, h: 0 };
+
+    /* Below the target when there is room for the card, above it when there is
+       not, and never off the side. */
+    const CARD = { w: 380, h: 250 };
+    const below = hole.y + hole.h + 14;
+    const top = below + CARD.h < view.h ? below : Math.max(hole.y - CARD.h - 14, 12);
+    const left = Math.min(Math.max(hole.x + hole.w / 2 - CARD.w / 2, 16), Math.max(view.w - CARD.w - 16, 16));
+
+    const shade = 'rgba(13,15,20,0.64)';
+    const panel = extra => ({ position: 'fixed', background: shade, zIndex: 500, ...extra });
+
+    return (
+      <React.Fragment>
+        {/* the dark, in four pieces around the hole */}
+        <div style={panel({ left: 0, top: 0, width: '100%', height: Math.max(hole.y, 0) })} />
+        <div style={panel({ left: 0, top: hole.y + hole.h, width: '100%', height: Math.max(view.h - hole.y - hole.h, 0) })} />
+        <div style={panel({ left: 0, top: hole.y, width: Math.max(hole.x, 0), height: hole.h })} />
+        <div style={panel({ left: hole.x + hole.w, top: hole.y, width: Math.max(view.w - hole.x - hole.w, 0), height: hole.h })} />
+        {/* the hole itself is covered too: the tour is a line, not a maze */}
+        <div style={{ position: 'fixed', left: hole.x, top: hole.y, width: hole.w, height: hole.h, zIndex: 500 }} />
+        <div style={{
+          position: 'fixed', left: hole.x, top: hole.y, width: hole.w, height: hole.h, zIndex: 501,
+          border: '2px solid var(--primary)', borderRadius: 14, pointerEvents: 'none',
+          boxShadow: '0 0 0 3px var(--primary-glow), 0 8px 40px rgba(0,0,0,0.30)',
+          transition: 'left 0.25s, top 0.25s, width 0.25s, height 0.25s',
+        }} />
+
+        <div dir={uiDir()} style={{
+          position: 'fixed', left, top, width: CARD.w, zIndex: 502,
+          background: 'var(--bg-card)', borderRadius: 'var(--r-xl)', border: '1px solid var(--border)',
+          boxShadow: 'var(--shadow-lg)', padding: '20px 22px',
+          transition: 'left 0.25s, top 0.25s',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10 }}>
+            <SpiderLogo size={30} still />
+            <Eyebrow style={{ padding: 0 }}>{L(`Step ${i + 1} of ${steps.length}`, `שלב ${i + 1} מתוך ${steps.length}`)}</Eyebrow>
+            <div style={{ flexGrow: 1 }} />
+            <div style={{ display: 'flex', gap: 4 }}>
+              {steps.map((_, n) => (
+                <div key={n} style={{ width: n === i ? 16 : 6, height: 6, borderRadius: 99, background: n <= i ? 'var(--primary)' : 'var(--bg-hover)', transition: 'width 0.2s' }} />
+              ))}
+            </div>
+          </div>
+
+          <h2 style={{ margin: '0 0 8px', fontSize: 19, fontWeight: 800, letterSpacing: '-0.4px' }}>{step.title}</h2>
+          <p style={{ margin: '0 0 18px', fontSize: 13.5, lineHeight: 1.7, color: 'var(--text-2)' }}>{step.body}</p>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button onClick={() => finish()} style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)', textDecoration: 'underline', textUnderlineOffset: 3, padding: '8px 2px', background: 'none', border: 'none' }}>
+              {L('Skip the tour', 'דלג על הסיור')}
+            </button>
+            <div style={{ flexGrow: 1 }} />
+            {i > 0 && <Btn size="sm" onClick={() => setI(i - 1)}>{L('Back', 'חזרה')}</Btn>}
+            <Btn variant="primary" size="sm" onClick={() => (last ? finish(onBuild) : setI(i + 1))}
+              style={{ padding: '9px 18px', fontSize: 13.5 }}>
+              {last ? L('Build one of my own', 'בנה לי אחד משלי') : L('Next', 'הבא')}
+            </Btn>
+          </div>
+          {last && (
+            <button onClick={() => finish()} style={{ marginTop: 10, width: '100%', fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)', padding: '6px 0', background: 'none', border: 'none' }}>
+              {L('I will look around myself', 'אסתכל בעצמי')}
+            </button>
+          )}
+        </div>
+      </React.Fragment>
     );
   }
 
@@ -8379,7 +8600,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>or press “New AI Chatbot” to build it yourself</div>
           </div>
         ) : view === 'grid' ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(358px,1fr))', gap: 16 }}>
+          <div data-tour="agent-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(358px,1fr))', gap: 16 }}>
             {/* Searching is looking for something that exists — the tile for
                 making a new one only gets in the way then. */}
             {!query && !branch && !channel && (
@@ -8753,7 +8974,7 @@ npm run migrate            # הרצה בפועל`}</Block>
           <div style={{ padding: 20, borderRadius: 'var(--r-lg)', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: 'var(--danger)', fontSize: 13 }}>{error}</div>
         ) : (
           <React.Fragment>
-            <div style={{ background: 'var(--bg-card)', borderRadius: 'var(--r-lg)', border: '1px solid var(--border)', overflowX: 'auto' }}>
+            <div data-tour="interactions-list" style={{ background: 'var(--bg-card)', borderRadius: 'var(--r-lg)', border: '1px solid var(--border)', overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border)' }}>
@@ -9923,7 +10144,7 @@ npm run migrate            # הרצה בפועל`}</Block>
   function HomeComposer({ value, onChange, onSend, disabled, placeholder, dir, width = 720, fieldRef }) {
     const [focus, setFocus] = useState(false);
     return (
-      <div dir={dir} style={{
+      <div dir={dir} data-tour="home-composer" style={{
         width: `min(${width}px, 100%)`, margin: '0 auto',
         background: 'var(--bg-card)', border: `1px solid ${focus ? 'var(--primary)' : 'var(--border)'}`,
         borderRadius: 26, boxShadow: focus ? '0 0 0 4px var(--primary-dim), var(--shadow)' : 'var(--shadow)',
@@ -10814,7 +11035,7 @@ npm run migrate            # הרצה בפועל`}</Block>
           {items.map(item => {
             const active = activeNav === item.id;
             return (
-              <button key={item.id} onClick={() => onNav(item.id)}
+              <button key={item.id} onClick={() => onNav(item.id)} data-tour={`nav-${item.id}`}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 11, height: 40, padding: '0 13px',
                   borderRadius: 11, flexShrink: 0,
@@ -11954,7 +12175,7 @@ npm run migrate            # הרצה בפועל`}</Block>
 
           <div style={{ flex: 1, minWidth: 0, maxWidth: stacked ? 'none' : 720, display: 'flex', flexDirection: 'column', gap: stacked ? 16 : 22 }}>
         {/* One key for the whole account */}
-        <div id="set-model" style={sectionStyle}>
+        <div id="set-model" data-tour="api-key" style={sectionStyle}>
           <div style={sectionHeader}>AI · Model &amp; API key</div>
           <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
@@ -12952,18 +13173,25 @@ npm run migrate            # הרצה בפועל`}</Block>
        account gets. */
     const [autopilot, setAutopilot] = useState(null);
 
-    /* An account with nothing in it gets the wizard rather than an empty list:
-       the whole point is that a first chatbot needs no prior knowledge. Only
-       once, and only after the agents have actually been read back. */
+    /* The tour, the first time anybody arrives.
+       It used to be Autopilot that opened itself here, on an account with no
+       chatbots — a condition that never holds, because registration seeds
+       every new account with the starter chatbots. So the wizard nobody could
+       reach is replaced by the tour, which has real work of theirs to point
+       at, and whose last card is what opens Autopilot. */
+    const [tour, setTour] = useState(false);
     const firstRunDone = useRef(false);
     useEffect(() => {
-      if (firstRunDone.current || loading || !settings || autopilot) return;
-      if (state.agents.length > 0) { firstRunDone.current = true; return; }
-      if (localStorage.getItem('agentforge_autopilot_seen') === '1') { firstRunDone.current = true; return; }
+      if (firstRunDone.current || loading || !settings || autopilot || isMobile) return;
       firstRunDone.current = true;
-      try { localStorage.setItem('agentforge_autopilot_seen', '1'); } catch { /* private window */ }
-      setAutopilot({ startStep: 1, resumed: null });
-    }, [loading, settings, state.agents.length, autopilot]);
+      if (tourSeen()) return;
+      setTour(true);
+    }, [loading, settings, autopilot, isMobile]);
+
+    /* A phone is a different tree with a different nav, so a spotlight there
+       is a different design. Until it exists, the tour is marked seen rather
+       than waiting to ambush them on a desktop later. */
+    useEffect(() => { if (isMobile) markTourSeen(); }, [isMobile]);
 
     // Debounced save
     const saveErrorRef = useRef('');
@@ -13199,7 +13427,7 @@ npm run migrate            # הרצה בפועל`}</Block>
           ) : nav === 'tables' ? (
             <TablesView agents={state.agents} onChanged={hydrate} />
           ) : nav === 'docs' ? (
-            <DocsView />
+            <DocsView onReplayTour={() => setTour(true)} />
           ) : nav === 'admin' ? (
             adminSelectedUser ? (
               <UserAgentsView
@@ -13261,6 +13489,13 @@ npm run migrate            # הרצה בפועל`}</Block>
           />
         )}
       </div>
+        {tour && (
+          <PlatformTour
+            onNav={setNav}
+            onClose={() => setTour(false)}
+            onBuild={() => setAutopilot({ startStep: 1, resumed: null })}
+          />
+        )}
         {autopilot && (
           <AutopilotWizard
             startStep={autopilot.startStep}

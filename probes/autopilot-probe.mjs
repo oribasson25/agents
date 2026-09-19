@@ -166,8 +166,8 @@ ok(src.includes('The latch is deliberately not flipped here'),
    'answering the key screen does not renumber the run that is asking it');
 ok(src.includes('const questionSteps = [1, 2, 3, 4, 5, 7].filter(n => FLOW.includes(n));'),
    '"question 3 of 6" counts the questions actually being asked');
-ok(src.includes('!settings || autopilot) return;'),
-   'and a fresh account is not asked for a key before the platform knows whether it has one');
+ok(src.includes('|| !settings || autopilot ||'),
+   'and nothing opens by itself before the platform knows what the account has');
 ok(src.includes('const after = at >= 0 ? FLOW[at + 1] : FLOW.find(n => n > w.step);'),
    'a step that leaves the flow underneath you falls forward, not back to the fork');
 
