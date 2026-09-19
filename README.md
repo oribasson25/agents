@@ -134,9 +134,19 @@ sends to the account's model, which returns the name, opening message, base prom
 JSON.
 
 Two of the screens are conditional, which is why the flow is an ordered list rather than
-`step + 1`. The key screen appears only for an account that has not got one: a second chatbot on
-an account that already set a key in Settings is never asked again, and the question count says
-five rather than six. The answer is latched when the run starts — supplying the key on screen 3
+`step + 1`. The key screen appears only for an account whose key **works**: the stored key is
+tried against the provider in the background while the first question is on screen, and only a key
+that answered takes the screen out of the flow, dropping the question count from six to five.
+`accountApiUsable` says only that the field is not empty, and a field that is not empty is not a
+key — an account here ran for a day with `25102004` in it, and everything reported "configured"
+until a model was asked for something.
+
+`verifyApiKey` is the check, and it is cheap on purpose: one token for Claude, a model listing for
+OpenAI, an `/api/tags` for a self-hosted server. It now guards Settings too, which is where the
+bad key got in; a key the provider refuses is not stored, and the refusal is shown in the
+provider's own words. And a build that dies on the key offers **Fix the key**, which returns to
+the key screen and then straight back into the build — retrying into the same wall was the only
+thing on offer before. The answer is latched when the run starts — supplying the key on screen 3
 would otherwise take screen 3 out of the flow and shrink "question 3 of 6" to "of 5" under the
 person who had just answered it.
 

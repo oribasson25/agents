@@ -509,6 +509,56 @@
     return c.provider === 'ollama' ? !!c.ollamaHost : !!c.apiKey;
   }
 
+  /**
+   * Whether the key can actually reach a model.
+   *
+   * `accountApiUsable` only says the field is not empty, and a field that is
+   * not empty is not a key — an account here had `25102004` saved in it, which
+   * everything treated as configured right up to the moment a model was asked
+   * for something. The cheapest call each provider offers, and the provider's
+   * own words back when it refuses.
+   */
+  async function verifyApiKey({ provider, apiKey, model, ollamaHost }) {
+    try {
+      if (provider === 'ollama') {
+        const host = (ollamaHost || '').replace(/\/$/, '');
+        if (!host) return { ok: false, why: L('No server address.', 'לא הוזנה כתובת שרת.') };
+        const r = await fetch(`${host}/api/tags`);
+        return r.ok ? { ok: true } : { ok: false, why: L(`The server answered ${r.status}.`, `השרת ענה ${r.status}.`) };
+      }
+      const key = (apiKey || '').trim();
+      if (!key) return { ok: false, why: L('No key.', 'לא הוזן מפתח.') };
+
+      if (provider === 'openai') {
+        const r = await fetch('https://api.openai.com/v1/models', { headers: { Authorization: `Bearer ${key}` } });
+        if (r.ok) return { ok: true };
+        const d = await r.json().catch(() => ({}));
+        return { ok: false, why: d.error?.message || `HTTP ${r.status}` };
+      }
+
+      // One token is the smallest thing Anthropic will price, and a refusal
+      // costs nothing at all.
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json', 'x-api-key': key,
+          'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({ model: model || DEFAULT_MODEL.claude, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
+      });
+      if (r.ok) return { ok: true };
+      const d = await r.json().catch(() => ({}));
+      return { ok: false, why: d.error?.message || `HTTP ${r.status}` };
+    } catch (err) {
+      return { ok: false, why: err.message };
+    }
+  }
+
+  /** Did the model refuse us, or refuse the request? They need different words. */
+  function looksLikeKeyProblem(message) {
+    return /x-api-key|api[ _-]?key|unauthorized|authentication|401|403|invalid.*credential|incorrect api key/i.test(String(message || ''));
+  }
+
   /* ─────────────────── API ─────────────────── */
   function getAuth() {
     try { return JSON.parse(sessionStorage.getItem('agentforge_auth') || 'null'); } catch { return null; }
@@ -5641,7 +5691,7 @@ function markSvgString(color, size = 30) {
           <UL>
             <li><strong>1 · העסק</strong> — שש קטגוריות, וגם ״אתאר בעצמי״ בטקסט חופשי</li>
             <li><strong>2 · תפקידים</strong> — נגזרים ממסך 1. כל בחירה הופכת ל<strong>סקיל</strong>, וזו נקודת ההסתעפות שקובעת את מסכים 4 ו־5</li>
-            <li><strong>3 · המפתח</strong> — <strong>רק אם אין מפתח בחשבון</strong>. אם כבר הוגדר אחד ב־Settings, המסך לא מופיע והשאלות נספרות בלעדיו</li>
+            <li><strong>3 · המפתח</strong> — <strong>רק אם אין בחשבון מפתח שעובד</strong>. המפתח השמור נבדק מול הספק ברקע בזמן השאלה הראשונה; רק מפתח שענה מוציא את המסך מהזרימה, והשאלות נספרות בלעדיו</li>
             <li><strong>4 · ידע</strong> — סריקת אתר (רצה כאן, עם המונה), העלאת קבצים (חילוץ טקסט ושמירה כאן), כתיבה ידנית, ויצירת הטבלה עם עמודות מוצעות</li>
             <li><strong>5 · יכולות</strong> — כתיבה לטבלה, חיבור Gmail (יוצא לגוגל וחוזר לוויזרד), קריאה חיה מהאתר, העברה לאדם</li>
             <li><strong>6 · חיבורים</strong> — <strong>מופיע רק אם צריך</strong>. ראה למטה</li>
@@ -5671,7 +5721,10 @@ function markSvgString(color, size = 30) {
             <li>התשובות נשמרות ב־<Code>sessionStorage</Code>, כי חיבור Gmail מוסר את הדפדפן לגוגל ומחזיר אותו אחרי דקה</li>
             <li>״אני יודע לבנות לבד״ בתחתית כל מסך מעביר לעורך <strong>עם</strong> הסוכן שכבר נוצר — לא משאיר יתום</li>
             </UL>
-          <Warn>המסך היחיד שיכול לעצור לקוח לגמרי הוא מסך 3: בלי מפתח של Anthropic או OpenAI אי אפשר לבנות כלום, וזה דורש חשבון פיתוח וכרטיס אשראי.</Warn>
+          <H3>המפתח נבדק, לא רק נשמר</H3>
+          <P>שדה המפתח קיבל בעבר כל מחרוזת. חשבון רץ יום שלם עם <Code>25102004</Code> בשדה — הכל אמר ״מוגדר״ עד הרגע שמישהו ביקש תשובה ממודל, ואז חזר <Code>invalid x-api-key</Code>. עכשיו המפתח נשלח לספק לפני שהוא נשמר: ל־Claude קריאה של טוקן אחד, ל־OpenAI שליפת רשימת המודלים (בלי טוקנים בכלל), ולשרת עצמי שאלה מה יש לו. מפתח שנדחה לא נשמר, והסיבה מוצגת במילים של הספק — גם בהגדרות וגם בוויזרד.</P>
+          <P>ואם בנייה נעצרת על המפתח (מפתח שבוטל, חשבון שנגמר בו הקרדיט), מוצג <Code>תקן את המפתח</Code> שמחזיר למסך 3 ומשם <strong>ישר חזרה לבנייה</strong> — לא לשאלות מההתחלה.</P>
+          <Warn>מה שעדיין יכול לעצור לקוח לגמרי: בלי מפתח של Anthropic או OpenAI אי אפשר לבנות כלום, וזה דורש חשבון פיתוח וכרטיס אשראי. אין מפתח ברמת הפלטפורמה.</Warn>
         </div>
       ),
 
@@ -7219,6 +7272,18 @@ npm run migrate            # הרצה בפועל`}</Block>
 
     useEffect(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [chat, busy]);
 
+    /* Runs once, on the way in. Nobody waits for it: the answer is needed by
+       the third question and it arrives during the first. */
+    const [keyChecked, setKeyChecked] = useState(false);
+    const [keyWorks, setKeyWorks] = useState(false);
+    const [repairing, setRepairing] = useState(false);   // on the key screen to fix a failed build
+    useEffect(() => {
+      let live = true;
+      if (!accountApiUsable()) { setKeyWorks(false); setKeyChecked(true); return undefined; }
+      verifyApiKey(accountApi()).then(r => { if (live) { setKeyWorks(r.ok); setKeyChecked(true); } });
+      return () => { live = false; };
+    }, []);
+
     /* ── the agent exists from the knowledge screen on, because documents, a
           crawl and a Gmail token all have to hang off something. ── */
     async function ensureAgent() {
@@ -7229,15 +7294,24 @@ npm run migrate            # הרצה בפועל`}</Block>
       return agent.id;
     }
 
+    /* Saving proves nothing — the server stores whatever it is handed. The key
+       is tried against the provider first, and only a key that answered is
+       saved and stepped past. */
     async function saveKey() {
       setKeyState('checking'); setError('');
+      const patch = { provider: w.provider, apiKey: w.apiKey.trim(), ollamaHost: w.ollamaHost.trim() };
+      const tried = await verifyApiKey({ ...patch, model: accountApi().model });
+      if (!tried.ok) {
+        setKeyState('bad');
+        setError(L(`That key was refused: ${tried.why}`, `המפתח נדחה: ${tried.why}`));
+        return false;
+      }
       try {
-        const patch = { provider: w.provider, apiKey: w.apiKey.trim(), ollamaHost: w.ollamaHost.trim() };
         const saved = await apiSaveSettings(patch);
-        ACCOUNT_API = {
+        setAccountApi({
           provider: saved.provider, apiKey: saved.apiKey || patch.apiKey,
           model: saved.model, ollamaHost: saved.ollamaHost || patch.ollamaHost,
-        };
+        });
         setKeyState('ok');
         return true;
       } catch (err) {
@@ -7421,11 +7495,15 @@ npm run migrate            # הרצה בפועל`}</Block>
        which the account may already have, and connections, which exists only
        when something genuinely needs code — so stepping forward asks the flow,
        never `+ 1`. */
-    /* Latched at the start of the run, not read per render: supplying the key
-       on screen 3 would otherwise take screen 3 out of the flow and shrink
-       "question 3 of 6" to "of 5" under the person who had just answered it. */
-    const haveKeyRef = useRef(accountApiUsable());
-    const haveKey = haveKeyRef.current;
+    /* A filled field is not a key. The account's key is tried against the
+       provider once, in the background, while the first question is on screen;
+       only a key that answered takes screen 3 out of the flow.
+       Latched once known, because supplying the key on screen 3 would
+       otherwise shrink "question 3 of 6" to "of 5" under the person who had
+       just answered it. */
+    const haveKeyRef = useRef(null);
+    if (haveKeyRef.current === null && keyChecked) haveKeyRef.current = keyWorks;
+    const haveKey = haveKeyRef.current === null ? false : haveKeyRef.current;
     const FLOW = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
       .filter(n => n !== 3 || !haveKey)
       .filter(n => n !== 6 || w.tools.length > 0);
@@ -7454,7 +7532,16 @@ npm run migrate            # הרצה בפועל`}</Block>
     })();
 
     async function next() {
-      if (w.step === 3) { if (keyState !== 'ok' && !(await saveKey())) return; go(4); return; }
+      if (w.step === 3) {
+        if (keyState !== 'ok' && !(await saveKey())) return;
+        /* The latch is deliberately not flipped here. Answering screen 3 is
+           what would take screen 3 out of the flow, and "question 3 of 6"
+           would become "of 5" the instant it was answered. */
+        // Sent here by a build that could not reach the model: go back to it,
+        // rather than walking the person through the questions a second time.
+        if (repairing) { setRepairing(false); go(8); build(); return; }
+        go(4); return;
+      }
       if (w.step === 4) { setBusy('know'); try { await commitKnowledge(); } finally { setBusy(''); } go(5); return; }
       if (w.step === 5) { await lookForTools(); return; }
       if (w.step === 7) { go(8); build(); return; }
@@ -7647,8 +7734,11 @@ npm run migrate            # הרצה בפועל`}</Block>
             {w.step === 3 && (
               <div>
                 <ApHeading of={qOf} step={qNum(3)} title={L('Which brain should it have?', 'איזה מוח לתת לו?')}
-                  sub={L('The chatbot thinks with a model from another company, so it needs a key of your own. This is the only technical step here.',
-                    'הצ\'אטבוט חושב עם מודל של חברה חיצונית, ולכן צריך מפתח משלך. זה הדבר הטכני היחיד כאן.')} />
+                  sub={keyState === 'bad'
+                    ? L('The key on this account was refused by the provider. Paste one that works and we carry on from where we were.',
+                      'המפתח ששמור בחשבון נדחה על ידי הספק. הדבק מפתח שעובד ונמשיך מאיפה שהיינו.')
+                    : L('The chatbot thinks with a model from another company, so it needs a key of your own. This is the only technical step here.',
+                      'הצ\'אטבוט חושב עם מודל של חברה חיצונית, ולכן צריך מפתח משלך. זה הדבר הטכני היחיד כאן.')} />
                 <div style={{ display: 'flex', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
                   {[{ k: 'claude', l: 'Claude', h: 'Anthropic · ' + L('recommended', 'מומלץ') },
                     { k: 'openai', l: 'ChatGPT', h: 'OpenAI' },
@@ -7669,7 +7759,7 @@ npm run migrate            # הרצה בפועל`}</Block>
                   {keyState === 'ok' && (
                     <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, padding: '0 14px', height: 44, borderRadius: 12, background: 'rgba(22,163,74,0.10)', color: 'var(--success)', fontSize: 13, fontWeight: 700 }}>
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-                      {L('key saved', 'המפתח נשמר')}
+                      {L('the key works', 'המפתח עובד')}
                     </div>
                   )}
                 </div>
@@ -7989,9 +8079,15 @@ npm run migrate            # הרצה בפועל`}</Block>
                   ))}
                 </div>
                 {error && (
-                  <div style={{ marginTop: 18, display: 'flex', gap: 10, alignItems: 'center' }}>
-                    <span style={{ fontSize: 13, color: 'var(--danger)' }}>{error}</span>
-                    <Btn variant="primary" onClick={build}>{L('Try again', 'נסה שוב')}</Btn>
+                  <div style={{ marginTop: 18, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+                    <span style={{ fontSize: 13, color: 'var(--danger)', unicodeBidi: 'plaintext' }}>{error}</span>
+                    {/* "Try again" against a key the provider has refused is a
+                        loop with no way out of it. */}
+                    {looksLikeKeyProblem(error)
+                      ? <Btn variant="primary" onClick={() => { haveKeyRef.current = false; setKeyState('bad'); setRepairing(true); go(3); }}>
+                          {L('Fix the key', 'תקן את המפתח')}
+                        </Btn>
+                      : <Btn variant="primary" onClick={build}>{L('Try again', 'נסה שוב')}</Btn>}
                   </div>
                 )}
               </div>
@@ -11632,10 +11728,22 @@ npm run migrate            # הרצה בפועל`}</Block>
       });
     }
 
+    /* The key is tried against the provider before it is stored. This field
+       used to take any string at all, and an account ran for a day with
+       `25102004` in it — everything said "configured" until something asked a
+       model for an answer. */
+    const [keyTried, setKeyTried] = useState(null);   // { ok, why }
     async function save() {
       setSaving(true);
       setError(null);
+      setKeyTried(null);
       try {
+        const tried = await verifyApiKey(draft);
+        setKeyTried(tried);
+        if (!tried.ok) {
+          setError(L(`That key was refused: ${tried.why}`, `המפתח נדחה: ${tried.why}`));
+          return;
+        }
         await onSaveSettings(draft);
         setSaved(true);
       } catch (err) {
@@ -11646,7 +11754,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     }
 
     const models = MODELS_BY_PROVIDER[draft.provider] || CLAUDE_MODELS;
-    const usable = accountApiUsable(draft);
+    const usable = accountApiUsable(draft) && !(keyTried && !keyTried.ok);
     const sectionStyle = {
       background: 'var(--bg-card)', borderRadius: 'var(--r-lg)',
       border: '1px solid var(--border)', overflow: 'hidden',
@@ -11761,8 +11869,8 @@ npm run migrate            # הרצה בפועל`}</Block>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', paddingTop: 4, borderTop: '1px solid var(--border)', marginTop: 4 }}>
-              {saved && !dirty && <span style={{ fontSize: 12, color: 'var(--success)' }}>✓ {L('saved', 'נשמר')}</span>}
-              {error && <span style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</span>}
+              {saved && !dirty && <span style={{ fontSize: 12, color: 'var(--success)' }}>✓ {L('saved — the key works', 'נשמר — המפתח עובד')}</span>}
+              {error && <span style={{ fontSize: 12, color: 'var(--danger)', unicodeBidi: 'plaintext' }}>{error}</span>}
               {!usable && <span style={{ fontSize: 12, color: 'var(--warning)' }}>
                 {draft.provider === 'ollama'
                   ? L('Without a host address no AI Chatbot will answer', 'בלי כתובת שרת שום AI Chatbot לא יענה')

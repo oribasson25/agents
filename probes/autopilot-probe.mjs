@@ -141,8 +141,29 @@ ok(src.includes("(w.tools || []).some(t => t.keep)"), 'and the brief tells the s
 /* ── the key is asked for once, or not at all ── */
 ok(src.includes(".filter(n => n !== 3 || !haveKey)"),
    'an account that already has a key is never asked for one again');
-ok(src.includes('const haveKeyRef = useRef(accountApiUsable());'),
+ok(src.includes('const haveKeyRef = useRef(null);') && src.includes('if (haveKeyRef.current === null && keyChecked)'),
    'and the answer is latched, so answering screen 3 does not renumber the run under you');
+
+/* ── a filled field is not a key ── */
+const verify = lift('async function verifyApiKey({ provider, apiKey, model, ollamaHost }) {', '\n  /** Did the model refuse us');
+ok(verify.includes('api.anthropic.com/v1/messages') && verify.includes('max_tokens: 1'),
+   'Claude is checked with the smallest call it will price');
+ok(verify.includes('api.openai.com/v1/models'), 'OpenAI is checked without spending a token');
+ok(verify.includes('/api/tags'), 'and a self-hosted server by asking what it has');
+ok(verify.includes("return { ok: false, why:"), 'a refusal comes back in the provider\'s own words');
+
+ok(src.includes('verifyApiKey(accountApi()).then(r =>'),
+   'the account key is tried before the wizard decides to skip the key screen');
+ok(/const tried = await verifyApiKey\(\{ \.\.\.patch, model: accountApi\(\)\.model \}\);[\s\S]{0,200}if \(!tried\.ok\)/.test(src),
+   'and the key screen refuses to store a key the provider would not take');
+ok(/const tried = await verifyApiKey\(draft\);[\s\S]{0,200}if \(!tried\.ok\)/.test(src),
+   'Settings does the same, which is where the bad key got in');
+ok(src.includes('looksLikeKeyProblem(error)') && src.includes("L('Fix the key', 'תקן את המפתח')"),
+   'a build stopped by the key offers to fix the key rather than retrying into the same wall');
+ok(src.includes('if (repairing) { setRepairing(false); go(8); build(); return; }'),
+   'and a repaired key returns to the build instead of re-asking every question');
+ok(src.includes('The latch is deliberately not flipped here'),
+   'answering the key screen does not renumber the run that is asking it');
 ok(src.includes('const questionSteps = [1, 2, 3, 4, 5, 7].filter(n => FLOW.includes(n));'),
    '"question 3 of 6" counts the questions actually being asked');
 ok(src.includes('!settings || autopilot) return;'),
