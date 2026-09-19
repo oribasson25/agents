@@ -10704,6 +10704,8 @@ npm run migrate            # הרצה בפועל`}</Block>
       admin: ['Workspace', 'Admin'],
     };
     const inEditor = nav === 'agents' && state.view === 'editor' && editingAgent;
+    /* Docs and Settings are read; everything else is worked in. */
+    const roomy = nav !== 'docs' && nav !== 'settings';
     const trail = inEditor && editorCrumbs ? editorCrumbs : NAV_CRUMBS[nav] || NAV_CRUMBS.home;
 
     return (
@@ -10733,7 +10735,17 @@ npm run migrate            # הרצה בפועל`}</Block>
         ) : (
         <div style={{ flex: 1, overflowY: 'auto', position: 'relative' }}>
           <BgLogo size={560} wrapStyle={{ bottom: '-80px', right: '-80px' }} />
-          <div style={{ maxWidth: 1460, margin: '0 auto', padding: '30px 34px 80px', minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
+          {/* A screen you work in takes the window it is given — an editor, a
+              grid of cards, a table of conversations all get better with more
+              room. A screen you read keeps a measure, because a line of prose
+              two thousand pixels long is a line nobody finishes. The tall
+              workspaces also drop the deep bottom padding, which is there to
+              let a scrolling page end clear of the edge. */}
+          <div style={{
+            maxWidth: roomy ? 'none' : 1460, margin: '0 auto', width: '100%',
+            padding: roomy ? '26px 30px 26px' : '30px 34px 80px',
+            minHeight: '100%', display: 'flex', flexDirection: 'column',
+          }}>
           <ApiKeyNote />
           {nav === 'assistant' ? (
             <AssistantHistoryView onOpenAgent={openAgent} />

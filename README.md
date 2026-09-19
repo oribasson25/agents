@@ -206,6 +206,14 @@ The browser keeps its own session log for test runs and provider errors. Togethe
 the tool assistant, the skill assistant and the platform assistant receive, so "fix it" works
 without pasting a traceback.
 
+## Width
+
+A screen you work in takes the window: the agent editor, the grid of AI Chatbots, the
+Interactions table and Admin drop the content column's cap and its deep bottom padding, which
+is there so a scrolling page ends clear of the edge. On a 1512pt laptop that was 289px of
+gutter and 80px at the bottom going spare. Documentation and Settings keep the 1460 measure —
+a line of prose two thousand pixels long is a line nobody finishes.
+
 ## The mark as an avatar
 
 An AI Chatbot does not wear an emoji or an uploaded picture: it wears the platform's own mark,
