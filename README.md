@@ -150,7 +150,16 @@ because documents, a crawl and a Gmail token all need something to hang off. And
 in `sessionStorage`, because connecting Gmail hands the browser to Google and gets it back a
 minute later — the return lands back in the wizard rather than in the editor.
 
-The wizard does not write Python tools. Someone who needs one belongs in Advanced.
+**Tools, only where there is no alternative.** Almost nothing needs code: knowledge answers
+questions, the table records what is collected, Gmail sends, the crawler reads the site. A tool is
+for the one thing none of those reach — another company's system. `autopilotDetectTools` runs once,
+on the way out of the abilities screen and only when free text was written, and is instructed to
+refuse by default: an empty list is the expected answer, and then screen 6 never appears. When one
+is warranted, the screen names it in the owner's words, names the service, and gives each
+credential a field, numbered steps for fetching it and a link to the right page. `autopilotWriteTool`
+then writes the Python per tool, one call each; a tool that does not come back is dropped rather
+than saved half-written, because a broken tool inside a chatbot its owner cannot read is worse than
+no tool. At most two.
 
 ## The home screen
 

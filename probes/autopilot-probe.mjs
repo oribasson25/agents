@@ -104,5 +104,39 @@ ok(src.includes('loadAutopilot()') && src.includes('gmail_connected'),
 ok(/onAdvanced=\{existingId =>/.test(src), 'skipping hands the half-built chatbot to the editor rather than orphaning it');
 ok(src.includes('sessionStorage.setItem(AUTOPILOT_KEY'), 'the answers survive leaving the page');
 
+/* ── a tool is the exception, not the default ── */
+const detect = lift('async function autopilotDetectTools(brief) {', '\n  /** The Python for one approved tool');
+for (const [what, needle] of [
+  ['it is told the chatbot already has knowledge', 'searchable knowledge base'],
+  ['…a table', 'table it can read, add to and update'],
+  ['…email', 'sending email'],
+  ['…live reading', 'reading a page'],
+  ['it is told to refuse by default', 'When in doubt, propose nothing'],
+  ['nothing is the expected answer', 'That is the common answer'],
+  ['and it is capped', 'At most two tools'],
+]) {
+  ok(detect.includes(needle), `the detector: ${what}`, needle);
+}
+ok(detect.includes('"steps"') && detect.includes('real, specific clicks'),
+   'and every credential comes back with the steps to fetch it');
+ok(/slice\(0, 2\)/.test(detect), 'no more than two tools reach the screen');
+ok(detect.includes("return [];"), 'a detector that fails or answers rubbish proposes nothing');
+
+const writer = lift('async function autopilotWriteTool(tool, brief) {', '\n  /** The brief the generator reads');
+ok(writer.includes('def run(**kwargs)'), 'the writer is held to the shape a tool must have');
+ok(writer.includes('os.environ'), 'and to taking its secrets from the environment');
+ok(writer.includes('readable error string instead of raising'), 'and to failing in words a customer can read');
+ok(writer.includes('which one is not set'), 'and to saying which key is missing rather than crashing');
+ok(writer.includes('Never invent an endpoint'), 'and to not inventing an endpoint it does not know');
+
+/* ── the screen only exists when it has to ── */
+ok(src.includes("FLOW = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].filter(n => n !== 6 || w.tools.length > 0)"),
+   'the connections screen is skipped when nothing needs one');
+ok(src.includes('if (!asked || w.toolsChecked) { go(7); return; }'),
+   'and the detector is not even called without something to read');
+ok(/writtenTools\.push\(await autopilotWriteTool/.test(src) && src.includes('/* leave it out */'),
+   'a tool that will not come back is dropped rather than half-saved');
+ok(src.includes("(w.tools || []).some(t => t.keep)"), 'and the brief tells the skills the tool exists');
+
 console.log(`\n${failed ? `${failed} FAILURE(S)` : 'all green'}`);
 process.exit(failed ? 1 : 0);

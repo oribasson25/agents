@@ -5644,10 +5644,22 @@ function markSvgString(color, size = 30) {
             <li><strong>3 · המפתח</strong> — ספק ומפתח, נשמרים בהגדרות החשבון מיד</li>
             <li><strong>4 · ידע</strong> — סריקת אתר (רצה כאן, עם המונה), העלאת קבצים (חילוץ טקסט ושמירה כאן), כתיבה ידנית, ויצירת הטבלה עם עמודות מוצעות</li>
             <li><strong>5 · יכולות</strong> — כתיבה לטבלה, חיבור Gmail (יוצא לגוגל וחוזר לוויזרד), קריאה חיה מהאתר, העברה לאדם</li>
-            <li><strong>6 · אופי</strong> — שם, צבע, סגנון, וכללים משלך</li>
-            <li><strong>7 · בנייה</strong> — קריאת מודל אחת שמחזירה שם, הודעת פתיחה, בייס־פרומפט וסקילים</li>
-            <li><strong>8 · לולאת אישור</strong> — ראה למטה</li>
-            <li><strong>9 · פרסום</strong> — סניפט לאתר, וואטסאפ, או דילוג</li>
+            <li><strong>6 · חיבורים</strong> — <strong>מופיע רק אם צריך</strong>. ראה למטה</li>
+            <li><strong>7 · אופי</strong> — שם, צבע, סגנון, וכללים משלך</li>
+            <li><strong>8 · בנייה</strong> — קריאת מודל אחת שמחזירה שם, הודעת פתיחה, בייס־פרומפט וסקילים, ועוד קריאה לכל טול</li>
+            <li><strong>9 · לולאת אישור</strong> — ראה למטה</li>
+            <li><strong>10 · פרסום</strong> — סניפט לאתר, וואטסאפ, או דילוג</li>
+          </UL>
+
+          <H3>טולים — רק כשאין ברירה</H3>
+          <P>כמעט שום דבר לא צריך קוד. הידע עונה על שאלות, הטבלה רושמת מה שנאסף, Gmail שולח, והסורק קורא את האתר. טול נחוץ רק לדבר האחד שאף אחד מהם לא מגיע אליו — <strong>מערכת של חברה אחרת</strong>: מעקב משלוח אצל שליח, הפקת חשבונית בתוכנת הנהלת חשבונות, שליחת SMS דרך ספק.</P>
+          <P>הזיהוי רץ פעם אחת, ביציאה ממסך 5, ורק אם נכתב טקסט חופשי — אין מקור אחר שיכול לרמז על מערכת חיצונית. המודל מונחה <strong>לסרב כברירת מחדל</strong>: אם אין ודאות, הוא מחזיר רשימה ריקה, ואז מסך 6 בכלל לא מופיע.</P>
+          <P>כשכן צריך, מסך 6 מציג את הטול בשפה של בעל העסק (״לשלוח לך וואטסאפ על ביטול מאוחר״), את השירות שמדובר בו, ולכל מפתח שנדרש — <strong>שדה, שלבים ממוספרים איך להשיג אותו, וקישור לעמוד הנכון</strong>. אפשר לומר ״לא צריך״ ולוותר, ואפשר להשאיר מפתח ריק ולמלא אחר כך.</P>
+          <UL>
+            <li>הקוד נכתב בקריאת מודל נפרדת לכל טול, עם הנחיה לא להמציא endpoint שהוא לא בטוח בו</li>
+            <li>המפתחות נשמרים כ־<Code>envVars</Code> של הטול, ונקראים ב־<Code>os.environ</Code></li>
+            <li>טול שהכתיבה שלו נכשלה פשוט לא נשמר — טול שבור בתוך צ'אטבוט שהבעלים לא יודע לקרוא גרוע מאין טול</li>
+            <li>לכל היותר שני טולים</li>
           </UL>
 
           <H3>לולאת האישור</H3>
@@ -5658,8 +5670,7 @@ function markSvgString(color, size = 30) {
             <li>הסוכן נוצר כבר במעבר למסך 4, כי מסמכים, סריקה וטוקן של Gmail חייבים להיתלות על משהו</li>
             <li>התשובות נשמרות ב־<Code>sessionStorage</Code>, כי חיבור Gmail מוסר את הדפדפן לגוגל ומחזיר אותו אחרי דקה</li>
             <li>״אני יודע לבנות לבד״ בתחתית כל מסך מעביר לעורך <strong>עם</strong> הסוכן שכבר נוצר — לא משאיר יתום</li>
-            <li>הוויזרד לא יוצר טולים בפייתון. מי שצריך אחד שייך ל־Advanced</li>
-          </UL>
+            </UL>
           <Warn>המסך היחיד שיכול לעצור לקוח לגמרי הוא מסך 3: בלי מפתח של Anthropic או OpenAI אי אפשר לבנות כלום, וזה דורש חשבון פיתוח וכרטיס אשראי.</Warn>
         </div>
       ),
@@ -6976,6 +6987,84 @@ npm run migrate            # הרצה בפועל`}</Block>
     };
   }
 
+  /**
+   * Does anything here actually need code?
+   *
+   * Almost nothing does. Knowledge answers questions, a table records what is
+   * collected, Gmail sends, the crawler reads the site. A tool is for the one
+   * thing none of those reach: another company's system. So this is asked to
+   * refuse by default — a wizard that invents a tool for every sentence hands
+   * a beginner Python to maintain, which is the opposite of the point.
+   */
+  async function autopilotDetectTools(brief) {
+    const system = [
+      'You decide whether an AI customer-service chatbot needs a custom Python tool, and you are strict about it.',
+      'The chatbot ALREADY has, without any tool: a searchable knowledge base of the business\'s own documents and website; a table it can read, add to and update; sending email from the owner\'s mailbox; and reading a page of the owner\'s website live.',
+      'Propose a tool ONLY for something none of those can do — reaching another company\'s system over HTTP. Checking a courier\'s tracking, creating an invoice in an accounting service, looking something up in a CRM, sending a WhatsApp or SMS through a provider.',
+      'Do NOT propose a tool for: answering from the business\'s own information, recording a booking or a lead, sending email, arithmetic, or anything you are unsure about. When in doubt, propose nothing.',
+      'At most two tools. Answer with ONE JSON object and nothing else, no prose, no code fence.',
+      'Shape: { "tools": [ { "name": snake_case string, "purpose": string, "service": string, "secrets": [ { "key": SCREAMING_SNAKE string, "label": string, "steps": [string], "url": string } ] } ] }',
+      'purpose and label and steps are written in the language of the brief; name and key stay ASCII.',
+      'purpose: one sentence saying what the chatbot will be able to do, in plain words a shop owner understands.',
+      'service: the company whose system it talks to, by name.',
+      'secrets: every credential the owner must fetch themselves. steps are the real, specific clicks to get it — where to sign in, which menu, which button — 2 to 5 of them. url is the page to start on. If the service needs no credential, use an empty list.',
+      'If nothing here needs a tool, answer { "tools": [] }. That is the common answer and it is a good one.',
+    ].join('\n');
+
+    const raw = await callWithToolDefs({ system, history: [{ role: 'user', content: brief }], tools: [], execute: async () => '', maxTokens: 2048 });
+    const a = raw.indexOf('{'), b = raw.lastIndexOf('}');
+    if (a < 0 || b < a) return [];
+    let parsed;
+    try { parsed = JSON.parse(raw.slice(a, b + 1)); } catch { return []; }
+    return (Array.isArray(parsed.tools) ? parsed.tools : []).slice(0, 2).map(t => ({
+      id: uid(),
+      name: String(t.name || 'external_call').trim().replace(/[^a-z0-9_]/gi, '_').toLowerCase().slice(0, 40),
+      purpose: String(t.purpose || '').trim().slice(0, 300),
+      service: String(t.service || '').trim().slice(0, 60),
+      keep: true,
+      secrets: (Array.isArray(t.secrets) ? t.secrets : []).slice(0, 4).map(sec => ({
+        key: String(sec.key || 'API_KEY').trim().replace(/[^A-Z0-9_]/gi, '_').toUpperCase().slice(0, 50),
+        label: String(sec.label || '').trim().slice(0, 120),
+        steps: (Array.isArray(sec.steps) ? sec.steps : []).slice(0, 5).map(x => String(x).trim().slice(0, 200)).filter(Boolean),
+        url: /^https?:\/\//.test(sec.url || '') ? sec.url : '',
+        value: '',
+      })),
+    }));
+  }
+
+  /** The Python for one approved tool. Written per tool, not in one blob. */
+  async function autopilotWriteTool(tool, brief) {
+    const system = [
+      'You write one Python tool for a customer-service chatbot. Answer with ONE JSON object and nothing else, no prose, no code fence.',
+      'Shape: { "code": string, "packages": string, "parameters": [ { "name": string, "type": "string"|"number"|"integer"|"boolean", "description": string } ] }',
+      'code MUST define `def run(**kwargs):`. Declared parameters arrive in kwargs. Secrets come from os.environ by the exact key names given. Only the standard library plus the packages you list are available. There is no disk. Outbound HTTPS works.',
+      'Return a short human-readable string from run(), and return a readable error string instead of raising — the chatbot reads it out loud, so it must make sense to a customer.',
+      'Handle a missing environment variable by returning a string saying which one is not set.',
+      'Never invent an endpoint you are not confident about. If you are unsure of the exact API, write the call against the service\'s documented base URL and say so in the description rather than guessing a path that does not exist.',
+      'packages: comma separated, or an empty string. Prefer the standard library.',
+      'parameters: only what the chatbot must supply per call. Keep it to three at most.',
+    ].join('\n');
+
+    const ask = `Business brief:\n${brief}\n\nThe tool: ${tool.name} — ${tool.purpose}\nIt talks to: ${tool.service || 'an external HTTP API'}\nEnvironment variables available: ${tool.secrets.map(x => x.key).join(', ') || 'none'}`;
+    const raw = await callWithToolDefs({ system, history: [{ role: 'user', content: ask }], tools: [], execute: async () => '', maxTokens: 3000 });
+    const a = raw.indexOf('{'), b = raw.lastIndexOf('}');
+    if (a < 0 || b < a) throw new Error(L('The model did not return a tool.', 'המודל לא החזיר טול.'));
+    const spec = JSON.parse(raw.slice(a, b + 1));
+    return {
+      id: tool.id,
+      name: tool.name,
+      description: tool.purpose,
+      code: String(spec.code || ''),
+      packages: String(spec.packages || '').slice(0, 200),
+      parameters: (Array.isArray(spec.parameters) ? spec.parameters : []).slice(0, 3).map(pp => ({
+        name: String(pp.name || '').trim().slice(0, 40),
+        type: ['string', 'number', 'integer', 'boolean'].includes(pp.type) ? pp.type : 'string',
+        description: String(pp.description || '').trim().slice(0, 200),
+      })).filter(pp => pp.name),
+      envVars: tool.secrets.map(sec => ({ key: sec.key, value: sec.value })),
+    };
+  }
+
   /** The brief the generator reads — every answer, in one paragraph. */
   function autopilotBrief(w) {
     const v = AUTOPILOT_CATALOG[w.biz];
@@ -6993,6 +7082,9 @@ npm run migrate            # הרצה בפועל`}</Block>
       w.abilities.mail ? 'It can send email on the owner\'s behalf.' : '',
       w.abilities.web ? 'It can read a page from the website live, mid-conversation.' : '',
       w.abilities.human ? 'It must hand over to a person when unsure.' : '',
+      (w.tools || []).some(t => t.keep)
+        ? `It has these custom tools and should call them when relevant: ${w.tools.filter(t => t.keep).map(t => `${t.name} (${t.purpose})`).join('; ')}.`
+        : '',
       `Tone: ${{ warm: 'warm and friendly', short: 'short and to the point', formal: 'formal' }[w.tone]}.`,
       w.rulesFree ? `Rules the owner insists on: ${w.rulesFree}` : '',
     ];
@@ -7074,10 +7166,12 @@ npm run migrate            # הרצה בפועל`}</Block>
       : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5" /><path d="m12 19-7-7 7-7" /></svg>;
   }
 
-  const AP_STEPS = () => [
-    L('Business', 'העסק'), L('Jobs', 'תפקידים'), L('Key', 'מפתח'),
-    L('Knowledge', 'ידע'), L('Abilities', 'יכולות'), L('Character', 'אופי'), L('Building', 'בנייה'),
-  ];
+  /** Indexed by step number, so an optional step does not shift the labels. */
+  const AP_STEPS = () => ({
+    1: L('Business', 'העסק'), 2: L('Jobs', 'תפקידים'), 3: L('Key', 'מפתח'),
+    4: L('Knowledge', 'ידע'), 5: L('Abilities', 'יכולות'), 6: L('Connections', 'חיבורים'),
+    7: L('Character', 'אופי'), 8: L('Building', 'בנייה'),
+  });
 
   /**
    * The wizard itself.
@@ -7093,6 +7187,7 @@ npm run migrate            # הרצה בפועל`}</Block>
       abilities: { web: false, human: true }, abilitiesFree: '',
       name: '', color: DEFAULT_AVATAR_COLOR, tone: 'warm', rulesFree: '',
       agentId: '', tableId: '', tableName: '', tableColumns: [],
+      tools: [], toolsChecked: false,
       round: 1, fixes: [], channel: '',
       whatsapp: { phoneNumberId: '', accessToken: '', appSecret: '', verifyToken: '' },
     };
@@ -7111,6 +7206,10 @@ npm run migrate            # הרצה בפועל`}</Block>
     const listRef = useRef(null);
 
     const set = patch => setW(prev => { const next = { ...prev, ...patch }; saveAutopilot(next); return next; });
+    const setTool = (i, patch) => set({ tools: w.tools.map((t, n) => (n === i ? { ...t, ...patch } : t)) });
+    const setSecret = (i, si, value) => set({
+      tools: w.tools.map((t, n) => (n === i ? { ...t, secrets: t.secrets.map((x, m) => (m === si ? { ...x, value } : x)) } : t)),
+    });
     const go = step => { setFreeOpen(false); setError(''); set({ step }); };
 
     const vertical = AUTOPILOT_CATALOG[w.biz] || null;
@@ -7225,19 +7324,33 @@ npm run migrate            # הרצה בפועל`}</Block>
     }
 
     /* ── the build ── */
+    const keptTools = w.tools.filter(t => t.keep);
     const buildLines = () => [
       { key: 'prompt', label: L('Writing its character and rules', 'כותב את האופי והכללים') },
       { key: 'skills', label: L(`Building ${Math.max(jobs.length, 1)} skills`, `בונה ${Math.max(jobs.length, 1)} מיומנויות`) },
+      ...(keptTools.length ? [{ key: 'tools', label: L(`Writing the ${keptTools[0].service || 'connection'} code`, `כותב את הקוד מול ${keptTools[0].service || 'השירות'}`) }] : []),
       { key: 'table', label: w.tableId ? L(`Wiring up the "${w.tableName}" table`, `מחבר את טבלת "${w.tableName}"`) : L('Organising the knowledge', 'מארגן את הידע') },
       { key: 'save', label: L('Saving the chatbot', 'שומר את הצ\'אטבוט') },
     ];
 
     async function build() {
       setError(''); setBuildAt(0);
+      const lines = buildLines();
       try {
         const id = await ensureAgent();
-        const spec = await autopilotGenerate(autopilotBrief({ ...w, tableName: w.tableName, tableColumns: w.tableColumns, abilities: { ...w.abilities, mail: wantsEmail || w.abilities.mail } }));
+        const brief = autopilotBrief({ ...w, abilities: { ...w.abilities, mail: wantsEmail || w.abilities.mail } });
+        const spec = await autopilotGenerate(brief);
         setBuildAt(2);
+
+        /* One call per tool, and a tool that does not come back is dropped
+           rather than saved half-written: a broken tool inside a chatbot its
+           owner cannot read is worse than no tool. */
+        const writtenTools = [];
+        for (const t of keptTools) {
+          try { writtenTools.push(await autopilotWriteTool(t, brief)); } catch { /* leave it out */ }
+        }
+        setBuildAt(lines.length - 1);
+
         const agent = makeAgent({
           id,
           name: (w.name || spec.name || vertical.name()).slice(0, 60),
@@ -7245,16 +7358,16 @@ npm run migrate            # הרצה בפועל`}</Block>
           openingMessage: spec.openingMessage || vertical.greeting(),
           basePrompt: spec.basePrompt,
           skills: spec.skills,
+          tools: writtenTools,
           tables: w.tableId ? [w.tableId] : [],
           emailEnabled: !!(wantsEmail || w.abilities.mail),
           scrapeUrls: w.abilities.web && w.siteUrl ? [w.siteUrl.trim()] : [],
         });
-        setBuildAt(3);
         await apiUpdate(agent);
         setBuilt(agent);
         setChat([{ role: 'assistant', content: agent.openingMessage }]);
-        setBuildAt(4);
-        go(8);
+        setBuildAt(lines.length);
+        go(9);
       } catch (err) {
         setError(err.message); setBuildAt(-1);
       }
@@ -7304,8 +7417,14 @@ npm run migrate            # הרצה בפועל`}</Block>
     }
 
     /* ── chrome ── */
+    /* The order, not the arithmetic: step 6 only exists when something here
+       genuinely needs code, so stepping forward asks the flow, never `+ 1`. */
+    const FLOW = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].filter(n => n !== 6 || w.tools.length > 0);
+    const at = FLOW.indexOf(w.step);
     const stepNames = AP_STEPS();
-    const onRail = w.step >= 1 && w.step <= 7;
+    const railSteps = FLOW.filter(n => n >= 1 && n <= 8);
+    const onRail = w.step >= 1 && w.step <= 8;
+
     const canNext = (() => {
       if (w.step === 1) return !!w.biz || !!w.bizFree.trim();
       if (w.step === 2) return jobs.length > 0 || !!w.jobsFree.trim();
@@ -7319,30 +7438,47 @@ npm run migrate            # הרצה בפועל`}</Block>
     async function next() {
       if (w.step === 3) { if (keyState !== 'ok' && !(await saveKey())) return; go(4); return; }
       if (w.step === 4) { setBusy('know'); try { await commitKnowledge(); } finally { setBusy(''); } go(5); return; }
-      if (w.step === 6) { go(7); build(); return; }
-      if (w.step === 8) { go(9); return; }
-      if (w.step === 9) { finish(true); return; }
-      go(w.step + 1);
+      if (w.step === 5) { await lookForTools(); return; }
+      if (w.step === 7) { go(8); build(); return; }
+      if (w.step === 10) { finish(true); return; }
+      go(FLOW[at + 1]);
     }
 
-    const nextLabel = [
-      '', L('Continue', 'ממשיכים'), L('Continue', 'ממשיכים'), L('Verify and continue', 'אימות והמשך'),
-      L('Continue', 'ממשיכים'), L('Continue', 'ממשיכים'), L('Build it for me', 'בנה לי אותו'),
-      L('Building…', 'בונה…'), L('It all looks right', 'הכל תקין — לפרסום'), L('Done', 'סיימנו'),
-    ][w.step];
+    /* Asked once, on the way out of the abilities screen, and only when there
+       is free text to read — nothing else can imply another company's system. */
+    async function lookForTools() {
+      const asked = [w.bizFree, w.jobsFree, w.abilitiesFree].some(t => t && t.trim().length > 8);
+      if (!asked || w.toolsChecked) { go(7); return; }
+      setBusy('tools');
+      try {
+        const found = await autopilotDetectTools(autopilotBrief(w));
+        set({ tools: found, toolsChecked: true });
+        go(found.length ? 6 : 7);
+      } catch {
+        set({ toolsChecked: true });
+        go(7);
+      } finally { setBusy(''); }
+    }
 
-    const skipLabel = w.step === 8
+    const nextLabel = {
+      1: L('Continue', 'ממשיכים'), 2: L('Continue', 'ממשיכים'), 3: L('Verify and continue', 'אימות והמשך'),
+      4: L('Continue', 'ממשיכים'), 5: L('Continue', 'ממשיכים'), 6: L('Continue', 'ממשיכים'),
+      7: L('Build it for me', 'בנה לי אותו'), 8: L('Building…', 'בונה…'),
+      9: L('It all looks right', 'הכל תקין — לפרסום'), 10: L('Done', 'סיימנו'),
+    }[w.step] || L('Continue', 'ממשיכים');
+
+    const skipLabel = w.step === 9
       ? L('Save and finish without publishing', 'שמור וסיים בלי לפרסם')
-      : (w.step === 9 ? L('Skip — do not publish now', 'לדלג — לא מפרסם עכשיו') : L('I know how to build one — take me to the editor', 'אני יודע לבנות לבד — קחו אותי לעורך'));
+      : (w.step === 10 ? L('Skip — do not publish now', 'לדלג — לא מפרסם עכשיו') : L('I know how to build one — take me to the editor', 'אני יודע לבנות לבד — קחו אותי לעורך'));
 
     function onSkip() {
-      if (w.step >= 8) { clearAutopilot(); onBuilt(built); return; }
+      if (w.step >= 9) { clearAutopilot(); onBuilt(built); return; }
       clearAutopilot();
       onAdvanced(w.agentId);
     }
 
     const panel = { flexGrow: 1, minHeight: 0, overflowY: 'auto', paddingInlineEnd: 6, display: 'flex', flexDirection: 'column', gap: 10 };
-    const tallStep = w.step === 4 || w.step === 5 || w.step === 8;
+    const tallStep = w.step === 4 || w.step === 5 || w.step === 6 || w.step === 9;
 
     return (
       <div dir={uiDir()} style={{
@@ -7358,15 +7494,15 @@ npm run migrate            # הרצה בפועל`}</Block>
           {onRail ? (
             <React.Fragment>
               <div style={{ flexGrow: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
-                {stepNames.map((_, i) => (
-                  <div key={i} style={{ flexGrow: 1, height: 4, borderRadius: 99, background: i < w.step ? 'var(--primary)' : 'var(--bg-hover)' }} />
+                {railSteps.map(n => (
+                  <div key={n} style={{ flexGrow: 1, height: 4, borderRadius: 99, background: n < w.step ? 'var(--primary)' : 'var(--bg-hover)' }} />
                 ))}
               </div>
-              <span style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600, whiteSpace: 'nowrap', minWidth: 92, textAlign: 'end' }}>{stepNames[w.step - 1]}</span>
+              <span style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600, whiteSpace: 'nowrap', minWidth: 92, textAlign: 'end' }}>{stepNames[w.step]}</span>
             </React.Fragment>
           ) : <div style={{ flexGrow: 1 }} />}
           <IconBtn title={w.step === 0 ? L('Close', 'סגירה') : L('Back', 'חזרה')}
-            onClick={() => (w.step === 0 ? onClose() : go(Math.max(w.step === 8 ? 8 : 0, w.step - 1)))}>
+            onClick={() => (w.step === 0 ? onClose() : go(w.step >= 9 ? 9 : FLOW[Math.max(at - 1, 0)]))}>
             {w.step === 0
               ? <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
               : <ApArrow back />}
@@ -7520,11 +7656,16 @@ npm run migrate            # הרצה בפועל`}</Block>
                 {w.provider !== 'ollama' && (
                   <div style={{ marginTop: 16, padding: '18px 20px', borderRadius: 16, background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
                     <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 11 }}>{L('No key yet? Two minutes.', 'אין לך מפתח? זה לוקח שתי דקות')}</div>
-                    <ol style={{ margin: 0, paddingInlineStart: 20, fontSize: 13, color: 'var(--text-2)', lineHeight: 2 }}>
-                      <li>{L('Sign up at', 'נכנסים ל־')} <a href={w.provider === 'claude' ? 'https://console.anthropic.com' : 'https://platform.openai.com'} target="_blank" rel="noreferrer">{w.provider === 'claude' ? 'console.anthropic.com' : 'platform.openai.com'}</a></li>
-                      <li>{L('Billing — add a starting amount ($5 is plenty)', 'Billing ← טוענים סכום התחלתי (5$ מספיקים להתחלה)')}</li>
-                      <li>{L('API Keys — Create Key — copy it and paste it here', 'API Keys ← Create Key ← מעתיקים ומדביקים כאן')}</li>
-                    </ol>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {[<React.Fragment key="a">{L('Sign up at', 'נכנסים ל־')} <a href={w.provider === 'claude' ? 'https://console.anthropic.com' : 'https://platform.openai.com'} target="_blank" rel="noreferrer">{w.provider === 'claude' ? 'console.anthropic.com' : 'platform.openai.com'}</a></React.Fragment>,
+                        L('Billing — add a starting amount ($5 is plenty)', 'Billing ← טוענים סכום התחלתי (5$ מספיקים להתחלה)'),
+                        L('API Keys — Create Key — copy it and paste it here', 'API Keys ← Create Key ← מעתיקים ומדביקים כאן')].map((line, li) => (
+                        <div key={li} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                          <span style={{ flexShrink: 0, width: 19, height: 19, borderRadius: '50%', background: 'var(--bg-hover)', color: 'var(--text-2)', fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>{li + 1}</span>
+                          <span style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.55, unicodeBidi: 'plaintext' }}>{line}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -7703,7 +7844,71 @@ npm run migrate            # הרצה בפועל`}</Block>
             )}
 
             {/* 6 · tone */}
-            {w.step === 6 && vertical && (
+            {/* 6 · connections — only when something needs code */}
+            {w.step === 6 && (
+              <React.Fragment>
+                <ApHeading title={L('One thing needs a connection', 'דבר אחד צריך חיבור')}
+                  sub={L('What you asked for reaches a system outside this platform, so it needs a key from them. I will write the code; you fetch the key — the steps are below.',
+                    'מה שביקשת מגיע למערכת שלא נמצאת כאן, ולכן צריך ממנה מפתח. את הקוד אני כותב; את המפתח צריך להביא — השלבים למטה.')} />
+                <div style={panel}>
+                  {w.tools.map((t, ti) => (
+                    <ApCard key={t.id} on={t.keep}>
+                      <div style={{ display: 'flex', gap: 13, alignItems: 'flex-start' }}>
+                        <div style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 11, background: t.keep ? 'var(--primary-glow)' : 'var(--bg-input)', color: t.keep ? 'var(--warning)' : 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{Icons.code}</div>
+                        <div style={{ flexGrow: 1 }}>
+                          <div style={{ fontSize: 14.5, fontWeight: 700, unicodeBidi: 'plaintext' }}>{t.purpose}</div>
+                          <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 3 }}>
+                            {t.service ? L(`talks to ${t.service}`, `מדבר מול ${t.service}`) : L('talks to an outside service', 'מדבר מול שירות חיצוני')}
+                            {' · '}<code style={{ fontFamily: MONO, fontSize: 11.5 }}>{t.name}</code>
+                          </div>
+                        </div>
+                        <Btn onClick={() => setTool(ti, { keep: !t.keep })}>{t.keep ? L('Not needed', 'לא צריך') : L('Add it', 'כן, צריך')}</Btn>
+                      </div>
+
+                      {t.keep && t.secrets.map((sec, si) => (
+                        <div key={sec.key} style={{ marginTop: 13, paddingTop: 13, borderTop: '1px solid var(--border)' }}>
+                          <label className="field-label" style={{ unicodeBidi: 'plaintext' }}>{sec.label || sec.key}</label>
+                          <input dir="ltr" type="password" value={sec.value} placeholder={sec.key}
+                            onChange={e => setSecret(ti, si, e.target.value)} style={{ fontFamily: MONO, fontSize: 12.5 }} />
+                          {sec.steps.length > 0 && (
+                            <div style={{ marginTop: 10, padding: '13px 16px', borderRadius: 12, background: 'var(--bg-panel)', border: '1px solid var(--border)' }}>
+                              <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 8 }}>{L('How to get it', 'איך משיגים את זה')}</div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                                {sec.steps.map((line, li) => (
+                                  <div key={li} style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
+                                    <span style={{ flexShrink: 0, width: 18, height: 18, borderRadius: '50%', background: 'var(--bg-hover)', color: 'var(--text-2)', fontSize: 10.5, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>{li + 1}</span>
+                                    <span style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.55, unicodeBidi: 'plaintext' }}>{line}</span>
+                                  </div>
+                                ))}
+                              </div>
+                              {sec.url && (
+                                <a href={sec.url} target="_blank" rel="noreferrer" dir="ltr"
+                                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 9, fontSize: 12.5, fontWeight: 700 }}>
+                                  {sec.url.replace(/^https?:\/\//, '').slice(0, 52)}
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" /></svg>
+                                </a>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </ApCard>
+                  ))}
+
+                  <div style={{ padding: '13px 16px', borderRadius: 12, background: 'var(--teal-dim)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                    <div style={{ color: 'var(--teal)', flexShrink: 0, marginTop: 1 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
+                    </div>
+                    <p style={{ margin: 0, fontSize: 12.5, color: 'var(--teal)', lineHeight: 1.6 }}>
+                      {L('You can leave a key empty and fill it in later — the chatbot will say the connection is not set up rather than pretend. Everything else works either way.',
+                        'אפשר להשאיר מפתח ריק ולמלא אחר כך — הצ\'אטבוט יגיד שהחיבור לא מוגדר במקום להמציא. כל השאר עובד כך או כך.')}
+                    </p>
+                  </div>
+                </div>
+              </React.Fragment>
+            )}
+
+            {w.step === 7 && vertical && (
               <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
                 <div style={{ flexGrow: 1, flexBasis: 420 }}>
                   <ApHeading step={6} title={L('How does it talk?', 'איך הוא מדבר?')} sub={L('All of it is a suggestion from your answers.', 'הכל מוצע לפי מה שענית.')} />
@@ -7746,7 +7951,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             )}
 
             {/* 7 · building */}
-            {w.step === 7 && (
+            {w.step === 8 && (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                 <SpiderLogo size={116} busy />
                 <h1 style={{ margin: '0 0 6px', fontSize: 28, fontWeight: 800, letterSpacing: '-0.6px' }}>
@@ -7773,7 +7978,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             )}
 
             {/* 8 · the review loop */}
-            {w.step === 8 && built && (
+            {w.step === 9 && built && (
               <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flexGrow: 1 }}>
                 <div style={{ flexShrink: 0, display: 'flex', alignItems: 'flex-end', gap: 14, marginBottom: 14, flexWrap: 'wrap' }}>
                   <div style={{ flexGrow: 1 }}>
@@ -7834,7 +8039,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             )}
 
             {/* 9 · publish */}
-            {w.step === 9 && built && (
+            {w.step === 10 && built && (
               <div>
                 <h1 style={{ margin: '0 0 6px', fontSize: 32, fontWeight: 800, letterSpacing: '-0.7px' }}>{L('Where will customers talk to it?', 'איפה הלקוחות ידברו איתו?')}</h1>
                 <p style={{ margin: '0 0 20px', fontSize: 15, color: 'var(--text-2)' }}>{L(`${built.name} already exists and is saved. This is only where it appears.`, `${built.name} כבר קיים ושמור. זה רק איפה הוא יופיע.`)}</p>
@@ -7896,15 +8101,15 @@ npm run migrate            # הרצה בפועל`}</Block>
           <div style={{ flexShrink: 0, minHeight: 84, padding: '0 32px', display: 'flex', alignItems: 'center', gap: 14, background: 'var(--bg-card)', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
             <button onClick={onSkip} style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', textDecoration: 'underline', textUnderlineOffset: 3, padding: '12px 4px', background: 'none', border: 'none' }}>{skipLabel}</button>
             <div style={{ flexGrow: 1 }} />
-            {error && w.step !== 7 && <span style={{ fontSize: 12.5, color: 'var(--danger)' }}>{error}</span>}
+            {error && w.step !== 8 && <span style={{ fontSize: 12.5, color: 'var(--danger)' }}>{error}</span>}
             {w.step === 2 && <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{L(`${jobs.length} chosen`, `${jobs.length} נבחרו`)}</span>}
-            {w.step === 8 && <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{L('as many rounds as you need', 'אין הגבלה על מספר הסבבים')}</span>}
-            {w.step === 9 && <Btn onClick={() => finish(false)}>{L('Later', 'אחר כך')}</Btn>}
-            <Btn variant="primary" disabled={!canNext || w.step === 7 || !!busy} onClick={next}
-              style={w.step === 8
+            {w.step === 9 && <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{L('as many rounds as you need', 'אין הגבלה על מספר הסבבים')}</span>}
+            {w.step === 10 && <Btn onClick={() => finish(false)}>{L('Later', 'אחר כך')}</Btn>}
+            <Btn variant="primary" disabled={!canNext || w.step === 8 || !!busy} onClick={next}
+              style={w.step === 9
                 ? { height: 48, padding: '0 28px', fontSize: 14.5, background: 'var(--success)', color: '#fff', boxShadow: 'none' }
                 : { height: 48, padding: '0 28px', fontSize: 14.5 }}>
-              {busy === 'know' ? L('Saving…', 'שומר…') : nextLabel}
+              {busy === 'know' ? L('Saving…', 'שומר…') : (busy === 'tools' ? L('Checking…', 'בודק…') : nextLabel)}
             </Btn>
           </div>
         )}
@@ -8730,7 +8935,7 @@ npm run migrate            # הרצה בפועל`}</Block>
     '- Parameter types are string, number, integer or boolean.',
     '- send_email is a built-in tool, switched on per AI Chatbot, that sends from a Gmail account connected on that AI Chatbot (Tools tab). You cannot connect Gmail for the user — say where to do it.',
     "- KNOWLEDGE is documents (pasted, PDF/DOCX upload, or crawled sites). On upload each one is rewritten by the model into short titled sections with a bilingual keyword line, then split into chunks; a question retrieves chunks by full-text search into the prompt. The search is LEXICAL, not semantic — it matches words, so a document only answers questions phrased with words it contains. You cannot upload files for the user, but you can tell them to press the tidy button on a document to have it reorganised.",
-    "- AUTOPILOT is a wizard that builds a whole AI Chatbot from questions about the business: it opens by itself on an empty account, and 'new chatbot' offers Autopilot or Advanced (the editor). It writes the base prompt and skills itself, and does the API key, the site crawl, file uploads, the table, Gmail and the channel inside itself. It ends in a loop: a test chat plus a notes field that rebuilds the chatbot until the person approves. You cannot run it for them; tell them to press New AI Chatbot and pick Autopilot.",
+    "- AUTOPILOT is a wizard that builds a whole AI Chatbot from questions about the business: it opens by itself on an empty account, and 'new chatbot' offers Autopilot or Advanced (the editor). It writes the base prompt and skills itself, and does the API key, the site crawl, file uploads, the table, Gmail and the channel inside itself. If something the person asked for needs another company's system, it also writes a Python tool for it and walks them through fetching the credential; it proposes none otherwise. It ends in a loop: a test chat plus a notes field that rebuilds the chatbot until the person approves. You cannot run it for them; tell them to press New AI Chatbot and pick Autopilot.",
     "- The CRAWLER on the Knowledge tab takes one URL and reads the whole domain from it: every internal link, plus the site's sitemap.xml, up to the page limit chosen beside the field. It follows the redirect the URL makes, treats example.com and www.example.com as one site, and obeys robots.txt. A subdomain is a different site and needs its own URL. It does not run JavaScript, so a site rendered in the browser comes back near-empty — the screen says how many such pages there were. You cannot start a crawl for the user; tell them where the field is.",
     "- TABLES are rows the account keeps — a price list, orders, leads — shared across its AI Chatbots rather than owned by one. Each chatbot is ticked onto the tables it may use, in its own Tables tab, and then it can read, add and update rows mid-conversation; it can never delete one or change a table's shape. You can make tables and read and write their rows yourself.",
     '- CHANNELS: the in-app test chat, an embeddable website widget (Export tab), and WhatsApp via Meta Cloud API (Whatsapp tab, needs a phone number id, access token, app secret and verify token from Meta). A WhatsApp number belongs to one AI Chatbot only.',
