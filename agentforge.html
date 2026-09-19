@@ -5641,7 +5641,7 @@ function markSvgString(color, size = 30) {
           <UL>
             <li><strong>1 · העסק</strong> — שש קטגוריות, וגם ״אתאר בעצמי״ בטקסט חופשי</li>
             <li><strong>2 · תפקידים</strong> — נגזרים ממסך 1. כל בחירה הופכת ל<strong>סקיל</strong>, וזו נקודת ההסתעפות שקובעת את מסכים 4 ו־5</li>
-            <li><strong>3 · המפתח</strong> — ספק ומפתח, נשמרים בהגדרות החשבון מיד</li>
+            <li><strong>3 · המפתח</strong> — <strong>רק אם אין מפתח בחשבון</strong>. אם כבר הוגדר אחד ב־Settings, המסך לא מופיע והשאלות נספרות בלעדיו</li>
             <li><strong>4 · ידע</strong> — סריקת אתר (רצה כאן, עם המונה), העלאת קבצים (חילוץ טקסט ושמירה כאן), כתיבה ידנית, ויצירת הטבלה עם עמודות מוצעות</li>
             <li><strong>5 · יכולות</strong> — כתיבה לטבלה, חיבור Gmail (יוצא לגוגל וחוזר לוויזרד), קריאה חיה מהאתר, העברה לאדם</li>
             <li><strong>6 · חיבורים</strong> — <strong>מופיע רק אם צריך</strong>. ראה למטה</li>
@@ -7142,10 +7142,10 @@ npm run migrate            # הרצה בפועל`}</Block>
     );
   }
 
-  function ApHeading({ step, title, sub }) {
+  function ApHeading({ step, of, title, sub }) {
     return (
       <div style={{ flexShrink: 0 }}>
-        {step && <Eyebrow>{L(`Question ${step} of 6`, `שאלה ${step} מתוך 6`)}</Eyebrow>}
+        {step && <Eyebrow>{L(`Question ${step} of ${of}`, `שאלה ${step} מתוך ${of}`)}</Eyebrow>}
         <h1 style={{ margin: '8px 0 6px', fontSize: 32, fontWeight: 800, letterSpacing: '-0.7px' }}>{title}</h1>
         <p style={{ margin: '0 0 16px', fontSize: 15, color: 'var(--text-2)' }}>{sub}</p>
       </div>
@@ -7417,13 +7417,31 @@ npm run migrate            # הרצה בפועל`}</Block>
     }
 
     /* ── chrome ── */
-    /* The order, not the arithmetic: step 6 only exists when something here
-       genuinely needs code, so stepping forward asks the flow, never `+ 1`. */
-    const FLOW = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].filter(n => n !== 6 || w.tools.length > 0);
+    /* The order, not the arithmetic. Two steps are conditional — the key,
+       which the account may already have, and connections, which exists only
+       when something genuinely needs code — so stepping forward asks the flow,
+       never `+ 1`. */
+    /* Latched at the start of the run, not read per render: supplying the key
+       on screen 3 would otherwise take screen 3 out of the flow and shrink
+       "question 3 of 6" to "of 5" under the person who had just answered it. */
+    const haveKeyRef = useRef(accountApiUsable());
+    const haveKey = haveKeyRef.current;
+    const FLOW = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      .filter(n => n !== 3 || !haveKey)
+      .filter(n => n !== 6 || w.tools.length > 0);
+    /* Settings arrive on their own schedule, so a step can leave the flow
+       while you are standing on it. Fall forward, never back to the fork. */
     const at = FLOW.indexOf(w.step);
+    const after = at >= 0 ? FLOW[at + 1] : FLOW.find(n => n > w.step);
+    const before = at >= 0 ? FLOW[Math.max(at - 1, 0)] : (FLOW.filter(n => n < w.step).pop() ?? 0);
     const stepNames = AP_STEPS();
     const railSteps = FLOW.filter(n => n >= 1 && n <= 8);
     const onRail = w.step >= 1 && w.step <= 8;
+
+    /* "Question 3 of 6" has to count the questions actually being asked. */
+    const questionSteps = [1, 2, 3, 4, 5, 7].filter(n => FLOW.includes(n));
+    const qNum = n => questionSteps.indexOf(n) + 1;
+    const qOf = questionSteps.length;
 
     const canNext = (() => {
       if (w.step === 1) return !!w.biz || !!w.bizFree.trim();
@@ -7441,7 +7459,7 @@ npm run migrate            # הרצה בפועל`}</Block>
       if (w.step === 5) { await lookForTools(); return; }
       if (w.step === 7) { go(8); build(); return; }
       if (w.step === 10) { finish(true); return; }
-      go(FLOW[at + 1]);
+      go(after ?? w.step);
     }
 
     /* Asked once, on the way out of the abilities screen, and only when there
@@ -7502,7 +7520,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             </React.Fragment>
           ) : <div style={{ flexGrow: 1 }} />}
           <IconBtn title={w.step === 0 ? L('Close', 'סגירה') : L('Back', 'חזרה')}
-            onClick={() => (w.step === 0 ? onClose() : go(w.step >= 9 ? 9 : FLOW[Math.max(at - 1, 0)]))}>
+            onClick={() => (w.step === 0 ? onClose() : go(w.step >= 9 ? 9 : before))}>
             {w.step === 0
               ? <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
               : <ApArrow back />}
@@ -7537,7 +7555,9 @@ npm run migrate            # הרצה בפועל`}</Block>
                       {L('Answer a few questions about the business and the chatbot builds itself — knowledge, tables, email and going live included.',
                         'עונים על כמה שאלות על העסק, והצ\'אטבוט נבנה לבד — כולל הידע, הטבלאות, החיבור למייל וההעלאה לאוויר.')}
                     </p>
-                    <div style={{ fontSize: 12.5, color: 'var(--text-muted)', fontWeight: 600 }}>{L('7 screens · about 4 minutes', '7 מסכים · בערך 4 דקות')}</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--text-muted)', fontWeight: 600 }}>
+                      {L(`${qOf} questions · about 4 minutes`, `${qOf} שאלות · בערך 4 דקות`)}
+                    </div>
                   </button>
                   <button onClick={() => { clearAutopilot(); onAdvanced(''); }} style={{ flexGrow: 1, flexBasis: 320, textAlign: 'start', padding: 28, borderRadius: 20, background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 13, marginBottom: 16 }}>
@@ -7562,7 +7582,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             {/* 1 · the business */}
             {w.step === 1 && (
               <div>
-                <ApHeading step={1} title={L('What does your business do?', 'במה העסק שלך עוסק?')} sub={L('Everything else is built from this.', 'מכאן אני בונה את כל השאר.')} />
+                <ApHeading of={qOf} step={qNum(1)} title={L('What does your business do?', 'במה העסק שלך עוסק?')} sub={L('Everything else is built from this.', 'מכאן אני בונה את כל השאר.')} />
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12 }}>
                   {Object.keys(AUTOPILOT_CATALOG).map(k => {
                     const item = AUTOPILOT_CATALOG[k];
@@ -7589,7 +7609,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             {/* 2 · the jobs */}
             {w.step === 2 && vertical && (
               <div>
-                <ApHeading step={2} title={L('What will it handle?', 'במה הוא יטפל?')}
+                <ApHeading of={qOf} step={qNum(2)} title={L('What will it handle?', 'במה הוא יטפל?')}
                   sub={L(`You chose ${vertical.label()} — these are the things people ask most. Each one becomes its own skill.`,
                     `בחרת ${vertical.label()} — אלה הדברים שנשאלים הכי הרבה. כל בחירה הופכת למיומנות נפרדת.`)} />
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 12 }}>
@@ -7626,7 +7646,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             {/* 3 · the key */}
             {w.step === 3 && (
               <div>
-                <ApHeading step={3} title={L('Which brain should it have?', 'איזה מוח לתת לו?')}
+                <ApHeading of={qOf} step={qNum(3)} title={L('Which brain should it have?', 'איזה מוח לתת לו?')}
                   sub={L('The chatbot thinks with a model from another company, so it needs a key of your own. This is the only technical step here.',
                     'הצ\'אטבוט חושב עם מודל של חברה חיצונית, ולכן צריך מפתח משלך. זה הדבר הטכני היחיד כאן.')} />
                 <div style={{ display: 'flex', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
@@ -7674,7 +7694,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             {/* 4 · knowledge */}
             {w.step === 4 && (
               <React.Fragment>
-                <ApHeading step={4} title={L('Where will it know the answers from?', 'מאיפה הוא יֵדע את התשובות?')}
+                <ApHeading of={qOf} step={qNum(4)} title={L('Where will it know the answers from?', 'מאיפה הוא יֵדע את התשובות?')}
                   sub={L(`You chose ${jobs.map(j => j.label()).join(', ') || 'general answering'}. You can pick more than one source.`,
                     `בחרת ${jobs.map(j => j.label()).join(', ') || 'מענה כללי'}. אפשר לבחור כמה מקורות יחד.`)} />
                 {/* Four sources open at once do not fit one screen, so the
@@ -7782,7 +7802,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             {/* 5 · abilities */}
             {w.step === 5 && (
               <React.Fragment>
-                <ApHeading step={5} title={L('What may it actually do?', 'מה מותר לו לעשות בפועל?')}
+                <ApHeading of={qOf} step={qNum(5)} title={L('What may it actually do?', 'מה מותר לו לעשות בפועל?')}
                   sub={L('Not only answer — act. Anything that needs connecting, we connect here and now.', 'לא רק לענות — גם לפעול. כל מה שצריך חיבור, נחבר כאן ועכשיו.')} />
                 <div style={panel}>
                   {w.tableId && (
@@ -7911,7 +7931,7 @@ npm run migrate            # הרצה בפועל`}</Block>
             {w.step === 7 && vertical && (
               <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
                 <div style={{ flexGrow: 1, flexBasis: 420 }}>
-                  <ApHeading step={6} title={L('How does it talk?', 'איך הוא מדבר?')} sub={L('All of it is a suggestion from your answers.', 'הכל מוצע לפי מה שענית.')} />
+                  <ApHeading of={qOf} step={qNum(7)} title={L('How does it talk?', 'איך הוא מדבר?')} sub={L('All of it is a suggestion from your answers.', 'הכל מוצע לפי מה שענית.')} />
                   <label className="field-label">{L('Name', 'שם')}</label>
                   <input value={w.name} dir="auto" onChange={e => set({ name: e.target.value })} placeholder={vertical.name()} style={{ marginBottom: 16 }} />
                   <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-2)', marginBottom: 8 }}>{L('Colour', 'צבע')}</div>
@@ -12691,13 +12711,13 @@ npm run migrate            # הרצה בפועל`}</Block>
        once, and only after the agents have actually been read back. */
     const firstRunDone = useRef(false);
     useEffect(() => {
-      if (firstRunDone.current || loading || autopilot) return;
+      if (firstRunDone.current || loading || !settings || autopilot) return;
       if (state.agents.length > 0) { firstRunDone.current = true; return; }
       if (localStorage.getItem('agentforge_autopilot_seen') === '1') { firstRunDone.current = true; return; }
       firstRunDone.current = true;
       try { localStorage.setItem('agentforge_autopilot_seen', '1'); } catch { /* private window */ }
       setAutopilot({ startStep: 1, resumed: null });
-    }, [loading, state.agents.length, autopilot]);
+    }, [loading, settings, state.agents.length, autopilot]);
 
     // Debounced save
     const saveErrorRef = useRef('');

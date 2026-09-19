@@ -130,13 +130,25 @@ ok(writer.includes('which one is not set'), 'and to saying which key is missing 
 ok(writer.includes('Never invent an endpoint'), 'and to not inventing an endpoint it does not know');
 
 /* ── the screen only exists when it has to ── */
-ok(src.includes("FLOW = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].filter(n => n !== 6 || w.tools.length > 0)"),
+ok(src.includes(".filter(n => n !== 6 || w.tools.length > 0)"),
    'the connections screen is skipped when nothing needs one');
 ok(src.includes('if (!asked || w.toolsChecked) { go(7); return; }'),
    'and the detector is not even called without something to read');
 ok(/writtenTools\.push\(await autopilotWriteTool/.test(src) && src.includes('/* leave it out */'),
    'a tool that will not come back is dropped rather than half-saved');
 ok(src.includes("(w.tools || []).some(t => t.keep)"), 'and the brief tells the skills the tool exists');
+
+/* ── the key is asked for once, or not at all ── */
+ok(src.includes(".filter(n => n !== 3 || !haveKey)"),
+   'an account that already has a key is never asked for one again');
+ok(src.includes('const haveKeyRef = useRef(accountApiUsable());'),
+   'and the answer is latched, so answering screen 3 does not renumber the run under you');
+ok(src.includes('const questionSteps = [1, 2, 3, 4, 5, 7].filter(n => FLOW.includes(n));'),
+   '"question 3 of 6" counts the questions actually being asked');
+ok(src.includes('!settings || autopilot) return;'),
+   'and a fresh account is not asked for a key before the platform knows whether it has one');
+ok(src.includes('const after = at >= 0 ? FLOW[at + 1] : FLOW.find(n => n > w.step);'),
+   'a step that leaves the flow underneath you falls forward, not back to the fork');
 
 console.log(`\n${failed ? `${failed} FAILURE(S)` : 'all green'}`);
 process.exit(failed ? 1 : 0);

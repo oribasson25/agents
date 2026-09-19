@@ -133,6 +133,13 @@ has to happen, and `autopilotBrief` turns every answer into one paragraph that `
 sends to the account's model, which returns the name, opening message, base prompt and skills as
 JSON.
 
+Two of the screens are conditional, which is why the flow is an ordered list rather than
+`step + 1`. The key screen appears only for an account that has not got one: a second chatbot on
+an account that already set a key in Settings is never asked again, and the question count says
+five rather than six. The answer is latched when the run starts — supplying the key on screen 3
+would otherwise take screen 3 out of the flow and shrink "question 3 of 6" to "of 5" under the
+person who had just answered it.
+
 Each screen is shaped by the one before it. `AUTOPILOT_CATALOG` holds six verticals, each with
 four jobs; the jobs ticked on screen 2 decide which knowledge sources screen 4 offers, whether
 screen 5 shows a Gmail button at all, and which columns a proposed table gets. Every vertical has
