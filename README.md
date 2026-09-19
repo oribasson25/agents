@@ -356,6 +356,25 @@ The same Testing status has a second effect worth knowing: Google **expires refr
 `invalid_grant`. `api/_gmail.js` reports that as TOKEN_EXPIRED and says to reconnect; publishing
 the consent screen is what stops it recurring.
 
+## Every chatbot knows the date
+
+A model has no clock; left alone it answers "today" from wherever its training stopped, which is
+how a booking chatbot offers an appointment in a year that has already gone. So the date is not a
+tool a model may or may not call — `api/_now.js` builds a `## Right now` block that opens the
+system prompt of **every turn of every chatbot**, and of the platform assistant, which writes
+dates into tables itself.
+
+It carries the weekday (a working day here is not a working day everywhere), the date in words,
+the time, and `Today is YYYY-MM-DD. Tomorrow is …` — tomorrow because date arithmetic is something
+models get wrong unaided — plus an instruction never to answer about the date from training.
+
+The zone is fixed at `Asia/Jerusalem`, not read from the machine. A Vercel function runs in UTC
+and a browser runs wherever its owner is sitting; if those disagreed, the test chat would be
+telling you about a chatbot you do not have. The browser keeps a word-for-word copy of the block
+for its own tool loop, and `probes/now-probe.mjs` compares the two across four instants, including
+both sides of the daylight-saving change and an hour that is already tomorrow in Israel while
+still yesterday in UTC.
+
 ## Saying which chatbot you mean
 
 The home screen lists the account's chatbots under the suggestions. Picking one makes it the

@@ -1,4 +1,5 @@
 import { sql } from './_db.js';
+import { nowBlock } from './_now.js';
 import { searchDocuments } from './_knowledge.js';
 import { sendGmail } from './_gmail.js';
 import { logError } from './_errorLog.js';
@@ -21,7 +22,8 @@ export function dlpMessages(messages, dlp) {
 }
 
 function buildSystemPrompt(agent, ragChunks = []) {
-  let system = agent.basePrompt || '';
+  // Every chatbot is told the date, whatever else it is told.
+  let system = `${nowBlock()}\n\n${agent.basePrompt || ''}`;
   if (ragChunks.length > 0) {
     system += '\n\n## Relevant Context\n' + ragChunks.map(c => `--- ${c.title}\n${c.content}`).join('\n\n');
   }

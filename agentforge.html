@@ -3124,8 +3124,34 @@ function markSvgString(color, size = 30) {
     );
   }
 
+  /* Mirrors api/_now.js, word for word on purpose. The test chat runs its own
+     loop in the browser, and a chatbot that is told a different date there is
+     a chatbot you cannot test. Change both or neither. */
+  const PLATFORM_TZ = 'Asia/Jerusalem';
+
+  function isoDay(date, tz) {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+  }
+
+  function nowBlock(at = new Date(), tz = PLATFORM_TZ) {
+    const long = new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: false, timeZoneName: 'longOffset',
+    }).format(at);
+    const today = isoDay(at, tz);
+    const tomorrow = isoDay(new Date(at.getTime() + 24 * 60 * 60 * 1000), tz);
+    return [
+      '## Right now',
+      `It is ${long}, in the ${tz} time zone.`,
+      `Today is ${today}. Tomorrow is ${tomorrow}.`,
+      'Work out every "today", "tomorrow", "this week", "next Tuesday" and every date you write down from this.',
+      'Never answer a question about the date or the time from your training, and never guess one.',
+    ].join('\n');
+  }
+
   function buildSystemPrompt(agent, ragChunks = [], webChunks = []) {
-    let system = agent.basePrompt || '';
+    // Every chatbot is told the date, whatever else it is told.
+    let system = `${nowBlock()}\n\n${agent.basePrompt || ''}`;
     if (ragChunks && ragChunks.length > 0) {
       system += '\n\n## Relevant Context\n' + ragChunks.map(c => `--- ${c.title}\n${c.content}`).join('\n\n');
     }
@@ -5709,6 +5735,16 @@ function markSvgString(color, size = 30) {
           <H3>עריכה עם AI</H3>
           <P>על כל כרטיס של צ'אטבוט יש <Code>עריכה עם AI</Code> לצד <Code>עריכה</Code>. הוא פותח את הצ'אט בדף הבית עם בקשה שכוללת את <strong>שם הצ'אטבוט</strong>, ומבקשת מהאסיסטנט לקרוא אותו לפני שהוא שואל משהו. משם אפשר לתאר שינוי במילים — ״שיבקש גם מייל״, ״שלא יבטיח מחיר״ — והאסיסטנט מבצע אותו דרך אותם כלים שיש לו ממילא.</P>
           <P>השם בבקשה הוא גם מה שנותן לשיחה כותרת משלה, במקום עמודה של שיחות זהות בהיסטוריה.</P>
+
+          <H3>כל צ'אטבוט יודע מה השעה</H3>
+          <P>למודל אין שעון. בלי שאומרים לו, הוא עונה על ״היום״ לפי הרגע שבו נגמר האימון שלו — ככה צ'אטבוט שקובע תורים מציע מועד בשנה שכבר עברה. לכן התאריך <strong>לא</strong> כלי שהוא יכול לבחור לקרוא לו, אלא בלוק קבוע בראש הפרומפט של <strong>כל תור של כל צ'אטבוט</strong>, וגם של האסיסטנט עצמו:</P>
+          <P><Code>## Right now · It is Sunday, 20 September 2026 at 22:41 GMT+03:00 · Today is 2026-09-20. Tomorrow is 2026-09-21.</Code></P>
+          <UL>
+            <li>גם היום בשבוע וגם התאריך כמחרוזת שטבלה יכולה לקבל — ו״מחר״, כי מודלים טועים בחשבון תאריכים</li>
+            <li>אזור הזמן <strong>קבוע</strong> (<Code>Asia/Jerusalem</Code>) ולא נלקח מהמכונה: פונקציה ב-Vercel רצה ב-UTC והדפדפן רץ איפה שהבעלים יושב. אם הם היו שונים, צ'אט הבדיקה היה מספר לך על צ'אטבוט אחר מזה שבאוויר</li>
+            <li>מעבר שעון קיץ/חורף מטופל — הבדיקות מוודאות UTC+3 בקיץ ו-UTC+2 בחורף</li>
+            <li>לשינוי המיקום: <Code>PLATFORM_TZ</Code>, בשני העותקים</li>
+          </UL>
 
           <H3>על איזה צ'אטבוט מדברים</H3>
           <P>מתחת להצעות בדף הבית יש <strong>רשימת הצ'אטבוטים של החשבון</strong>. לוחצים על אחד, הוא הופך לנושא השיחה — מופיעה שורת <Code>על ⟨שם⟩</Code> מעל שורת הכתיבה, ומה שנכתב אחריה נשלח כ״על ה-AI Chatbot ⟨שם⟩: …״.</P>
@@ -9083,6 +9119,9 @@ npm run migrate            # הרצה בפועל`}</Block>
 
     return [
       'You are the assistant built into the 8Legs.ai builder. You operate the platform on the user\'s behalf: you answer questions about it, and you create and change their AI Chatbots through the tools you have.',
+      '',
+      // It writes dates into tables and into prompts, so it needs one too.
+      nowBlock(),
       '',
       PLATFORM_REFERENCE,
       '',
