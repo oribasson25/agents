@@ -5739,7 +5739,7 @@ function markSvgString(color, size = 30) {
             <li><strong>1 · העסק</strong> — שש קטגוריות, וגם ״אתאר בעצמי״ בטקסט חופשי</li>
             <li><strong>2 · תפקידים</strong> — נגזרים ממסך 1. כל בחירה הופכת ל<strong>סקיל</strong>, וזו נקודת ההסתעפות שקובעת את מסכים 4 ו־5</li>
             <li><strong>3 · המפתח</strong> — <strong>רק אם אין בחשבון מפתח שעובד</strong>. המפתח השמור נבדק מול הספק ברקע בזמן השאלה הראשונה; רק מפתח שענה מוציא את המסך מהזרימה, והשאלות נספרות בלעדיו</li>
-            <li><strong>4 · ידע</strong> — סריקת אתר (רצה כאן, עם המונה), העלאת קבצים (חילוץ טקסט ושמירה כאן), כתיבה ידנית, ויצירת הטבלה עם עמודות מוצעות</li>
+            <li><strong>4 · ידע</strong> — סריקת אתר (רצה כאן, עם המונה), העלאת קבצים (חילוץ טקסט ושמירה כאן, עם שורת מצב לכל קובץ), כתיבה ידנית, ויצירת הטבלה עם עמודות מוצעות</li>
             <li><strong>5 · יכולות</strong> — כתיבה לטבלה, חיבור Gmail (יוצא לגוגל וחוזר לוויזרד), קריאה חיה מהאתר, העברה לאדם</li>
             <li><strong>6 · חיבורים</strong> — <strong>מופיע רק אם צריך</strong>. ראה למטה</li>
             <li><strong>7 · אופי</strong> — שם, צבע, סגנון, וכללים משלך</li>
@@ -7679,12 +7679,22 @@ npm run migrate            # הרצה בפועל`}</Block>
 
     /* ── the agent exists from the knowledge screen on, because documents, a
           crawl and a Gmail token all have to hang off something. ── */
-    async function ensureAgent() {
-      if (w.agentId) return w.agentId;
-      const agent = makeAgent({ name: L('Building…', 'בבנייה…'), avatar: w.color, openingMessage: '' });
-      await apiCreate(agent);
-      set({ agentId: agent.id });
-      return agent.id;
+    /* One agent per run, even when two things ask for it at once: the id is
+       held in a ref as well as in state, because state has not landed yet
+       when the second caller reads it. */
+    const agentRef = useRef(resumed && resumed.agentId ? resumed.agentId : '');
+    const creatingRef = useRef(null);
+    function ensureAgent() {
+      if (agentRef.current) return Promise.resolve(agentRef.current);
+      if (creatingRef.current) return creatingRef.current;
+      creatingRef.current = (async () => {
+        const agent = makeAgent({ name: L('Building…', 'בבנייה…'), avatar: w.color, openingMessage: '' });
+        await apiCreate(agent);
+        agentRef.current = agent.id;
+        set({ agentId: agent.id });
+        return agent.id;
+      })();
+      return creatingRef.current;
     }
 
     /* Saving proves nothing — the server stores whatever it is handed. The key
@@ -7731,10 +7741,19 @@ npm run migrate            # הרצה בפועל`}</Block>
       }, 2500);
     }
 
+    /**
+     * `files` is the input's own live FileList, and the handler clears the
+     * input the moment this returns so the same file can be picked twice.
+     * This function awaits before it reads the list, so by then the list the
+     * caller handed over is empty — which looked exactly like the upload
+     * silently doing nothing: no row appeared and no document arrived.
+     * Copy it first, synchronously, before anything can yield.
+     */
     async function uploadFiles(files) {
-      if (!files || !files.length) return;
+      const picked = Array.from(files || []).slice(0, 10);
+      if (!picked.length) return;
       const id = await ensureAgent();
-      for (const file of Array.from(files).slice(0, 10)) {
+      for (const file of picked) {
         const entry = { name: file.name, state: 'reading' };
         setW(prev => { const next = { ...prev, uploads: [...prev.uploads, entry] }; saveAutopilot(next); return next; });
         try {

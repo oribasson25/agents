@@ -196,5 +196,18 @@ ok(src.includes('if (messages.length === 0) setSubject(null);'),
 ok(src.includes('paddingInlineEnd: 14') && src.includes('paddingInlineStart: 14'),
    'and the chips are padded by logical edge, so Hebrew does not put the tight side outward');
 
+/* ── the upload, and the two ways it quietly did nothing ── */
+const up = lift('async function uploadFiles(files) {', '\n    /* Leaving the knowledge screen');
+ok(/const picked = Array\.from\(files \|\| \[\]\)/.test(up) && up.indexOf('Array.from') < up.indexOf('await'),
+   'the file list is copied before anything awaits — the input is cleared the moment the handler returns');
+ok(up.includes('for (const file of picked)'),
+   'and the loop reads the copy, not the list that by then is empty');
+
+const ensure = lift('function ensureAgent() {', '\n    async function saveKey()');
+ok(ensure.includes('agentRef.current') && ensure.includes('creatingRef.current'),
+   'two things asking for the agent at once get one agent, not two');
+ok(!/if \(w\.agentId\) return w\.agentId;/.test(ensure),
+   'because state has not landed when the second caller reads it');
+
 console.log(`\n${failed ? `${failed} FAILURE(S)` : 'all green'}`);
 process.exit(failed ? 1 : 0);
