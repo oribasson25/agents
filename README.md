@@ -206,6 +206,15 @@ regenerates, saves and resets the chat, and raises the round counter. What has a
 stays listed next to it, because after three rounds nobody remembers what they asked for. Only the
 green **It all looks right** moves on to publishing, and publishing can be skipped.
 
+A note on the file upload, because it failed in a way that left no trace. The `change` handler
+clears the input the moment it returns, so the same file can be chosen twice — and the input's
+`FileList` is live, so clearing it empties the list the handler just passed on. `uploadFiles`
+awaited before reading that list, by which point it was empty: no row appeared and no document
+arrived, and nothing was logged either way. It copies the list synchronously now, before anything
+can yield. `ensureAgent` was fixed alongside it — it read the agent id out of state, which has not
+landed when a second caller arrives, so two quick actions could each create an agent; the id lives
+in a ref and concurrent callers share one promise.
+
 Two things worth knowing about the plumbing. The agent row is created on the way into screen 4,
 because documents, a crawl and a Gmail token all need something to hang off. And the answers live
 in `sessionStorage`, because connecting Gmail hands the browser to Google and gets it back a
