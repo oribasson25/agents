@@ -5715,6 +5715,7 @@ function markSvgString(color, size = 30) {
           <H2>Autopilot — בנייה מודרכת</H2>
 
           <H3>שני סיורים, והסדר הוא העיקר</H3>
+          <P><strong>לפני שניהם — שאלת השפה.</strong> הדבר הראשון שחשבון חדש רואה הוא מסך אחד: <Code>English</Code> או <Code>עברית</Code>. הכיתוב מופיע בשתי השפות, כי אי אפשר לקרוא את זו שעוד לא נבחרה. הבחירה נשמרת כהגדרת החשבון (<Code>assistantLanguage</Code>) ומשפיעה על כל הממשק ועל האסיסטנטים, ומיד אחריה מתחיל הסיור — באותה שפה.</P>
           <P><strong>הראשון — הפלטפורמה, בגדול.</strong> נפתח בכניסה הראשונה: חמישה שלבים על גבי הפלטפורמה עצמה, זרקור על דבר אחד בכל פעם, והמסך מתחלף תוך כדי — צ'אט הבית ← AI Chatbots ← Tables ← Interactions ← Settings. הקלף האחרון מציע ״בנה לי אחד משלי״, כלומר פותח את Autopilot.</P>
           <P><strong>השני — מסכי העריכה, והוא מחכה.</strong> אין טעם ללמד איך צ'אטבוט בנוי לפני שבנו אחד. וכל חשבון חדש מקבל את ה-Starter agents בהרשמה, אז ״יש צ'אטבוט״ זו לא אותה שאלה כמו ״בנה צ'אטבוט״. הסיור השני נפתח בפעם הראשונה שיש בחשבון צ'אטבוט <strong>שהמשתמש עצמו בנה</strong>, ומסביר את הבייס־פרומפט, הסקילים, הטולים, הידע וצ'אט הבדיקה — <strong>על העבודה שלו</strong>, בשמה.</P>
           <P>איך מזהים: <Code>seededFrom</Code> נשמר על כל עותק בזמן ההרשמה. לחשבונות שנפתחו לפני הסימון הזה נשמרת גם רשימת ה-ids שהיו בחשבון כשהסיור הראשון נגמר — כל מה שהופיע אחר כך הוא שלהם.</P>
@@ -7080,6 +7081,62 @@ npm run migrate            # הרצה בפועל`}</Block>
               'שיחה אמיתית מול בדיוק מה שנמצא במסכים האלה, עם כל קריאה לכלי וכל מעבר סקיל גלויים. כאן תופסים במה הוא טעה, כל עוד זה לא עולה כלום.'),
     },
   ];
+
+  /**
+   * The very first screen a new account sees: which language.
+   *
+   * It comes before the tour rather than inside it, because the tour is about
+   * to be read — asking afterwards would mean reading five cards in a
+   * language somebody did not choose. The answer is the account's setting,
+   * not a local preference, so every screen and every assistant follows it
+   * from this moment on.
+   */
+  function LanguageGate({ onPick, busy }) {
+    const options = [
+      { id: 'en', label: 'English', sub: 'Continue in English', dir: 'ltr' },
+      { id: 'he', label: 'עברית', sub: 'להמשיך בעברית', dir: 'rtl' },
+    ];
+    return (
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 610, background: 'var(--bg-app)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        padding: '0 20px', gap: 4,
+      }}>
+        <SpiderLogo size={132} />
+        <h1 style={{ margin: '2px 0 8px', fontSize: 30, fontWeight: 800, letterSpacing: '-0.9px', textAlign: 'center' }}>
+          Welcome to 8Legs.ai
+        </h1>
+        {/* Both languages, because the person cannot read the one they have
+            not picked yet. */}
+        <p style={{ margin: '0 0 26px', fontSize: 15, color: 'var(--text-2)', textAlign: 'center', lineHeight: 1.7 }}>
+          Choose a language and we&rsquo;ll show you around.
+          <br />
+          <span dir="rtl">בחר שפה ונעבור על הפלטפורמה יחד.</span>
+        </p>
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'center' }}>
+          {options.map(o => (
+            <button key={o.id} dir={o.dir} disabled={busy} onClick={() => onPick(o.id)}
+              style={{
+                width: 230, padding: '22px 24px', borderRadius: 20, cursor: busy ? 'default' : 'pointer',
+                background: 'var(--bg-card)', border: '1px solid var(--border)', textAlign: 'start',
+                boxShadow: 'var(--shadow)', opacity: busy ? 0.55 : 1,
+                transition: 'border-color .16s, box-shadow .16s, transform .16s',
+              }}
+              onMouseEnter={e => { if (busy) return; e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.boxShadow = '0 10px 34px var(--primary-glow)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = 'var(--shadow)'; e.currentTarget.style.transform = 'none'; }}>
+              <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px' }}>{o.label}</div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 5 }}>{o.sub}</div>
+            </button>
+          ))}
+        </div>
+        <p style={{ margin: '24px 0 0', fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.8 }}>
+          You can change this later in Settings
+          <br />
+          <span dir="rtl">אפשר לשנות אחר כך בהגדרות</span>
+        </p>
+      </div>
+    );
+  }
 
   /**
    * The spotlight.
@@ -13251,7 +13308,7 @@ npm run migrate            # הרצה בפועל`}</Block>
       if (firstRunDone.current || loading || !settings || autopilot || isMobile) return;
       firstRunDone.current = true;
       if (tourSeen()) return;
-      setTour('platform');
+      setTour('language');
     }, [loading, settings, autopilot, isMobile]);
 
     /* The editor tour waits for a chatbot they built. Every account is handed
@@ -13272,8 +13329,19 @@ npm run migrate            # הרצה בפועל`}</Block>
        than waiting to ambush them on a desktop later. */
     useEffect(() => { if (isMobile) { markTourSeen(); markEditorTourSeen(); } }, [isMobile]);
 
-    /* Both tours are the same component; only where they walk differs. */
-    const tourNode = tour === 'platform' ? (
+    const [langBusy, setLangBusy] = useState(false);
+
+    /* Both tours are the same component; only where they walk differs. The
+       language question comes first and is a screen of its own — there is
+       nothing to point at yet, and nothing to read until it is answered. */
+    const tourNode = tour === 'language' ? (
+      <LanguageGate busy={langBusy} onPick={async lang => {
+        setLangBusy(true);
+        try { await handleSaveSettings({ ...(settings || accountApi()), assistantLanguage: lang }); }
+        catch { setAccountApi({ assistantLanguage: lang }); }   // the tour matters more than the record
+        finally { setLangBusy(false); setTour('platform'); }
+      }} />
+    ) : tour === 'platform' ? (
       <PlatformTour
         steps={TOUR_STEPS()}
         onGo={step => setNav(step.nav)}

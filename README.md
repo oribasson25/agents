@@ -120,6 +120,12 @@ under the switch.
 
 ## Two tours
 
+**The language, first of all.** The very first screen a new account sees is one question —
+English or עברית — written in both, because nobody can read the one they have not chosen yet. The
+answer is saved as the account's `assistantLanguage`, so every screen and every assistant follows
+it, and the tour starts immediately in that language. A failed save still lets the tour run in the
+language they picked; reading five cards in the wrong one is the worse failure.
+
 **The platform, on arrival.** Five things pointed at in turn: a spotlight on one element, a card
 beside it, **Next** to carry on. It changes screens as it goes — the home chat, AI Chatbots,
 Tables, Interactions, Settings — so each step shows the real screen rather than naming it. Its

@@ -22,7 +22,7 @@ const lift = (from, to) => {
   return src.slice(a, b);
 };
 
-const stepsSrc = lift('const TOUR_STEPS = () => [', '\n  /**\n   * The spotlight.');
+const stepsSrc = lift('const TOUR_STEPS = () => [', '\n  /**\n   * The very first screen');
 const L = (en) => en;
 const both = new Function('L', `${stepsSrc}\nreturn { steps: TOUR_STEPS(), editor: EDITOR_TOUR_STEPS('Clinic assistant') };`)(L);
 const steps = both.steps;
@@ -103,6 +103,22 @@ ok(seed.includes('agent.seededFrom = starter.id;'),
    'the server records which starter a copy came from');
 ok(fs.readFileSync(new URL('../api/_agentFiles.js', import.meta.url), 'utf8').includes("'seededFrom'"),
    'and the marker stays out of the exported files');
+
+/* ── the question that comes before any of it ── */
+const gate = lift('function LanguageGate({ onPick, busy }) {', '\n  /**\n   * The spotlight.');
+ok(gate.includes("id: 'en'") && gate.includes("id: 'he'"), 'both languages are offered');
+ok(gate.includes("dir: 'rtl'") && gate.includes("dir: 'ltr'"),
+   'each option is written in its own direction');
+ok(/Welcome to 8Legs\.ai/.test(gate) && /בחר שפה/.test(gate),
+   'and the welcome is in both, because nobody can read the one they have not picked');
+ok(/You can change this later in Settings/.test(gate) && /אפשר לשנות אחר כך/.test(gate),
+   'and it says the choice is not final');
+ok(src.includes("setTour('language');"),
+   'it is the first thing a new account sees, before the tour it is about to read');
+ok(src.includes("assistantLanguage: lang }); }") && src.includes("finally { setLangBusy(false); setTour('platform'); }"),
+   'the answer is saved to the account and then the tour begins');
+ok(src.includes('catch { setAccountApi({ assistantLanguage: lang }); }'),
+   'and a failed save still lets the tour run in the language they picked');
 
 /* ── the order the two wizards run in ── */
 ok(!src.includes("if (state.agents.length > 0) { firstRunDone.current = true; return; }"),
