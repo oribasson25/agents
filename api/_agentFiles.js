@@ -30,7 +30,7 @@
 import crypto from 'crypto';
 
 /* Fields restored from the stored agent rather than read from the files. */
-const SERVER_OWNED = ['apiConfig', 'createdAt', '_seededFrom'];
+const SERVER_OWNED = ['apiConfig', 'createdAt', '_seededFrom', 'seededFrom'];
 
 /* Agent keys this module maps by hand. Anything else lands in extras. */
 const MAPPED = new Set([

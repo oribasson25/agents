@@ -122,6 +122,12 @@ async function copyStarter(userId, starter) {
   const agent = buildStarterAgent(starter.data);
   delete agent._seededFrom;
 
+  /* Which starter this came from, kept as a plain field so it survives every
+     save. Without it nothing can tell a chatbot the account was handed from
+     one its owner actually built — and the second tour, which explains the
+     editor, is only worth showing once they have built one. */
+  agent.seededFrom = starter.id;
+
   await sql`
     insert into agents (id, data, user_id)
     values (${agent.id}, ${JSON.stringify(agent)}::jsonb, ${userId})

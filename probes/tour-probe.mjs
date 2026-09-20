@@ -24,9 +24,12 @@ const lift = (from, to) => {
 
 const stepsSrc = lift('const TOUR_STEPS = () => [', '\n  /**\n   * The spotlight.');
 const L = (en) => en;
-const steps = new Function('L', `${stepsSrc}\nreturn TOUR_STEPS();`)(L);
+const both = new Function('L', `${stepsSrc}\nreturn { steps: TOUR_STEPS(), editor: EDITOR_TOUR_STEPS('Clinic assistant') };`)(L);
+const steps = both.steps;
+const editor = both.editor;
 
-ok(steps.length === 5, 'five steps, as agreed — every extra one loses people', String(steps.length));
+ok(steps.length === 5, 'five steps in the platform tour', String(steps.length));
+ok(editor.length === 5, 'and five in the editor tour', String(editor.length));
 
 const tagged = new Set([...src.matchAll(/data-tour="([a-z-]+)"/g)].map(m => m[1]));
 const navIds = ['home', 'agents', 'tables', 'interactions', 'docs', 'settings', 'admin'];
@@ -45,15 +48,21 @@ for (const [i, s] of steps.entries()) {
 }
 ok(new Set(steps.map(s => s.nav)).size === steps.length, 'no screen is visited twice');
 ok(steps[0].nav === 'home', 'it starts where the person already is');
+ok(!steps.some(s2 => /flycard|weather/i.test(s2.body)),
+   'the platform tour stays general — it does not name a chatbot that an account may have deleted');
 
 /* ── the spotlight's own hazards ── */
-const tour = lift('function PlatformTour({ onNav, onClose, onBuild }) {', '\n  /* ═══════════════════════ AUTOPILOT');
+const tour = lift('function PlatformTour({ steps, tag, onGo, onClose, onFinish, finishLabel }) {', '\n  /* ═══════════════════════ AUTOPILOT');
 ok(tour.includes("Number(getComputedStyle(document.body).zoom) || 1"),
    'the zoom on <body> is read, not assumed');
 ok(/r\.left \/ z.*r\.top \/ z/s.test(tour) && /r\.width \/ z/.test(tour),
    'and every measurement is divided by it');
 ok(tour.includes('window.innerWidth / z') && tour.includes('window.innerHeight / z'),
    'including the viewport the dark panels are sized from');
+ok(tour.includes('const beside = !fitsBelow && !fitsAbove;'),
+   'a tall target puts the card beside it, never over the thing it explains');
+ok(tour.includes('box-shadow: 0 0 0 9999px') || tour.includes("boxShadow: '0 0 0 9999px"),
+   'the world outside the hole is one spread shadow, not four panels with seams');
 ok(tour.includes('requestAnimationFrame'),
    'the ring follows the target rather than being placed once');
 ok(tour.includes("el.scrollIntoView({ block: 'center'"),
@@ -62,19 +71,52 @@ ok(/Math\.min\(box\.h \+ pad \* 2/.test(tour),
    'a target taller than the screen cannot squeeze the card out');
 ok(tour.includes('setI(n => (n + 1 < steps.length ? n + 1 : n))') && tour.includes('2500'),
    'a step whose target never appears moves on instead of stalling');
-ok(tour.includes('markTourSeen()'), 'finishing or skipping both count as seen');
+ok(src.includes('onClose={() => { markTourSeen();') && src.includes('onClose={() => { markEditorTourSeen();'),
+   'finishing or skipping either one counts as seen');
+
+/* ── the editor tour, and what it waits for ── */
+const railIds = ['configuration', 'skills', 'tools', 'knowledge', 'tables', 'manual tests', 'export', 'whatsapp'];
+for (const [i, e] of editor.entries()) {
+  const n = i + 1;
+  ok(railIds.includes(e.tab), `editor ${n}: opens a rail tab that exists`, e.tab);
+  for (const t of e.target) {
+    ok(tagged.has(t) || (t.startsWith('rail-') && railIds.includes(t.slice(5))),
+       `editor ${n}: "${t}" is on a real element`);
+  }
+  ok(e.title && e.body && e.body.length > 60, `editor ${n}: says something worth stopping for`, e.title);
+}
+ok(editor.some(e => e.body.includes('Clinic assistant')),
+   "it is explained on the person's own chatbot, by name");
+ok(editor[0].tab === 'configuration' && editor.at(-1).tab === 'manual tests',
+   'it starts at the character and ends at talking to it');
+
+const own = lift('function ownAgents(agents) {', '\n  /* ── what each tour points at ── */');
+ok(own.includes('!a.seededFrom'),
+   'a chatbot handed over at registration does not count as one they built');
+ok(own.includes('known.includes(a.id)'),
+   'and for accounts from before that marker, the ids held when the first tour ended do');
+ok(src.includes("if (!tourSeen() || editorTourSeen() || mine.length === 0) return;"),
+   'so the editor tour waits until there is one of their own');
+
+const seed = fs.readFileSync(new URL('../api/_defaultAgent.js', import.meta.url), 'utf8');
+ok(seed.includes('agent.seededFrom = starter.id;'),
+   'the server records which starter a copy came from');
+ok(fs.readFileSync(new URL('../api/_agentFiles.js', import.meta.url), 'utf8').includes("'seededFrom'"),
+   'and the marker stays out of the exported files');
 
 /* ── the order the two wizards run in ── */
 ok(!src.includes("if (state.agents.length > 0) { firstRunDone.current = true; return; }"),
    'Autopilot no longer waits for an empty account — registration seeds one, so that never happened');
-ok(src.includes('if (tourSeen()) return;') && src.includes('setTour(true);'),
-   'the tour is what opens by itself now');
-ok(/last \? finish\(onBuild\)/.test(tour) && src.includes("onBuild={() => setAutopilot({ startStep: 1, resumed: null })}"),
-   'and its last card is what hands over to Autopilot');
-ok(src.includes('if (isMobile) markTourSeen();'),
+ok(src.includes('if (tourSeen()) return;') && src.includes("setTour('platform');"),
+   'the platform tour is what opens by itself now');
+ok(src.includes('setAutopilot({ startStep: 1, resumed: null });') && src.includes("finishLabel={L('Build one of my own'"),
+   'and the platform tour\'s last card is what hands over to Autopilot');
+ok(src.includes('rememberKnownAgents(state.agents);'),
+   'which is also when the account\'s chatbots are snapshotted, so what comes after is theirs');
+ok(src.includes('if (isMobile) { markTourSeen(); markEditorTourSeen(); }'),
    'a phone is marked seen rather than ambushed on a desktop later');
-ok(src.includes('onReplayTour={() => setTour(true)}'),
-   'and it can be run again from the documentation');
+ok(src.includes("onReplayTour('platform')") && src.includes("onReplayTour('editor')"),
+   'and both can be run again from the documentation');
 
 console.log(`\n${failed ? `${failed} FAILURE(S)` : 'all green'}`);
 process.exit(failed ? 1 : 0);

@@ -118,35 +118,43 @@ language. The one thing that does not follow it is the **Documentation** tab, wh
 in Hebrew either way — translating that manual is its own piece of work, and Settings says so
 under the switch.
 
-## The tour
+## Two tours
 
-The first time anybody arrives, five things on the platform are pointed at in turn: a spotlight on
-one element, a card beside it, **Next** to carry on. It changes screens as it goes — the home
-chat, AI Chatbots, Tables, Interactions, Settings — so each step shows the real screen rather than
-naming it.
+**The platform, on arrival.** Five things pointed at in turn: a spotlight on one element, a card
+beside it, **Next** to carry on. It changes screens as it goes — the home chat, AI Chatbots,
+Tables, Interactions, Settings — so each step shows the real screen rather than naming it. Its
+last card offers to build one of their own, which opens Autopilot; the useful next thing is
+building something, not reading more.
 
-It runs *before* Autopilot, and that is only possible because a new account is not empty:
-registration seeds it with the starter chatbots, so there is work of the person's own to point at
-from the first second. The last card is what offers to build one of their own, which is where
-Autopilot comes in — one wizard at a time, in an order that explains itself. This also fixes a
-trigger that never fired: Autopilot opened itself only for an account with no chatbots, a
-condition the starter agents make impossible, so no real user ever saw it open.
+**The editor, once they have built one.** There is no sense teaching how a chatbot is put together
+before somebody has one of their own, and every account is handed the starter chatbots at
+registration — so "has a chatbot" is not the question. `seededFrom` is written onto each copy when
+the account is seeded, and accounts from before that marker fall back to the ids the account held
+when the first tour ended; anything that appears after is theirs. The second tour then opens on
+that chatbot and walks its base prompt, skills, tools, knowledge and test chat, naming it as it
+goes.
+
+That order also repairs a trigger that never fired: Autopilot opened itself only for an account
+with no chatbots, which the starter agents make impossible, so no real user had ever seen it open.
 
 Targets are `data-tour` attributes on real elements, never CSS selectors — a selector breaks
 silently the next time something is restyled, an attribute breaks in `probes/tour-probe.mjs`. Each
-step names the content it would rather point at and the sidebar item it settles for when that
-content is not there, so an account with no tables still gets a whole tour; a step whose target
-never appears moves on by itself after 2.5s.
+step names the content it would rather point at and the menu item it settles for when that content
+is missing, so a thin account still gets a whole tour; a step whose target never appears moves on
+after 2.5s.
 
-The spotlight is four dark panels around a hole rather than an SVG mask, and the one thing it
-turns on is the `zoom: 0.72` on `<body>`: `getBoundingClientRect` reports visual pixels, and a
-fixed box drawn inside the zoomed subtree is scaled again, so every measurement is divided by the
-zoom before use. Without that the ring lands 28% too small and up and to the left, which reads as
-a styling wobble rather than a bug — hence the probe.
+The spotlight is one element whose huge `box-shadow` spread paints everything outside the hole —
+fewer moving parts than four panels, perfect rounded corners, no seams, and the same shadow
+carries the amber glow. The card goes below the target, above it when that does not fit, and
+*beside* it when the target is tall, so it never covers what it explains. The one thing this turns
+on is the `zoom: 0.72` on `<body>`: `getBoundingClientRect` reports visual pixels and a fixed box
+drawn inside the zoomed subtree is scaled again, so every measurement is divided by the zoom
+first. Without it the ring lands 28% too small and up and to the left, which reads as a styling
+wobble rather than a bug — hence the probe.
 
-Not on phones. That shell has its own tree and a bottom nav, and a spotlight there is a different
-design; it is marked seen instead, rather than ambushing someone on a desktop weeks later. It can
-be replayed any time from the top of the Documentation tab.
+Not on phones; that shell has its own tree and a bottom nav. Both are marked seen there rather
+than ambushing someone on a desktop later, and both can be replayed from the top of the
+Documentation tab.
 
 ## Autopilot
 
