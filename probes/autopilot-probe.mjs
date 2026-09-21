@@ -132,10 +132,34 @@ ok(writer.includes('Never invent an endpoint'), 'and to not inventing an endpoin
 /* ── the screen only exists when it has to ── */
 ok(src.includes(".filter(n => n !== 6 || w.tools.length > 0)"),
    'the connections screen is skipped when nothing needs one');
-ok(src.includes('if (!asked || w.toolsChecked) { go(7); return; }'),
-   'and the detector is not even called without something to read');
+ok(src.includes('const explicit = w.abilities.external && w.externalFree.trim().length > 0'),
+   'an explicit "connect to another system" request always triggers detection');
+ok(src.includes("[w.bizFree, w.jobsFree, w.abilitiesFree, w.externalFree].some(t => t && t.trim().length > 8)"),
+   'and so does any free-text hint — now including the abilities and external descriptions');
+ok(src.includes('if ((!explicit && !hinted) || w.toolsChecked) { go(7); return; }'),
+   'but with nothing to read the detector is still not called');
+/* The bug this closes: detection used to be gated on abilitiesFree while the
+   brief the detector reads never contained it, so a tool was almost never
+   written. Both descriptions must now reach the brief. */
+ok(briefSrc.includes('w.abilitiesFree ?') && briefSrc.includes('w.externalFree)'),
+   'the brief carries the abilities and external descriptions to the detector');
 ok(/writtenTools\.push\(await autopilotWriteTool/.test(src) && src.includes('/* leave it out */'),
    'a tool that will not come back is dropped rather than half-saved');
+
+/* ── every function the editor has must be reachable here too ── */
+/* live web reading gets its own URL, so it works without also crawling */
+ok(src.includes("scrapeUrls: w.abilities.web && w.siteUrl ? [w.siteUrl.trim()] : []"),
+   'the built chatbot reads the site live from a URL set in the wizard');
+ok(src.includes("placeholder=\"https://example.com/stock\""),
+   'and the abilities step offers that URL field independently of the crawl');
+/* DLP — the one function that used to have no Autopilot control at all */
+ok(src.includes("dlp: { creditCard: !!(w.dlp && w.dlp.creditCard), israeliId: !!(w.dlp && w.dlp.israeliId) }"),
+   'DLP masking is set from the wizard, not left off with no way to turn it on');
+ok(src.includes("Hide sensitive numbers") || src.includes('להסתיר מספרים רגישים'),
+   'and the abilities step shows the control for it');
+/* the explicit door to a custom tool */
+ok(src.includes("Connect to another system") || src.includes('להתחבר למערכת אחרת'),
+   'connecting to an outside system is an explicit choice, not only an inferred one');
 ok(src.includes("(w.tools || []).some(t => t.keep)"), 'and the brief tells the skills the tool exists');
 
 /* ── the key is asked for once, or not at all ── */
