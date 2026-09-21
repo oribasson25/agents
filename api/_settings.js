@@ -17,13 +17,19 @@ export const DEFAULT_MODELS = {
 export const ASSISTANT_LANGUAGES = ['en', 'he'];
 
 export function emptySettings() {
-  return { provider: 'claude', api_key: '', model: DEFAULT_MODELS.claude, ollama_host: '', assistant_language: 'en' };
+  return {
+    provider: 'claude', api_key: '', model: DEFAULT_MODELS.claude, ollama_host: '',
+    assistant_language: 'en',
+    /* An account with no settings row has never answered the language
+       question, so it is still worth asking. */
+    language_chosen: false,
+  };
 }
 
 export async function getUserSettings(userId) {
   if (!userId) return null;
   const [row] = await sql`
-    select provider, api_key, model, ollama_host, assistant_language
+    select provider, api_key, model, ollama_host, assistant_language, language_chosen
     from user_settings where user_id = ${userId}
   `;
   return row || null;
@@ -35,18 +41,24 @@ export async function saveUserSettings(userId, patch) {
   const apiKey = typeof patch.apiKey === 'string' ? patch.apiKey.trim() : '';
   const model = (typeof patch.model === 'string' && patch.model.trim()) || DEFAULT_MODELS[provider];
   const ollamaHost = typeof patch.ollamaHost === 'string' ? patch.ollamaHost.trim().replace(/\/$/, '') : '';
+  /* Only ever set, never cleared — `or` in the UPDATE below. Every screen that
+     saves settings sends the whole object back, including a `languageChosen`
+     it read from here, so a save that is about something else cannot
+     accidentally answer a question nobody asked. */
+  const chosen = patch.languageChosen === true;
 
   const [row] = await sql`
-    insert into user_settings (user_id, provider, api_key, model, ollama_host, assistant_language, updated_at)
-    values (${userId}, ${provider}, ${apiKey}, ${model}, ${ollamaHost}, ${language}, now())
+    insert into user_settings (user_id, provider, api_key, model, ollama_host, assistant_language, language_chosen, updated_at)
+    values (${userId}, ${provider}, ${apiKey}, ${model}, ${ollamaHost}, ${language}, ${chosen}, now())
     on conflict (user_id) do update set
       provider           = excluded.provider,
       api_key            = excluded.api_key,
       model              = excluded.model,
       ollama_host        = excluded.ollama_host,
       assistant_language = excluded.assistant_language,
+      language_chosen    = user_settings.language_chosen or excluded.language_chosen,
       updated_at         = now()
-    returning provider, api_key, model, ollama_host, assistant_language
+    returning provider, api_key, model, ollama_host, assistant_language, language_chosen
   `;
   return row;
 }

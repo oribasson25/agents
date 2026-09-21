@@ -3,8 +3,8 @@
 Platform for building AI agents: prompt, model, skills, Python tools, a knowledge base, and
 distribution over a website widget and WhatsApp — configured in the browser, with no build step.
 
-The in-app **Documentation** tab is the user-facing guide, and is written in Hebrew. This file
-covers running and maintaining the deployment.
+The in-app **Documentation** tab is the user-facing guide, and is written in English whichever
+language the interface is set to. This file covers running and maintaining the deployment.
 
 **What the product calls things.** The interface calls an agent an **AI Chatbot** (plural
 *AI Chatbots*), everywhere a person reads: the interface in both languages, the Documentation
@@ -34,11 +34,12 @@ api/
   _auth.js                 JWT sign/verify, checkAuth, checkAdmin
   _db.js                   Neon client
   _gmail.js                per-agent Gmail: token refresh, send
+  _invites.js              invitation codes: mint, check, claim, release
   _settings.js             the account's provider/key/model, and resolving it
   _whatsappClaim.js        a phone number belongs to one agent
   agents.js, agents/[id]/  CRUD, documents, RAG retrieval, crawl
-  admin/                   users, chat history, per-user agents
-  auth/                    register, login
+  admin/                   users, chat history, per-user agents, invitation codes
+  auth/                    login, register (invitation only), invite-check
   chat-sessions.js         the Interactions list, filtered
   gmail/                   OAuth start, callback, status, disconnect, send
   whatsapp/                webhook, connection test
@@ -46,6 +47,8 @@ api/
   cron/crawl-all.js        re-crawls every agent's sites
 migrations/                schema changes, applied in filename order
   run.mjs                  the migration runner
+privacy.html               public privacy policy, served at /privacy
+terms.html                 public terms, served at /terms
 schema.sql                 initial schema
 seed_demo.js               demo data
 ```
@@ -70,6 +73,7 @@ npm install
 | `JWT_SECRET` | yes | signs login tokens and the Gmail OAuth state |
 | `GOOGLE_CLIENT_ID` | for Gmail | OAuth client for the `send_email` tool |
 | `GOOGLE_CLIENT_SECRET` | for Gmail | same |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | first run | used once, to create the first administrator on a database with no users. After that the admin mints invitation codes |
 | `APP_URL` | no | base URL for the OAuth redirect; derived from the request when unset. Normalised on read (whitespace stripped, scheme added, trailing slash dropped) — a newline pasted in here used to reach Google inside `redirect_uri` and get the whole flow rejected |
 
 Leaving `JWT_SECRET` unset falls back to a hard-coded development value — set it.
@@ -115,16 +119,60 @@ of it — chrome and assistants alike — and it is edited as **Interface langua
 In the browser it lands in one module variable behind `L(en, he)`, `uiLang()` and `uiDir()`;
 `setAccountApi` keeps it in step with the account, so a save re-renders the tree in the other
 language. The one thing that does not follow it is the **Documentation** tab, which is written
-in Hebrew either way — translating that manual is its own piece of work, and Settings says so
-under the switch.
+in English either way. One manual rather than two: two would mean one of them quietly falling a
+release behind the other, and a stale manual is worse than one in a second language. Settings
+says so under the switch.
+
+**Asked once, on the account.** `user_settings.language_chosen` is what decides whether to ask,
+and it is set only by an answer — the language screen posts `languageChosen: true`, and so does
+touching the switch in Settings. Every other save round-trips whatever the server last said, so
+saving an API key cannot silently answer a question nobody was shown. Migration 020 marks every
+existing row as answered, because whatever those accounts are reading, they have been reading it
+for a while.
+
+It used to hang off the same `localStorage` flag as the tour, which got it wrong in both
+directions: a second person signing in on the same machine was never asked, and the same person
+on a new laptop was asked again. It also runs on a phone, where the tour does not — a spotlight
+over a phone's nav is a different design, but this is a screen with two buttons on it.
+
+## Invitation-only sign-up
+
+There is no way to create an account from the login screen. An admin mints a code in
+**Admin -> Invitations**, hands it over, and that code is the only door in.
+
+The code is `7QF4-2MKD-8RTV`: twelve characters from a 31-letter alphabet with no `0/O` and no
+`1/I/L`, because it gets read out over the phone. About 59 bits, which is far past guessable at
+one HTTP request a go. Case, spaces and misplaced dashes all wash out on the way in
+(`normalizeCode`), so a code retyped in lower case with the dashes in the wrong places is still
+the same code.
+
+**It is stored the way a password is** — `invite_codes.code_hash` holds a sha256 and nothing
+else. The plain text exists for the length of one response; there is no endpoint that reads one
+back, and the list shows `prefix` (the first four characters) because there is nothing else to
+show. An admin who loses one mints another and revokes the first.
+
+**One code, one account.** `/api/auth/invite-check` is public and tells the login screen whether
+to show a form; it reserves nothing. The gate is `claimInvite`, one UPDATE with `used_at is null`
+in its WHERE, so two people racing the same code both reach it and Postgres lets exactly one of
+them change the row. Registration checks the username first (a name already taken must not cost
+somebody their invitation), claims the code, then writes the account — and hands the claim back
+with `releaseInvite` if that last step falls over. `used_by` is filled in afterwards, because it
+is a foreign key and there is no user to point at yet.
+
+Codes expire by themselves after 14 days and can be revoked while open. `inviteState` reduces a
+row to one of `open` / `used` / `revoked` / `expired`, and `refusal` turns that into the sentence
+the person at the door reads.
+
+`probes/invite-probe.mjs` covers the alphabet, the normalising, the race, the release on a failed
+registration, and that the plain code never appears among the values written to the database.
 
 ## Two tours
 
-**The language, first of all.** The very first screen a new account sees is one question —
-English or עברית — written in both, because nobody can read the one they have not chosen yet. The
-answer is saved as the account's `assistantLanguage`, so every screen and every assistant follows
-it, and the tour starts immediately in that language. A failed save still lets the tour run in the
-language they picked; reading five cards in the wrong one is the worse failure.
+**The language, first of all.** Before either tour comes the one question — English or עברית,
+written in both, because nobody can read the one they have not chosen yet. It is a screen of its
+own rather than a step of the tour, and the tour waits for it: there is no point reading five
+cards in a language nobody picked. A failed save still lets them carry on in the language they
+chose. See **Language** above for where the answer lives.
 
 **The platform, on arrival.** Five things pointed at in turn: a spotlight on one element, a card
 beside it, **Next** to carry on. It changes screens as it goes — the home chat, AI Chatbots,
@@ -409,6 +457,43 @@ The same Testing status has a second effect worth knowing: Google **expires refr
 `invalid_grant`. `api/_gmail.js` reports that as TOKEN_EXPIRED and says to reconnect; publishing
 the consent screen is what stops it recurring.
 
+### Publishing it, step by step
+
+`gmail.send` is **sensitive**, not **restricted**. That is the distinction that decides the cost:
+sensitive means a review of a few business days, restricted would mean a CASA third-party
+security assessment and a bill. There is no assessment here.
+
+What the repo provides is the three things the review will not proceed without, all on the app's
+own domain and linked from the sign-in screen:
+
+| URL | File | What it has to do |
+| --- | --- | --- |
+| `/` | `agentforge.html` | describe the product publicly — the sign-in screen does, and now links the other two |
+| `/privacy` | `privacy.html` | name the Gmail scopes, say what is stored and for how long, how to delete it, and carry the Limited Use paragraph verbatim |
+| `/terms` | `terms.html` | the ordinary terms, plus what connecting a mailbox makes the user responsible for |
+
+Both are plain static pages routed in `vercel.json`, ahead of the `/` catch-all. **Edit the
+contact address in both before submitting** — they ship with `support@8legs.ai`, and Google
+emails that address during the review. A bouncing contact fails it.
+
+Then, in the Google Cloud console, on the account that owns the project:
+
+1. **Verify the domain in Google Search Console** — on the *same Google account* that owns the
+   Cloud project. This is the step most submissions fail on, and the failure is not reported as
+   "unverified domain"; it comes back as a missing or unreachable home page.
+2. **APIs & Services -> OAuth consent screen** — app name, user support email, the app home page
+   (`https://<domain>/`), the privacy URL, the terms URL, the authorised domain, and a developer
+   contact email.
+3. **Scopes** — list `.../auth/gmail.send` and `.../auth/userinfo.email`. Justify the first in one
+   plain sentence: *the user connects their own mailbox so the chatbot they built can send email
+   on their behalf; the app never reads mail, and holds no scope that would let it.*
+4. **Demo video** — an unlisted screen recording showing the whole flow end to end: signing in,
+   the Tools tab, pressing Connect, Google's own consent screen with the scopes visible, and an
+   email arriving. Google does not approve a Gmail scope without watching it be used.
+5. **Submit for verification.** Expect 3-5 business days and one round of questions.
+
+Until it is published, each address that needs to connect goes on the Test users list.
+
 ## Every chatbot knows the date
 
 A model has no clock; left alone it answers "today" from wherever its training stopped, which is
@@ -555,6 +640,11 @@ worth transforming the `text/babel` script once before deploying if you changed 
   behind a shared secret is an open item.
 - The widget and the WhatsApp webhook are public by design; conversations through them bill the
   agent owner's API key. Watch **Interactions** for volume.
+- `/privacy`, `/terms` and `/api/auth/invite-check` are public on purpose. The first two have to
+  be, for Google's review; the third reserves nothing and refuses a malformed code without
+  touching the database.
+- Sign-up is invitation only, and an invitation code is stored as a sha256 — like a password, it
+  cannot be read back by anyone, including an admin.
 - DLP masks credit-card and Israeli-ID shaped numbers before they reach the model and before
   history is stored. It is a filter for those two patterns, not a guarantee.
 
@@ -600,3 +690,10 @@ made — only the git half is off.
 test framework in the two places that have none: `agentforge.html` has no
 build step and fails as a blank screen, and a bug in the file converter
 deletes fields from a live agent.
+
+Several probes lift source straight out of `agentforge.html` and run it, so a
+boundary comment they slice on is load-bearing — inserting code between two of
+those markers silently changes what a probe is testing. `invite-probe.mjs`
+additionally asserts on the login screen's source: that the sign-in/register
+toggle is gone, that registration carries a code, and that the server refuses
+one without.

@@ -113,12 +113,18 @@ ok(/Welcome to 8Legs\.ai/.test(gate) && /בחר שפה/.test(gate),
    'and the welcome is in both, because nobody can read the one they have not picked');
 ok(/You can change this later in Settings/.test(gate) && /אפשר לשנות אחר כך/.test(gate),
    'and it says the choice is not final');
-ok(src.includes("setTour('language');"),
-   'it is the first thing a new account sees, before the tour it is about to read');
-ok(src.includes("assistantLanguage: lang }); }") && src.includes("finally { setLangBusy(false); setTour('platform'); }"),
-   'the answer is saved to the account and then the tour begins');
-ok(src.includes('catch { setAccountApi({ assistantLanguage: lang }); }'),
-   'and a failed save still lets the tour run in the language they picked');
+/* It used to be the tour's first step, keyed to the same localStorage flag,
+   which got it wrong in both directions: a second person signing in on this
+   machine was never asked, and the same person on a new laptop was asked
+   twice. It hangs off a column on the account now. */
+ok(src.includes('settings.languageChosen === false'),
+   'it is the first thing a new account sees, and the account is what decides that');
+ok(src.includes("assistantLanguage: lang, languageChosen: true }"),
+   'answering it is what stops it being asked again');
+ok(src.includes('catch {\n          setAccountApi({ assistantLanguage: lang });'),
+   'and a failed save still lets them carry on in the language they picked');
+ok(/if \(firstRunDone\.current \|\| loading \|\| !settings \|\| autopilot \|\| isMobile \|\| askLanguage\) return;/.test(src),
+   'the tour waits for the answer — there is no point reading five cards in a language nobody picked');
 
 /* ── the order the two wizards run in ── */
 ok(!src.includes("if (state.agents.length > 0) { firstRunDone.current = true; return; }"),

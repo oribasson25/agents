@@ -105,6 +105,14 @@
       "destination": "/api/github/webhook.js"
     },
     {
+      "source": "/privacy",
+      "destination": "/privacy.html"
+    },
+    {
+      "source": "/terms",
+      "destination": "/terms.html"
+    },
+    {
       "source": "/",
       "destination": "/agentforge.html"
     }

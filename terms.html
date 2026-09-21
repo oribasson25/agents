@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terms of Service — 8Legs.ai</title>
+<meta name="description" content="The rules for using 8Legs.ai: what you may build, what you are responsible for, and what we promise.">
+<style>
+  :root {
+    --bg: #f2f4f8; --card: #ffffff; --panel: #f6f8fb;
+    --text: #0d0f14; --text-2: #445068; --muted: #8a97b0;
+    --border: #d8dde8; --primary: #EF9F27; --primary-dim: rgba(239,159,39,0.10);
+    --shadow: 0 4px 24px rgba(15,23,42,0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --card: #1d222b; --panel: #222832;
+      --text: #eef1f6; --text-2: #a8b3c7; --muted: #77839a;
+      --border: #313947; --primary-dim: rgba(239,159,39,0.14);
+      --shadow: 0 4px 24px rgba(0,0,0,0.35);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased; line-height: 1.7;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 56px 20px 88px; }
+  a { color: var(--text); text-decoration: none; border-bottom: 1px solid var(--primary); }
+  a:hover { color: var(--primary); }
+  header.mast { display: flex; align-items: center; gap: 12px; margin-bottom: 40px; }
+  .logo { font-size: 20px; font-weight: 800; letter-spacing: -0.7px; }
+  .logo em { font-style: normal; color: var(--primary); }
+  .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; color: var(--muted); }
+  h1 { font-size: clamp(28px, 5vw, 38px); font-weight: 800; letter-spacing: -1px; margin: 6px 0 12px; line-height: 1.2; }
+  .lede { font-size: 16px; color: var(--text-2); margin: 0 0 8px; }
+  .stamp { font-size: 12.5px; color: var(--muted); margin-bottom: 34px; }
+  h2 { font-size: 19px; font-weight: 750; letter-spacing: -.4px; margin: 40px 0 10px; padding-top: 22px; border-top: 1px solid var(--border); }
+  h3 { font-size: 15px; font-weight: 700; margin: 24px 0 6px; color: var(--text); }
+  p { margin: 0 0 12px; color: var(--text-2); font-size: 15px; }
+  ul { margin: 0 0 14px; padding-left: 22px; color: var(--text-2); font-size: 15px; }
+  li { margin-bottom: 6px; }
+  strong { color: var(--text); font-weight: 700; }
+  code { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 13.5px; background: var(--panel); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; }
+  .callout {
+    background: var(--card); border: 1px solid var(--border); border-left: 3px solid var(--primary);
+    border-radius: 12px; padding: 18px 20px; margin: 20px 0; box-shadow: var(--shadow);
+  }
+  .callout p:last-child { margin-bottom: 0; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0 18px; font-size: 14.5px; display: block; overflow-x: auto; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; color: var(--text-2); }
+  th { font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+  footer { margin-top: 56px; padding-top: 22px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted); display: flex; gap: 16px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="mast">
+    <div class="logo">8Legs<em>.ai</em></div>
+  </header>
+
+  <div class="eyebrow">Legal</div>
+  <h1>Terms of Service</h1>
+  <p class="lede">8Legs.ai is a platform for building AI chatbots: you write what a chatbot should do,
+  give it documents, tables and a mailbox to work with, and publish it to a website widget, WhatsApp
+  or email. These are the rules for using it.</p>
+  <p class="stamp">Last updated 21 September 2026. Operated by Ori Basson (&ldquo;we&rdquo;).
+  Questions: <a href="mailto:support@8legs.ai">support@8legs.ai</a>.</p>
+
+  <h2>1. Your account</h2>
+
+  <p>Accounts are created by invitation. The code you were given opens exactly one account and cannot
+  be passed on afterwards. You are responsible for what happens under your account, so keep the
+  password to yourself; tell us if you think somebody else has it.</p>
+
+  <p>You must be old enough to enter a contract where you live, and at least 16.</p>
+
+  <h2>2. What the platform does, and what it does not</h2>
+
+  <p>The platform runs your chatbots against a large language model — Anthropic's or OpenAI's,
+  whichever you configured, <strong>using your own API key</strong>. It is your account with that
+  provider, your bill, and their terms apply to what passes through it.</p>
+
+  <p>Language models get things wrong. A chatbot you publish will sometimes answer incorrectly,
+  confidently. Test it before you put it in front of customers, and do not use it unsupervised for
+  anything where a wrong answer causes real harm — medical, legal, financial or safety advice
+  included. What your chatbot says is published by you, not by us.</p>
+
+  <h2>3. Your content</h2>
+
+  <p>The documents you upload, the text crawled from sites you nominate, your tables, your prompts
+  and your conversations stay yours. We claim no ownership and we do not use them to train anything.
+  We store and process them for one purpose: running the platform for you.</p>
+
+  <p>You confirm you have the right to upload what you upload, and to crawl the sites you point a
+  chatbot at.</p>
+
+  <h2>4. What you may not do</h2>
+
+  <ul>
+    <li>Build a chatbot that impersonates a real person or organisation without their permission.</li>
+    <li>Send unsolicited bulk email or messages through a connected mailbox or WhatsApp number.
+    Connecting a mailbox does not make spam acceptable, and it will get the mailbox suspended by
+    Google long before it gets you a warning from us.</li>
+    <li>Collect personal information from the people talking to your chatbot without telling them,
+    or in a way the law where they live does not allow.</li>
+    <li>Upload malware, or content that is illegal where you or your users are.</li>
+    <li>Attack, probe or overload the platform, or try to reach another account's data.</li>
+    <li>Resell access to the platform without our written agreement.</li>
+  </ul>
+
+  <h2>5. Connected accounts</h2>
+
+  <p>Connecting Gmail, WhatsApp or GitHub gives your chatbots permission to act in your name on those
+  services. You are responsible for what they then do, and for the terms of those services. Every
+  connection can be disconnected from the platform at any time, and separately revoked from the
+  provider's own settings — for Google, at
+  <a href="https://myaccount.google.com/permissions" target="_blank" rel="noreferrer">myaccount.google.com/permissions</a>.</p>
+
+  <h2>6. Availability</h2>
+
+  <p>We run the platform with care but promise no particular uptime. It can go down; a third party we
+  depend on can go down and take it with us. Features change, and some are removed. If we plan
+  something that would break what you have built, we will say so in the application first.</p>
+
+  <h2>7. Suspension</h2>
+
+  <p>We can suspend or close an account that breaks section 4, that puts the platform or other users
+  at risk, or that the law requires us to close. Where the situation allows it, we will tell you
+  first and give you a chance to export what is yours.</p>
+
+  <h2>8. Ending it</h2>
+
+  <p>You can ask for your account to be deleted at any time, from an administrator or by writing to
+  <a href="mailto:support@8legs.ai">support@8legs.ai</a>. Deletion removes your chatbots, documents,
+  tables, conversations, connected channels and stored credentials, and cannot be undone. Export
+  anything you want to keep first.</p>
+
+  <h2>9. Liability</h2>
+
+  <p>The platform is provided as it is, without warranties of any kind. To the extent the law allows,
+  we are not liable for indirect or consequential loss — lost profit, lost business, lost data — and
+  our total liability for anything arising out of your use of the platform is limited to what you
+  paid us for it in the twelve months before the claim.</p>
+
+  <p>Nothing here limits liability that cannot be limited by law.</p>
+
+  <h2>10. Changes</h2>
+
+  <p>We can change these terms. The date at the top changes with them, and a material change is
+  announced in the application. Carrying on using the platform after that is how you accept them.</p>
+
+  <h2>11. Law</h2>
+
+  <p>These terms are governed by the laws of the State of Israel, and the courts of Tel Aviv-Yafo
+  have exclusive jurisdiction over any dispute arising from them.</p>
+
+  <footer>
+    <a href="/">8Legs.ai</a>
+    <a href="/privacy">Privacy Policy</a>
+    <span>&copy; 2026 Ori Basson</span>
+  </footer>
+
+</div>
+</body>
+</html>

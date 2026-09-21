@@ -854,6 +854,23 @@
     if (!r.ok) throw new Error(d.error || `Delete failed (${r.status})`);
     return d;
   }
+  /* ── invitations ──
+     The code comes back from POST and from nowhere else: the row holds only a
+     hash of it, so there is no call that reads one back. */
+  async function adminListInvites() { return apiFetch('/api/admin/invite-codes').then(r => r.json()); }
+  async function adminCreateInvite() {
+    const r = await apiFetch('/api/admin/invite-codes', { method: 'POST', body: JSON.stringify({}) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `Could not make a code (${r.status})`);
+    return d;
+  }
+  async function adminRevokeInvite(id) {
+    const r = await apiFetch(`/api/admin/invite-codes/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `Could not cancel it (${r.status})`);
+    return d;
+  }
+
   async function adminDeleteAgent(agentId) { return apiFetch(`/api/admin/agents/${agentId}`, { method: 'DELETE' }); }
   async function adminUpdateAgent(agent) { return apiFetch(`/api/admin/agents/${agent.id}`, { method: 'PUT', body: JSON.stringify(agent) }).then(r => r.json()); }
   async function adminDuplicateTo(agentId, targetUserId) { return apiFetch(`/api/admin/agents/${agentId}/duplicate-to/${targetUserId}`, { method: 'POST' }).then(r => r.json()); }
@@ -1126,6 +1143,7 @@
     live:    ['rgba(34,197,94,0.12)', 'var(--success)', 'rgba(34,197,94,0.3)'],
     draft:   ['rgba(245,158,11,0.12)', 'var(--warning)', 'rgba(245,158,11,0.32)'],
     teal:    ['var(--teal-dim)', 'var(--teal)', 'rgba(20,184,166,0.22)'],
+    danger:  ['rgba(220,38,38,0.10)', 'var(--danger)', 'rgba(220,38,38,0.26)'],
   };
 
   /** The little rounded label used for counts, branches, channels and states. */
@@ -5653,30 +5671,37 @@ function markSvgString(color, size = 30) {
   /* ─────────────────── DOCS VIEW ─────────────────── */
   function DocsView({ stacked, initialSection, onReplayTour }) {
     /* initialSection lets something else point at a page — the CLI section
-       from Settings, for instance — instead of always opening on the intro. */
+       from Settings, for instance — instead of always opening on the intro.
+
+       The guide is written in English whichever language the interface is
+       set to. It is one document rather than two, because two would mean one
+       of them quietly falling a release behind the other, and a stale manual
+       is worse than one in a second language. */
     const [active, setActive] = useState(initialSection || 'intro');
 
     const sections = [
-      { id: 'intro',        label: 'מה זה 8Legs.ai' },
-      { id: 'home',         label: 'דף הבית — צ׳אט' },
-      { id: 'autopilot',    label: 'Autopilot — בנייה מודרכת' },
+      { id: 'intro',        label: 'What 8Legs.ai is' },
+      { id: 'home',         label: 'Home — the chat' },
+      { id: 'access',       label: 'Accounts & invitations' },
+      { id: 'autopilot',    label: 'Autopilot & the tours' },
       { id: 'agents',       label: 'AI Chatbots' },
       { id: 'config',       label: 'Configuration' },
       { id: 'skills',       label: 'Skills' },
       { id: 'tools',        label: 'Tools' },
-      { id: 'platform',     label: 'אסיסטנט המערכת' },
-      { id: 'history',      label: 'היסטוריית אסיסטנטים' },
-      { id: 'assistant',    label: 'אסיסטנט הבנייה' },
+      { id: 'email',        label: 'Email (Gmail)' },
+      { id: 'platform',     label: 'The platform assistant' },
+      { id: 'history',      label: 'Assistant history' },
+      { id: 'assistant',    label: 'The building assistant' },
       { id: 'knowledge',    label: 'Knowledge (RAG)' },
       { id: 'tables',       label: 'Tables' },
-      { id: 'test',         label: 'בדיקה ו-Manual tests' },
-      { id: 'cli',          label: '⌨ עריכה מ-IDE (CLI)' },
-      { id: 'widget',       label: 'הטמעה באתר' },
-      { id: 'whatsapp',     label: 'ערוץ WhatsApp' },
+      { id: 'test',         label: 'Testing & manual tests' },
+      { id: 'cli',          label: '⌨ Editing from an IDE (CLI)' },
+      { id: 'widget',       label: 'Embedding on a site' },
+      { id: 'whatsapp',     label: 'WhatsApp channel' },
       { id: 'interactions', label: 'Interactions' },
       { id: 'admin',        label: 'Admin' },
-      { id: 'ops',          label: 'תשתית ותחזוקה' },
-      { id: 'security',     label: 'אבטחה ופרטיות' },
+      { id: 'ops',          label: 'Infrastructure & upkeep' },
+      { id: 'security',     label: 'Security & privacy' },
     ];
 
     const H2 = ({ children }) => (
@@ -5689,7 +5714,7 @@ function markSvgString(color, size = 30) {
       <p style={{ fontSize: 14, color: 'var(--text-2)', lineHeight: 1.75, marginBottom: 10 }}>{children}</p>
     );
     const UL = ({ children }) => (
-      <ul style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 1.95, paddingRight: 20, marginBottom: 12 }}>{children}</ul>
+      <ul style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 1.95, paddingInlineStart: 20, marginBottom: 12 }}>{children}</ul>
     );
     const Code = ({ children }) => (
       <code style={{ background: 'var(--bg-hover)', color: 'var(--teal)', padding: '2px 6px', borderRadius: 4, fontSize: 13, fontFamily: 'monospace' }}>{children}</code>
@@ -5699,269 +5724,305 @@ function markSvgString(color, size = 30) {
     );
     const Tip = ({ children }) => (
       <div style={{ background: 'rgba(239,159,39,0.08)', border: '1px solid rgba(239,159,39,0.25)', borderRadius: 'var(--r-md)', padding: '12px 16px', marginBottom: 12, fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>
-        <span style={{ color: 'var(--primary)', fontWeight: 600 }}>💡 טיפ: </span>{children}
+        <span style={{ color: 'var(--primary)', fontWeight: 600 }}>💡 Tip: </span>{children}
       </div>
     );
     const Warn = ({ children }) => (
       <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 'var(--r-md)', padding: '12px 16px', marginBottom: 12, fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>
-        <span style={{ color: '#f59e0b', fontWeight: 600 }}>⚠️ שים לב: </span>{children}
+        <span style={{ color: '#f59e0b', fontWeight: 600 }}>⚠️ Careful: </span>{children}
       </div>
     );
 
     const content = {
       /* ─────────────── INTRO ─────────────── */
-      autopilot: (
-        <div dir="rtl">
-          <H2>Autopilot — בנייה מודרכת</H2>
-
-          <H3>שני סיורים, והסדר הוא העיקר</H3>
-          <P><strong>לפני שניהם — שאלת השפה.</strong> הדבר הראשון שחשבון חדש רואה הוא מסך אחד: <Code>English</Code> או <Code>עברית</Code>. הכיתוב מופיע בשתי השפות, כי אי אפשר לקרוא את זו שעוד לא נבחרה. הבחירה נשמרת כהגדרת החשבון (<Code>assistantLanguage</Code>) ומשפיעה על כל הממשק ועל האסיסטנטים, ומיד אחריה מתחיל הסיור — באותה שפה.</P>
-          <P><strong>הראשון — הפלטפורמה, בגדול.</strong> נפתח בכניסה הראשונה: חמישה שלבים על גבי הפלטפורמה עצמה, זרקור על דבר אחד בכל פעם, והמסך מתחלף תוך כדי — צ'אט הבית ← AI Chatbots ← Tables ← Interactions ← Settings. הקלף האחרון מציע ״בנה לי אחד משלי״, כלומר פותח את Autopilot.</P>
-          <P><strong>השני — מסכי העריכה, והוא מחכה.</strong> אין טעם ללמד איך צ'אטבוט בנוי לפני שבנו אחד. וכל חשבון חדש מקבל את ה-Starter agents בהרשמה, אז ״יש צ'אטבוט״ זו לא אותה שאלה כמו ״בנה צ'אטבוט״. הסיור השני נפתח בפעם הראשונה שיש בחשבון צ'אטבוט <strong>שהמשתמש עצמו בנה</strong>, ומסביר את הבייס־פרומפט, הסקילים, הטולים, הידע וצ'אט הבדיקה — <strong>על העבודה שלו</strong>, בשמה.</P>
-          <P>איך מזהים: <Code>seededFrom</Code> נשמר על כל עותק בזמן ההרשמה. לחשבונות שנפתחו לפני הסימון הזה נשמרת גם רשימת ה-ids שהיו בחשבון כשהסיור הראשון נגמר — כל מה שהופיע אחר כך הוא שלהם.</P>
-          <Warn>עד לשינוי הזה, Autopilot נפתח לבד רק כשלחשבון לא היה אף צ'אטבוט — תנאי שלא התקיים אצל אף משתמש אמיתי בגלל ה-Starter agents. כלומר הוא לא נפתח לבד לאף אחד.</Warn>
-          <UL>
-            <li>היעדים הם תגיות <Code>data-tour</Code> על אלמנטים אמיתיים, לא סלקטורים של CSS — סלקטור נשבר בשקט, תגית נשברת בבדיקה</li>
-            <li>לכל שלב יש יעד מועדף (התוכן) ונפילה לאחור (פריט התפריט), כך שגם חשבון דל מקבל סיור שלם</li>
-            <li>שלב שהיעד שלו לא מופיע תוך 2.5 שניות מדלג לבד במקום להיתקע</li>
-            <li>יעד גבוה מדי מקבל את הכרטיס <strong>לצדו</strong> ולא מעליו — הכרטיס לעולם לא מכסה את מה שהוא מסביר</li>
-            <li>שני הסיורים ניתנים להרצה חוזרת מהתיעוד, בכרטיס בראש העמוד הזה</li>
-            <li>בטלפון הם לא רצים — הטלפון הוא עץ נפרד עם ניווט תחתון, וזרקור שם הוא עיצוב אחר. מסומנים כנצפו כדי שלא יקפצו אחר כך בדסקטופ</li>
-          </UL>
-
-          <P>וויזרד שבונה AI Chatbot שלם למי שלא יודע לבנות אחד. הוא נפתח לבד בפעם הראשונה שנכנסים לחשבון ריק, ובכל <Code>צ'אטבוט חדש</Code> מוצג קודם מסך בחירה בין <strong>Autopilot</strong> ל־<strong>Advanced</strong> (העורך המלא, כמו שהיה תמיד).</P>
-
-          <H3>העיקרון</H3>
-          <P>לא נשאלת אף שאלה על בניית סוכנים — לא בייס־פרומפט, לא סקילים. נשאלות שאלות על <strong>העסק</strong> ועל <strong>מה שצריך שיקרה</strong>, והוויזרד מתרגם אותן לסוכן. ובסוף אסור שיישאר משהו שמחייב את העורך: המפתח, הידע, הטבלה, Gmail והערוץ — הכל נסגר בתוכו, מול אותן נקודות קצה שהעורך משתמש בהן.</P>
-
-          <H3>המסכים</H3>
-          <UL>
-            <li><strong>1 · העסק</strong> — שש קטגוריות, וגם ״אתאר בעצמי״ בטקסט חופשי</li>
-            <li><strong>2 · תפקידים</strong> — נגזרים ממסך 1. כל בחירה הופכת ל<strong>סקיל</strong>, וזו נקודת ההסתעפות שקובעת את מסכים 4 ו־5</li>
-            <li><strong>3 · המפתח</strong> — <strong>רק אם אין בחשבון מפתח שעובד</strong>. המפתח השמור נבדק מול הספק ברקע בזמן השאלה הראשונה; רק מפתח שענה מוציא את המסך מהזרימה, והשאלות נספרות בלעדיו</li>
-            <li><strong>4 · ידע</strong> — סריקת אתר (רצה כאן, עם המונה), העלאת קבצים (חילוץ טקסט ושמירה כאן, עם שורת מצב לכל קובץ), כתיבה ידנית, ויצירת הטבלה עם עמודות מוצעות</li>
-            <li><strong>5 · יכולות</strong> — כתיבה לטבלה, חיבור Gmail (יוצא לגוגל וחוזר לוויזרד), קריאה חיה מהאתר, העברה לאדם</li>
-            <li><strong>6 · חיבורים</strong> — <strong>מופיע רק אם צריך</strong>. ראה למטה</li>
-            <li><strong>7 · אופי</strong> — שם, צבע, סגנון, וכללים משלך</li>
-            <li><strong>8 · בנייה</strong> — קריאת מודל אחת שמחזירה שם, הודעת פתיחה, בייס־פרומפט וסקילים, ועוד קריאה לכל טול</li>
-            <li><strong>9 · לולאת אישור</strong> — ראה למטה</li>
-            <li><strong>10 · פרסום</strong> — סניפט לאתר, וואטסאפ, או דילוג</li>
-          </UL>
-
-          <H3>עריכה עם AI</H3>
-          <P>על כל כרטיס של צ'אטבוט יש <Code>עריכה עם AI</Code> לצד <Code>עריכה</Code>. הוא פותח את הצ'אט בדף הבית עם בקשה שכוללת את <strong>שם הצ'אטבוט</strong>, ומבקשת מהאסיסטנט לקרוא אותו לפני שהוא שואל משהו. משם אפשר לתאר שינוי במילים — ״שיבקש גם מייל״, ״שלא יבטיח מחיר״ — והאסיסטנט מבצע אותו דרך אותם כלים שיש לו ממילא.</P>
-          <P>השם בבקשה הוא גם מה שנותן לשיחה כותרת משלה, במקום עמודה של שיחות זהות בהיסטוריה.</P>
-
-          <H3>כל צ'אטבוט יודע מה השעה</H3>
-          <P>למודל אין שעון. בלי שאומרים לו, הוא עונה על ״היום״ לפי הרגע שבו נגמר האימון שלו — ככה צ'אטבוט שקובע תורים מציע מועד בשנה שכבר עברה. לכן התאריך <strong>לא</strong> כלי שהוא יכול לבחור לקרוא לו, אלא בלוק קבוע בראש הפרומפט של <strong>כל תור של כל צ'אטבוט</strong>, וגם של האסיסטנט עצמו:</P>
-          <P><Code>## Right now · It is Sunday, 20 September 2026 at 22:41 GMT+03:00 · Today is 2026-09-20. Tomorrow is 2026-09-21.</Code></P>
-          <UL>
-            <li>גם היום בשבוע וגם התאריך כמחרוזת שטבלה יכולה לקבל — ו״מחר״, כי מודלים טועים בחשבון תאריכים</li>
-            <li>אזור הזמן <strong>קבוע</strong> (<Code>Asia/Jerusalem</Code>) ולא נלקח מהמכונה: פונקציה ב-Vercel רצה ב-UTC והדפדפן רץ איפה שהבעלים יושב. אם הם היו שונים, צ'אט הבדיקה היה מספר לך על צ'אטבוט אחר מזה שבאוויר</li>
-            <li>מעבר שעון קיץ/חורף מטופל — הבדיקות מוודאות UTC+3 בקיץ ו-UTC+2 בחורף</li>
-            <li>לשינוי המיקום: <Code>PLATFORM_TZ</Code>, בשני העותקים</li>
-          </UL>
-
-          <H3>על איזה צ'אטבוט מדברים</H3>
-          <P>מתחת להצעות בדף הבית יש <strong>רשימת הצ'אטבוטים של החשבון</strong>. לוחצים על אחד, הוא הופך לנושא השיחה — מופיעה שורת <Code>על ⟨שם⟩</Code> מעל שורת הכתיבה, ומה שנכתב אחריה נשלח כ״על ה-AI Chatbot ⟨שם⟩: …״.</P>
-          <P>השם נכנס <strong>לתוך ההודעה</strong> ולא רק לפרומפט המערכת, כדי שגם כשפותחים את השיחה מחדש בעוד חודש עדיין יהיה כתוב על מה דיברו. הנושא נשמר לכל אורך השיחה — אחרת השאלה השנייה הייתה מאבדת אותו בשקט — ונמחק ב״שיחה חדשה״ או בלחיצה על ה-✕.</P>
-
-          <H3>טולים — רק כשאין ברירה</H3>
-          <P>כמעט שום דבר לא צריך קוד. הידע עונה על שאלות, הטבלה רושמת מה שנאסף, Gmail שולח, והסורק קורא את האתר. טול נחוץ רק לדבר האחד שאף אחד מהם לא מגיע אליו — <strong>מערכת של חברה אחרת</strong>: מעקב משלוח אצל שליח, הפקת חשבונית בתוכנת הנהלת חשבונות, שליחת SMS דרך ספק.</P>
-          <P>הזיהוי רץ פעם אחת, ביציאה ממסך 5, ורק אם נכתב טקסט חופשי — אין מקור אחר שיכול לרמז על מערכת חיצונית. המודל מונחה <strong>לסרב כברירת מחדל</strong>: אם אין ודאות, הוא מחזיר רשימה ריקה, ואז מסך 6 בכלל לא מופיע.</P>
-          <P>כשכן צריך, מסך 6 מציג את הטול בשפה של בעל העסק (״לשלוח לך וואטסאפ על ביטול מאוחר״), את השירות שמדובר בו, ולכל מפתח שנדרש — <strong>שדה, שלבים ממוספרים איך להשיג אותו, וקישור לעמוד הנכון</strong>. אפשר לומר ״לא צריך״ ולוותר, ואפשר להשאיר מפתח ריק ולמלא אחר כך.</P>
-          <UL>
-            <li>הקוד נכתב בקריאת מודל נפרדת לכל טול, עם הנחיה לא להמציא endpoint שהוא לא בטוח בו</li>
-            <li>המפתחות נשמרים כ־<Code>envVars</Code> של הטול, ונקראים ב־<Code>os.environ</Code></li>
-            <li>טול שהכתיבה שלו נכשלה פשוט לא נשמר — טול שבור בתוך צ'אטבוט שהבעלים לא יודע לקרוא גרוע מאין טול</li>
-            <li>לכל היותר שני טולים</li>
-          </UL>
-
-          <H3>לולאת האישור</H3>
-          <P>המסך שמקיים את ההבטחה. צ'אט אמיתי מול מה שנבנה, ולידו שדה הערות בשפה חופשית. כל <Code>תקן ובנה מחדש</Code> מחזיר את ההערות לתוך הבריף, מייצר מחדש, שומר, ומאפס את השיחה — ומעלה את מונה הסבב. רשימת ״מה כבר תוקן״ נשמרת מולו, כי אחרי שלושה סבבים אדם כבר לא זוכר מה ביקש. <strong>רק</strong> הכפתור הירוק <Code>הכל תקין — לפרסום</Code> מעביר הלאה.</P>
-
-          <H3>דברים ששווה לדעת</H3>
-          <UL>
-            <li>הסוכן נוצר כבר במעבר למסך 4, כי מסמכים, סריקה וטוקן של Gmail חייבים להיתלות על משהו</li>
-            <li>התשובות נשמרות ב־<Code>sessionStorage</Code>, כי חיבור Gmail מוסר את הדפדפן לגוגל ומחזיר אותו אחרי דקה</li>
-            <li>״אני יודע לבנות לבד״ בתחתית כל מסך מעביר לעורך <strong>עם</strong> הסוכן שכבר נוצר — לא משאיר יתום</li>
-            </UL>
-          <H3>המפתח נבדק, לא רק נשמר</H3>
-          <P>שדה המפתח קיבל בעבר כל מחרוזת. חשבון רץ יום שלם עם <Code>25102004</Code> בשדה — הכל אמר ״מוגדר״ עד הרגע שמישהו ביקש תשובה ממודל, ואז חזר <Code>invalid x-api-key</Code>. עכשיו המפתח נשלח לספק לפני שהוא נשמר: ל־Claude קריאה של טוקן אחד, ל־OpenAI שליפת רשימת המודלים (בלי טוקנים בכלל), ולשרת עצמי שאלה מה יש לו. מפתח שנדחה לא נשמר, והסיבה מוצגת במילים של הספק — גם בהגדרות וגם בוויזרד.</P>
-          <P>ואם בנייה נעצרת על המפתח (מפתח שבוטל, חשבון שנגמר בו הקרדיט), מוצג <Code>תקן את המפתח</Code> שמחזיר למסך 3 ומשם <strong>ישר חזרה לבנייה</strong> — לא לשאלות מההתחלה.</P>
-          <Warn>מה שעדיין יכול לעצור לקוח לגמרי: בלי מפתח של Anthropic או OpenAI אי אפשר לבנות כלום, וזה דורש חשבון פיתוח וכרטיס אשראי. אין מפתח ברמת הפלטפורמה.</Warn>
-        </div>
-      ),
-
       intro: (
-        <div dir="rtl">
+        <div dir="ltr">
           {onReplayTour && (
             <div style={{ marginBottom: 18, padding: '14px 18px', borderRadius: 'var(--r-lg)', background: 'var(--primary-dim)', border: '1px solid rgba(239,159,39,0.35)', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
               <div style={{ flexGrow: 1, minWidth: 200 }}>
-                <div style={{ fontWeight: 800, fontSize: 14.5, marginBottom: 3 }}>הסיור המודרך</div>
-                <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>שני סיורים על גבי הפלטפורמה עצמה, חמישה שלבים כל אחד. הראשון נפתח בכניסה הראשונה; השני מחכה עד שיש צ'אטבוט שבנית בעצמך. אפשר להריץ שוב מתי שרוצים.</div>
+                <div style={{ fontWeight: 800, fontSize: 14.5, marginBottom: 3 }}>The guided tours</div>
+                <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>Two tours over the platform itself, five steps each. The first opens the first time you arrive; the second waits until there is a chatbot you built yourself. Run either again whenever you like.</div>
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <Btn variant="primary" icon={Icons.sparkle} onClick={() => onReplayTour('platform')}>סיור בפלטפורמה</Btn>
-                <Btn icon={Icons.sliders} onClick={() => onReplayTour('editor')}>סיור בעריכת סוכן</Btn>
+                <Btn variant="primary" icon={Icons.sparkle} onClick={() => onReplayTour('platform')}>Tour the platform</Btn>
+                <Btn icon={Icons.sliders} onClick={() => onReplayTour('editor')}>Tour the editor</Btn>
               </div>
             </div>
           )}
-          <H2>מה זה 8Legs.ai</H2>
-          <P>פלטפורמה לבניית AI Chatbots בלי לכתוב תשתית. כל AI Chatbot הוא הגדרה אחת שכוללת פרומפט, מודל, סקילים, כלי Python, בסיס ידע וערוצי הפצה — והוא זמין מיד בצ'אט בדיקה, כווידג'ט באתר וכמספר WhatsApp.</P>
+          <H2>What 8Legs.ai is</H2>
+          <P>A platform for building AI Chatbots without writing any plumbing. Each AI Chatbot is a single definition — a prompt, a model, skills, Python tools, a knowledge base and the channels it is published to — and it is available immediately in a test chat, as a widget on your site, and as a WhatsApp number.</P>
 
-          <H3>מה מרכיב AI Chatbot</H3>
+          <H3>What an AI Chatbot is made of</H3>
           <UL>
-            <li><strong>Configuration</strong> — זהות, פרומפט בסיס, ספק AI ומודל, מיסוך מידע רגיש</li>
-            <li><strong>Skills</strong> — מצבים ממוקדים שה-AI Chatbot עובר ביניהם, כל אחד עם פרומפט משלו</li>
-            <li><strong>Tools</strong> — פונקציות Python שה-AI Chatbot קורא בזמן שיחה, ועוד כלי מובנה לשליחת מייל</li>
-            <li><strong>Knowledge</strong> — מסמכים וסריקת אתרים שנשלפים לפי הקשר</li>
-            <li><strong>Export / WhatsApp</strong> — הטמעה באתר וחיבור למספר WhatsApp</li>
+            <li><strong>Configuration</strong> — identity, base prompt, AI provider and model, masking of sensitive data</li>
+            <li><strong>Skills</strong> — focused modes the AI Chatbot switches between, each with a prompt of its own</li>
+            <li><strong>Tools</strong> — Python functions the AI Chatbot calls mid-conversation, plus a built-in one for sending email</li>
+            <li><strong>Knowledge</strong> — documents and crawled websites, pulled in by relevance</li>
+            <li><strong>Export / WhatsApp</strong> — embedding on a site, and connecting a WhatsApp number</li>
           </UL>
 
-          <H3>איך זה בנוי</H3>
+          <H3>How it is built</H3>
           <UL>
-            <li><strong>Frontend</strong> — קובץ HTML אחד עם React שנטען מ-CDN, בלי build step</li>
-            <li><strong>Backend</strong> — Vercel Serverless Functions תחת <Code>/api</Code></li>
-            <li><strong>Database</strong> — Neon PostgreSQL; AI Chatbot נשמר כ-JSONB בטבלת <Code>agents</Code></li>
-            <li><strong>מודלים</strong> — Claude (Anthropic), OpenAI, או Ollama מקומי</li>
-            <li><strong>הרצת כלים</strong> — Python serverless עם <Code>pip install</Code> לפי דרישה</li>
-            <li><strong>סריקת אתרים</strong> — Playwright + Chromium שמריץ JavaScript לפני החילוץ</li>
+            <li><strong>Frontend</strong> — one HTML file with React loaded from a CDN, and no build step</li>
+            <li><strong>Backend</strong> — Vercel serverless functions under <Code>/api</Code></li>
+            <li><strong>Database</strong> — Neon PostgreSQL; an AI Chatbot is stored as JSONB in the <Code>agents</Code> table</li>
+            <li><strong>Models</strong> — Claude (Anthropic), OpenAI, or a local Ollama</li>
+            <li><strong>Running tools</strong> — Python serverless with <Code>pip install</Code> on demand</li>
+            <li><strong>Crawling sites</strong> — the HTML the server returns, followed across the whole domain</li>
           </UL>
 
-          <H3>איפה כל דבר יושב</H3>
-          <P>בסייד-בר: <strong>Home</strong> (צ'אט — כאן בונים AI Chatbot בשיחה), <strong>AI Chatbots</strong> (ה-AI Chatbots שלך), <strong>Interactions</strong> (שיחות של משתמשי קצה), <strong>Documentation</strong> (הדף הזה), <strong>Settings</strong>, ו-<strong>Admin</strong> למשתמשי אדמין בלבד. מתחת לפריטים האלה רשימת השיחות האחרונות ב-Home, ובתחתיתה <strong>כל השיחות →</strong> להיסטוריה המלאה של כל האסיסטנטים. הכפתור <strong>שאל את האסיסטנט</strong> בפינה הימנית התחתונה פותח את אסיסטנט המערכת מכל מסך חוץ מ-Home, שהוא כבר צ'אט.</P>
+          <H3>Where everything lives</H3>
+          <P>In the sidebar: <strong>Home</strong> (the chat — this is where a chatbot gets built in conversation), <strong>AI Chatbots</strong> (yours), <strong>Tables</strong> (rows they share), <strong>Interactions</strong> (conversations end users had), <strong>Documentation</strong> (this page), <strong>Settings</strong>, and <strong>Admin</strong> for administrators only. Below those sits the list of recent Home conversations, and at its foot <strong>All conversations →</strong> for the full history of every assistant. The <strong>Ask the assistant</strong> button in the bottom corner opens the platform assistant from any screen except Home, which is already a chat.</P>
         </div>
       ),
 
       /* ─────────────── HOME ─────────────── */
       home: (
-        <div dir="rtl">
-          <H2>דף הבית — צ׳אט</H2>
-          <P>הדבר הראשון שרואים אחרי התחברות הוא שיחה, לא רשימה: הלוגו באמצע המסך, ברכה לפי השעה עם שם המשתמש, ושדה אחד מתחתיו. מה שכותבים שם הולך לאסיסטנט המערכת — אותו אסיסטנט שמתפעל את הפלטפורמה, עם כל הכלים שלו.</P>
+        <div dir="ltr">
+          <H2>Home — the chat</H2>
+          <P>The first thing you see after signing in is a conversation, not a list: the logo in the middle of the screen, a greeting that knows the time of day and your name, and one field underneath. What you type there goes to the platform assistant — the same assistant that operates the platform, with all of its tools.</P>
 
-          <H3>ראיון — כשמבקשים AI Chatbot חדש</H3>
-          <P>בכל פעם שמבקשים לבנות AI Chatbot חדש, בכל ניסוח, השיחה הופכת לראיון: שאלה אחת בכל פעם — מה ה-AI Chatbot צריך לעשות ולמי, באיזו שפה הוא מדבר, מאיפה מגיעות התשובות ובאיזה ערוץ הוא חי. ברגע שיש מספיק מידע הוא קורא ל-<Code>create_agent</Code> באמצע השיחה וממשיך לחדד משם, במקום לחכות לסוף. זה לא תלוי בכמה AI Chatbots כבר יש בחשבון — גם ה-AI Chatbot העשירי מתחיל בראיון.</P>
+          <H3>The interview — when you ask for a new AI Chatbot</H3>
+          <P>Whenever you ask for a new AI Chatbot, in any wording, the conversation turns into an interview: one question at a time — what the chatbot should do and for whom, which language it speaks, where its answers come from, and which channel it lives on. As soon as there is enough to go on it calls <Code>create_agent</Code> mid-conversation and keeps refining from there, rather than waiting until the end. This does not depend on how many chatbots the account already has — the tenth one still starts with an interview.</P>
 
-          <H3>בלי ראיון — שאלות ושינויים</H3>
-          <P>שאלת ידע על הפלטפורמה, או שינוי ב-AI Chatbot שכבר קיים, לא מפעילים ראיון: הוא עונה או מבצע בתור אחד, ושואל שאלה חוזרת רק אם באמת אי אפשר בלעדיה. "תעשה אותו יותר ידידותי" הוא שינוי, לא AI Chatbot חדש.</P>
+          <H3>No interview — questions and changes</H3>
+          <P>A question about the platform, or a change to a chatbot that already exists, does not start an interview: it answers or acts in a single turn, and asks a follow-up only when it genuinely cannot proceed without one. &ldquo;Make it friendlier&rdquo; is a change, not a new chatbot.</P>
 
-          <H3>כפתורי תשובה</H3>
-          <P>כששאלה של האסיסטנט יש לה כמה תשובות סבירות, הוא מסיים את ההודעה בשורת <Code>::options::</Code> והמסך הופך אותה לכפתורים. מודל שלא כותב את השורה הזאת פשוט מקבל הודעה בלי כפתורים — שום דבר לא נשבר.</P>
+          <H3>Answer buttons</H3>
+          <P>When a question the assistant asks has a few sensible answers, it ends the message with an <Code>::options::</Code> line and the screen turns it into buttons. A model that does not write that line simply produces a message without buttons — nothing breaks.</P>
 
-          <H3>הכרטיס שמתמלא</H3>
-          <P>בצד המסך יושב כרטיס של ה-AI Chatbot שנבנה בשיחה הזאת: שם ואווטאר, תפקיד, Skills, Tools וערוץ — כל שורה מסומנת כשהיא מתמלאת, עם פס התקדמות ושני כפתורים, <strong>פתח בעורך</strong> ו<strong>בדוק בצ׳אט</strong>. הכרטיס מופיע רק כשיש מה להראות: בראיון, או אחרי שהאסיסטנט יצר או שינה AI Chatbot. במובייל הוא נוסע בתוך השיחה עצמה.</P>
+          <H3>The card that fills in</H3>
+          <P>Beside the conversation sits a card for the chatbot being built in it: name and avatar, role, skills, tools and channel — each line ticked as it fills, with a progress bar and two buttons, <strong>Open in the editor</strong> and <strong>Test in chat</strong>. It appears only when there is something to show: during an interview, or after the assistant has created or changed a chatbot. On a phone it travels inside the conversation itself.</P>
 
-          <H3>שיחות קודמות</H3>
-          <P>כל שיחה נשמרת אוטומטית אחרי כל תור, ומופיעה ברשימה בסייד-בר מתחת לפריטי הניווט. לחיצה על שיחה פותחת אותה בדף הבית וממשיכה אותה; ה-<strong>+</strong> שליד הכותרת מתחיל שיחה חדשה.</P>
-          <Warn>בלי מפתח API במסך Settings אי אפשר לשלוח — השדה נעול והמסך אומר את זה.</Warn>
+          <H3>Earlier conversations</H3>
+          <P>Every conversation is saved automatically after each turn and appears in the sidebar list below the navigation. Clicking one opens it on Home and carries on; the <strong>+</strong> beside the heading starts a new one.</P>
+          <Warn>Without an API key on the Settings screen you cannot send — the field is locked and the screen says so.</Warn>
+        </div>
+      ),
+
+      /* ─────────────── ACCESS ─────────────── */
+      access: (
+        <div dir="ltr">
+          <H2>Accounts and invitations</H2>
+          <P>There is no way to create an account from the login screen. Sign-up is by invitation: an administrator mints a code, hands it over, and that code is the only door in.</P>
+
+          <H3>Being let in</H3>
+          <UL>
+            <li>Under the Sign in button there is one line — <strong>Been given an invitation code?</strong></li>
+            <li>It opens a screen with one field. The code is checked against the server before a single account field is shown, so a code that will not work costs two seconds, not a filled-in form</li>
+            <li>A code that passes opens the account form: username, password, phone</li>
+            <li>Case, spaces and misplaced dashes are all ignored. <Code>7qf4 2mkd8rtv</Code> is the same code as <Code>7QF4-2MKD-8RTV</Code></li>
+          </UL>
+
+          <H3>Minting one — Admin → Invitations</H3>
+          <UL>
+            <li><strong>Generate code</strong> mints one and shows it in full, once, with a Copy beside it</li>
+            <li>It works exactly once, and expires by itself after 14 days if nobody uses it</li>
+            <li><strong>Revoke</strong> closes an open code without erasing the record of it</li>
+            <li>The list keeps every code ever minted, with what became of it and who spent it</li>
+          </UL>
+          <Warn>A code is stored the way a password is — only its hash. The moment it is minted is the only time it can be read, and the list shows a prefix because there is nothing else to show. Lose one and mint another.</Warn>
+
+          <H3>One code, one account</H3>
+          <P>The check the login screen makes is a courtesy; the server is the gate. Registration claims the code in a single statement that only succeeds on a code nobody has spent, so a code handed to two people lets exactly one of them in, however fast they both click. If the account then fails to be created — a username taken in those seconds — the code is handed back rather than burned.</P>
+
+          <H3>Signing in</H3>
+          <P>Sign-in holds a token in <Code>sessionStorage</Code>, so closing the browser signs you out. Every AI Chatbot belongs to the user who made it, and an ordinary user sees only their own.</P>
+
+          <H3>The language of the interface</H3>
+          <P>The first thing a new account sees is one screen: <Code>English</Code> or <Code>עברית</Code>. It is written in both, because nobody can read the one they have not picked yet. The answer is stored on the account, so it follows you to any browser and any machine, and it drives the whole interface and every assistant. It can be changed later under <strong>Settings → Interface language</strong>.</P>
+          <P>This guide is in English either way. One document rather than two, because two would mean one of them quietly falling a release behind.</P>
+        </div>
+      ),
+
+      /* ─────────────── AUTOPILOT ─────────────── */
+      autopilot: (
+        <div dir="ltr">
+          <H2>Autopilot — guided building</H2>
+
+          <H3>Two tours, and the order is the point</H3>
+          <P><strong>Before either of them — the language question.</strong> One screen, in both languages. The answer is saved to the account and the tour begins immediately, in that language.</P>
+          <P><strong>The first — the platform, broadly.</strong> It opens on first arrival: five steps over the platform itself, a spotlight on one thing at a time, with the screen changing underneath — the Home chat → AI Chatbots → Tables → Interactions → Settings. The last card offers &ldquo;Build one of my own&rdquo;, which is what opens Autopilot.</P>
+          <P><strong>The second — the editing screens, and it waits.</strong> There is no point teaching how a chatbot is put together before somebody has built one. And every new account is handed the starter chatbots at registration, so &ldquo;has a chatbot&rdquo; is not the same question as &ldquo;built a chatbot&rdquo;. The second tour opens the first time the account holds a chatbot <strong>the user built themselves</strong>, and explains the base prompt, skills, tools, knowledge and the test chat — <strong>over their own work</strong>, by name.</P>
+          <P>How that is told apart: <Code>seededFrom</Code> is recorded on every copy at registration. For accounts opened before that marker existed, the ids present when the first tour ended are remembered instead — anything that appeared afterwards is theirs.</P>
+          <Warn>Until this changed, Autopilot opened by itself only on an account with no chatbots at all — a condition no real user ever met, because of the starter chatbots. Which is to say it opened by itself for nobody.</Warn>
+          <UL>
+            <li>Targets are <Code>data-tour</Code> attributes on real elements, not CSS selectors — a selector breaks silently, an attribute breaks in the probe</li>
+            <li>Each step has a preferred target (the content) and a fallback (the menu item), so a thin account still gets a whole tour</li>
+            <li>A step whose target does not appear within 2.5 seconds moves on by itself rather than stalling</li>
+            <li>A target too tall for the screen gets the card <strong>beside</strong> it rather than under it — the card never covers what it is explaining</li>
+            <li>Both tours can be replayed from the card at the top of this page</li>
+            <li>They do not run on a phone — a phone is a separate tree with bottom navigation, and a spotlight there is a different design. They are marked as seen so they do not ambush you later on a desktop</li>
+          </UL>
+
+          <P>Autopilot is a wizard that builds a whole AI Chatbot for somebody who does not know how to build one. It is reached from the last card of the tour, and from <Code>New AI Chatbot</Code>, which first offers a choice between <strong>Autopilot</strong> and <strong>Advanced</strong> (the full editor, as it always was).</P>
+
+          <H3>The principle</H3>
+          <P>Not one question is about building agents — no base prompt, no skills. The questions are about <strong>the business</strong> and <strong>what needs to happen</strong>, and the wizard translates them into a chatbot. And nothing may be left that forces you into the editor afterwards: the key, the knowledge, the table, Gmail and the channel are all settled inside it, against the same endpoints the editor uses.</P>
+
+          <H3>The screens</H3>
+          <UL>
+            <li><strong>1 · The business</strong> — six categories, plus &ldquo;I will describe it myself&rdquo; in free text</li>
+            <li><strong>2 · Jobs</strong> — derived from screen 1. Each choice becomes a <strong>skill</strong>, and this is the fork that decides screens 4 and 5</li>
+            <li><strong>3 · The key</strong> — <strong>only if the account has no working key</strong>. A stored key is checked against the provider in the background during the first question; only a key that answered takes this screen out of the flow, and the questions are counted without it</li>
+            <li><strong>4 · Knowledge</strong> — crawling a site (which runs here, with the counter), uploading files (extracted and saved here, with a status line per file), typing it out, and creating the table with suggested columns</li>
+            <li><strong>5 · Abilities</strong> — writing to the table, connecting Gmail (which leaves for Google and comes back into the wizard), reading the site live, handing over to a person</li>
+            <li><strong>6 · Connections</strong> — <strong>appears only when needed</strong>. See below</li>
+            <li><strong>7 · Character</strong> — name, colour, style, and rules of your own</li>
+            <li><strong>8 · Building</strong> — one model call returning a name, an opening message, a base prompt and skills, plus one more call per tool</li>
+            <li><strong>9 · The approval loop</strong> — see below</li>
+            <li><strong>10 · Publishing</strong> — a snippet for the site, WhatsApp, or skip</li>
+          </UL>
+
+          <H3>Edit with AI</H3>
+          <P>Every chatbot card carries <Code>Edit with AI</Code> beside <Code>Edit</Code>. It opens the Home chat with a request that names <strong>the chatbot</strong> and asks the assistant to read it before asking anything. From there you describe a change in words — &ldquo;also ask for an email&rdquo;, &ldquo;never promise a price&rdquo; — and the assistant makes it through the tools it already has.</P>
+          <P>The name in the request is also what gives the conversation a title of its own, instead of a column of identical entries in the history.</P>
+
+          <H3>Every chatbot knows what time it is</H3>
+          <P>A model has no clock. Left alone it answers &ldquo;today&rdquo; from whenever its training stopped, which is how a booking chatbot offers an appointment in a year that has already gone. So the date is <strong>not</strong> a tool it may choose to call: it is a fixed block at the head of the prompt on <strong>every turn of every chatbot</strong>, and of the assistant itself.</P>
+          <P><Code>## Right now · It is Sunday, 20 September 2026 at 22:41 GMT+03:00 · Today is 2026-09-20. Tomorrow is 2026-09-21.</Code></P>
+          <UL>
+            <li>Both the weekday and the date as a string a table can take — and &ldquo;tomorrow&rdquo;, because models get date arithmetic wrong</li>
+            <li>The zone is <strong>fixed</strong> (<Code>Asia/Jerusalem</Code>) rather than taken from the machine: a Vercel function runs in UTC and a browser runs wherever its owner is sitting. If those differed, the test chat would be telling you about a different chatbot from the one that is live</li>
+            <li>Daylight saving is handled — the probes assert UTC+3 in summer and UTC+2 in winter</li>
+            <li>To move the platform: <Code>PLATFORM_TZ</Code>, in both copies</li>
+          </UL>
+
+          <H3>Saying which chatbot you mean</H3>
+          <P>Under the suggestions on Home sits <strong>the list of the account&rsquo;s chatbots</strong>. Click one and it becomes the subject of the conversation — an <Code>About ⟨name⟩</Code> bar appears above the composer, and what you write after it is sent as &ldquo;About the AI Chatbot ⟨name⟩: …&rdquo;.</P>
+          <P>The name goes <strong>into the message</strong> rather than only into the system prompt, so reopening the conversation in a month still says what it was about. The subject is kept for the whole conversation — otherwise the second question would lose it silently — and is cleared by &ldquo;New chat&rdquo; or the ✕.</P>
+
+          <H3>Tools — only when there is no alternative</H3>
+          <P>Almost nothing needs code. Knowledge answers questions, the table records what is collected, Gmail sends, and the crawler reads the site. A tool is needed only for the one thing none of those reach — <strong>somebody else&rsquo;s system</strong>: tracking a parcel with a courier, raising an invoice in accounting software, sending an SMS through a provider.</P>
+          <P>The detection runs once, on leaving screen 5, and only if free text was written — nothing else can hint at an outside system. The model is instructed to <strong>refuse by default</strong>: unsure means an empty list, and then screen 6 never appears at all.</P>
+          <P>When one is needed, screen 6 shows the tool in the business owner&rsquo;s language (&ldquo;send you a WhatsApp about a late cancellation&rdquo;), the service involved, and for every key required — <strong>a field, numbered steps for getting it, and a link to the right page</strong>. You can say &ldquo;not needed&rdquo; and skip, and you can leave a key empty and fill it in later.</P>
+          <UL>
+            <li>The code is written in a separate model call per tool, instructed never to invent an endpoint it is unsure of</li>
+            <li>Keys are stored as the tool&rsquo;s <Code>envVars</Code> and read from <Code>os.environ</Code></li>
+            <li>A tool whose writing failed is simply not saved — a broken tool inside a chatbot whose owner cannot read code is worse than no tool</li>
+            <li>Two tools at most</li>
+          </UL>
+
+          <H3>The approval loop</H3>
+          <P>The screen that keeps the promise. A real conversation against what was built, with a free-text notes field beside it. Every <Code>Fix it and rebuild</Code> folds the notes back into the brief, regenerates, saves, and resets the conversation — and advances the round counter. A list of what has already been fixed is kept alongside, because after three rounds nobody remembers what they asked for. <strong>Only</strong> the green <Code>It is right — publish</Code> moves on.</P>
+
+          <H3>Things worth knowing</H3>
+          <UL>
+            <li>The chatbot is created on the way into screen 4, because documents, a crawl and a Gmail token all need something to hang on</li>
+            <li>Answers are kept in <Code>sessionStorage</Code>, because connecting Gmail hands the browser to Google and gets it back a minute later</li>
+            <li>&ldquo;I know how to build one myself&rdquo; at the foot of every screen goes to the editor <strong>with</strong> the chatbot that was already created — it leaves no orphan</li>
+            <li>A file picked for upload is copied out of the input before anything can pause, and the chatbot it lands on is created once and shared — two uploads in quick succession cannot split their work across two chatbots</li>
+          </UL>
+
+          <H3>The key is checked, not just stored</H3>
+          <P>The key field used to accept any string. An account ran for a whole day with <Code>25102004</Code> in it — everything said &ldquo;configured&rdquo; right up to the moment somebody asked a model for something, and back came <Code>invalid x-api-key</Code>. Now the key is sent to the provider before it is saved: one token from Claude, a model listing from OpenAI (no tokens at all), and a what-do-you-have from a local server. A rejected key is not saved, and the reason is shown in the provider&rsquo;s own words — in Settings and in the wizard alike.</P>
+          <P>And if a build stops on the key (a revoked key, an account out of credit), a <Code>Fix the key</Code> button returns to screen 3 and from there <strong>straight back to building</strong> — not to the questions from the start.</P>
+          <Warn>What can still stop a customer outright: without an Anthropic or OpenAI key nothing can be built at all, and that needs a developer account and a credit card. There is no platform-level key.</Warn>
         </div>
       ),
 
       /* ─────────────── AGENTS ─────────────── */
       agents: (
-        <div dir="rtl">
+        <div dir="ltr">
           <H2>AI Chatbots</H2>
 
-          <H3>חשבון והתחברות</H3>
-          <P>ההרשמה דורשת שם משתמש, סיסמה וטלפון. כל AI Chatbot שייך למשתמש שיצר אותו, ומשתמש רגיל רואה רק את ה-AI Chatbots שלו. ההתחברות מחזיקה טוקן ב-<Code>sessionStorage</Code>, כך שסגירת הדפדפן מנתקת.</P>
+          <H3>The chatbots an account starts with</H3>
+          <P>A new account begins with a copy of the example chatbots — including each one&rsquo;s prompt, skills, tools and knowledge base — so there is something to start from. What is not copied: the API key, the WhatsApp settings, the Gmail connection and the values of any secrets. The secret <em>names</em> stay, as a hint of what needs filling in.</P>
+          <P>The copy is live: changing one of those chatbots affects the accounts registered after it. The Admin tab has a status line per template showing whether it is there and what it carries.</P>
+          <Warn>These chatbots will not answer until an API key is set for the account on the Settings screen.</Warn>
 
-          <H3>AI Chatbots של הפתיחה</H3>
-          <P>חשבון חדש מתחיל עם עותק של AI Chatbots של הדוגמה <Code>weather</Code> ו-<Code>bobi</Code> — כולל הפרומפט, הסקילים, הכלים ובסיס הידע של כל אחד — כדי שיהיה ממה להתחיל. מה שלא מועתק: מפתח ה-API, הגדרות ה-WhatsApp, חיבור ה-Gmail והערכים של ה-Secrets. שמות ה-Secrets נשארים כרמז למה שצריך למלא.</P>
-          <P>ההעתקה חיה: שינוי באחד מה-AI Chatbots האלה משפיע על ההרשמות הבאות. בטאב Admin יש שורת מצב שמראה לכל תבנית אם היא נמצאת ומה היא נושאת.</P>
-          <Warn>ה-AI Chatbots האלה לא יענו עד שיוגדר מפתח API לחשבון במסך Settings.</Warn>
-
-          <H3>כרטיס AI Chatbot</H3>
-          <P>כל AI Chatbot בטאב <strong>AI Chatbots</strong> מוצג בכרטיס עם האווטאר, השם, תאריך היצירה ומספר הסקילים והכלים. בתחתית הכרטיס חמש פעולות:</P>
+          <H3>The card</H3>
+          <P>Each chatbot on the <strong>AI Chatbots</strong> tab is a card with the avatar, the name, the date it was made, and how many skills and tools it has. Along the bottom:</P>
           <UL>
-            <li><strong>Edit</strong> — פתיחת עורך ה-AI Chatbot (גם לחיצה על הכרטיס עצמו)</li>
-            <li><strong>Test</strong> — שיחה אמיתית עם ה-AI Chatbot, בדיוק כמו של משתמש קצה: רצה בשרת, מנותבת לפי אחוזי הבראנצ'ים, ונרשמת ב-Interactions</li>
-            <li><strong>Duplicate</strong> — שכפול ה-AI Chatbot, כולל סקילים וכלים</li>
-            <li><strong>Export</strong> — פתיחת לשונית ההטמעה</li>
-            <li><strong>Delete</strong> — מחיקה מיידית של ה-AI Chatbot וכל מה שתלוי בו</li>
+            <li><strong>Edit</strong> — open the editor (clicking the card does the same)</li>
+            <li><strong>Edit with AI</strong> — describe the change in words on Home, with this chatbot already named as the subject</li>
+            <li><strong>Test</strong> — a real conversation, exactly as an end user gets: run on the server, routed by branch traffic, and recorded in Interactions</li>
+            <li><strong>Duplicate</strong> — a copy, with its skills and tools</li>
+            <li><strong>Export</strong> — open the embedding tab</li>
+            <li><strong>Delete</strong> — remove the chatbot and everything hanging off it, at once</li>
           </UL>
-          <Warn>מחיקת AI Chatbot מוחקת גם את המסמכים והשיחות שלו, וסוגרת את ערוץ ה-WhatsApp והווידג'ט שלו. אין ביטול.</Warn>
+          <Warn>Deleting a chatbot deletes its documents and conversations too, and closes its WhatsApp channel and widget. There is no undo.</Warn>
 
-          <H3>שמירה</H3>
-          <P>אין כפתור Save בשום מקום בעורך. כל שינוי נשמר אוטומטית מעט אחרי שהפסקת להקליד, וכתוב "saved automatically" בכותרת המסכים שנשמרים כך.</P>
+          <H3>Saving</H3>
+          <P>There is no Save button anywhere in the editor. Every change is saved a moment after you stop typing, and the screens that work that way say &ldquo;saved automatically&rdquo; in their heading.</P>
         </div>
       ),
 
       /* ─────────────── CONFIGURATION ─────────────── */
       config: (
-        <div dir="rtl">
+        <div dir="ltr">
           <H2>Configuration</H2>
 
           <H3>Identity</H3>
           <UL>
-            <li><strong>AI Chatbot Name</strong> — מופיע בכרטיס, בווידג'ט וב-Interactions</li>
-            <li><strong>Avatar</strong> — אמוג'י מתוך רשימה, או העלאת תמונה</li>
-            <li><strong>Opening Message</strong> — ההודעה הראשונה שה-AI Chatbot אומר בווידג'ט ובצ'אט הבדיקה</li>
+            <li><strong>AI Chatbot name</strong> — shown on the card, in the widget and in Interactions</li>
+            <li><strong>Avatar</strong> — an emoji from the list, or an uploaded image</li>
+            <li><strong>Opening message</strong> — the first thing the chatbot says in the widget and the test chat</li>
           </UL>
 
-          <H3>Base Prompt</H3>
-          <P>הפרומפט הקבוע של ה-AI Chatbot, שנשלח לפני כל שיחה. העורך תומך בכתיבה עם כותרות <Code>## Section</Code> שאפשר לקפל, ובמצב Preview שמדגיש הזכרות של <Code>@tool</Code> ו-<Code>#Skill</Code>.</P>
-          <P>הפרומפט הסופי שהמודל מקבל מורכב מהפרומפט הזה, ואחריו הידע הרלוונטי שנשלף לשיחה, ואחריו כל הסקילים תחת כותרת <Code>## Skill: שם</Code>.</P>
-          <Tip>ציין במפורש שפה, טון, מה מותר ומה אסור, ומה לעשות כשאין תשובה. פרומפט מפורט מצמצם המצאות.</Tip>
+          <H3>Base prompt</H3>
+          <P>The chatbot&rsquo;s standing prompt, sent ahead of every conversation. The editor supports <Code>## Section</Code> headings that fold, and a Preview mode that highlights mentions of <Code>@tool</Code> and <Code>#Skill</Code>.</P>
+          <P>The final prompt the model receives is this, then the knowledge pulled in for the conversation, then every skill under a <Code>## Skill: name</Code> heading.</P>
+          <Tip>Say the language, the tone, what is allowed and what is not, and what to do when there is no answer. A detailed prompt invents less.</Tip>
 
-          <H3>מודל ומפתח API — ברמת החשבון</H3>
-          <P>המפתח, הספק והמודל מוגדרים <strong>פעם אחת במסך Settings</strong> ומשמשים את כל ה-AI Chatbots, כל הערוצים והאסיסטנטים. אין הגדרה נפרדת לכל AI Chatbot.</P>
+          <H3>Model and API key — at the account level</H3>
+          <P>The key, the provider and the model are set <strong>once, on the Settings screen</strong>, and drive every chatbot, every channel and every assistant. There is no per-chatbot setting.</P>
           <UL>
-            <li><strong>Claude</strong> — <Code>claude-opus-4-5</Code>, <Code>claude-sonnet-4-5</Code>, <Code>claude-haiku-4-5</Code>. דורש מפתח Anthropic.</li>
-            <li><strong>OpenAI</strong> — <Code>gpt-4o</Code>, <Code>gpt-4o-mini</Code>, <Code>gpt-4-turbo</Code>, <Code>gpt-3.5-turbo</Code>. דורש מפתח OpenAI.</li>
-            <li><strong>Ollama</strong> — מודל מקומי. במקום מפתח מזינים כתובת שרת, והקריאות עוברות דרך פרוקסי בשרת.</li>
+            <li><strong>Claude</strong> — <Code>claude-opus-4-5</Code>, <Code>claude-sonnet-4-5</Code>, <Code>claude-haiku-4-5</Code>. Needs an Anthropic key.</li>
+            <li><strong>OpenAI</strong> — <Code>gpt-4o</Code>, <Code>gpt-4o-mini</Code>, <Code>gpt-4-turbo</Code>, <Code>gpt-3.5-turbo</Code>. Needs an OpenAI key.</li>
+            <li><strong>Ollama</strong> — a local model. Instead of a key you give a server address, and the calls go through a proxy on the server.</li>
           </UL>
-          <P>באותו מסך בוחרים גם את <strong>שפת האסיסטנט</strong> — עברית או אנגלית.</P>
-          <Warn>בלי מפתח (או בלי כתובת Ollama) אף AI Chatbot לא יענה בשום ערוץ, והאסיסטנטים חסומים. ההערה בפינה הימנית העליונה מציגה את המצב בכל מסך.</Warn>
+          <P>The same screen carries the <strong>interface language</strong> — English or Hebrew — which is the same setting the first screen asks about.</P>
+          <Warn>Without a key (or an Ollama address) no chatbot answers on any channel, and the assistants are locked. The note in the top corner shows the state on every screen.</Warn>
 
-          <H3>DLP — מניעת דליפת מידע</H3>
-          <P>שני מסננים אופציונליים: <strong>מספרי כרטיס אשראי</strong> (16 ספרות עם או בלי מפרידים) ו-<strong>תעודת זהות</strong> (9 ספרות). כשהם דולקים:</P>
+          <H3>DLP — keeping sensitive data out</H3>
+          <P>Two optional filters: <strong>credit card numbers</strong> (16 digits, with or without separators) and <strong>national ID numbers</strong> (9 digits). When they are on:</P>
           <UL>
-            <li>הטקסט של המשתמש ממוסך ל-<Code>[MASKED]</Code> לפני שהוא נשלח למודל</li>
-            <li>ההיסטוריה נשמרת ממוסכת, כך שגם ב-Interactions לא יופיע המקור</li>
-            <li>נוספת לפרומפט הוראת אבטחה שלא לחזור על מידע מזהה</li>
+            <li>The user&rsquo;s text is masked to <Code>[MASKED]</Code> before it reaches the model</li>
+            <li>The history is stored masked, so the original never appears in Interactions either</li>
+            <li>A security instruction is added to the prompt telling it not to repeat identifying data</li>
           </UL>
         </div>
       ),
 
       /* ─────────────── SKILLS ─────────────── */
       skills: (
-        <div dir="rtl">
+        <div dir="ltr">
           <H2>Skills</H2>
-          <P>סקיל הוא מצב ממוקד של ה-AI Chatbot — למשל "בדיקת מזג אוויר" או "פתיחת קריאת שירות" — עם פרומפט משלו. לחיצה על הלשונית פותחת מסך עבודה: רשימת הסקילים בצד, עורך הפרומפט במרכז, ופאנל הגדרות בצד.</P>
+          <P>A skill is a focused mode of the chatbot — &ldquo;check the weather&rdquo;, &ldquo;open a service ticket&rdquo; — with a prompt of its own. The tab opens a working screen: the list of skills on one side, the prompt editor in the middle, and a settings panel on the other.</P>
 
-          <H3>מה מגדירים בסקיל</H3>
+          <H3>What a skill holds</H3>
           <UL>
-            <li><strong>Name</strong> — השם המדויק שדרכו ה-AI Chatbot עובר לסקיל</li>
-            <li><strong>Description</strong> — <em>מתי</em> להשתמש בסקיל. זה מה שהמודל קורא כדי להחליט לעבור אליו, ולכן הוא החלק הכי חשוב</li>
-            <li><strong>Skill Prompt</strong> — ההוראות שה-AI Chatbot מבצע כשהסקיל פעיל</li>
+            <li><strong>Name</strong> — the exact name the chatbot switches by</li>
+            <li><strong>Description</strong> — <em>when</em> to use it. This is what the model reads to decide, which makes it the most important part</li>
+            <li><strong>Skill prompt</strong> — the instructions it follows while the skill is active</li>
           </UL>
 
-          <H3>איך ה-AI Chatbot עובר בין סקילים</H3>
-          <P>כשל-AI Chatbot יש סקילים, המודל מקבל כלי פנימי בשם <Code>switch_skill</Code> שמקבל <Code>skill_name</Code>. הוא קורא לו כשהמשתמש מגיע לתחום של סקיל מסוים. בטקסט הפרומפט הקונבנציה היא לכתוב <Code>#SkillName</Code> בלי רווחים, וכדי לקרוא לכלי — <Code>@tool_name</Code>.</P>
-          <P>כל הסקילים נמצאים בפרומפט המערכת מהרגע הראשון, כל אחד תחת <Code>## Skill: שם</Code> עם התיאור מעליו. כשסקיל פעיל בצ'אט הבדיקה, שליפת הידע מצטמצמת למסמכים של אותו סקיל.</P>
+          <H3>How it switches</H3>
+          <P>When a chatbot has skills, the model is given an internal tool called <Code>switch_skill</Code> taking a <Code>skill_name</Code>. It calls it when the conversation reaches that skill&rsquo;s territory. In prompt text the convention is to write <Code>#SkillName</Code> with no spaces, and to call a tool, <Code>@tool_name</Code>.</P>
+          <P>Every skill is in the system prompt from the first moment, each under <Code>## Skill: name</Code> with its description above it. While a skill is active in the test chat, knowledge retrieval narrows to that skill&rsquo;s documents.</P>
 
-          <H3>עורך הפרומפט</H3>
+          <H3>The prompt editor</H3>
           <UL>
-            <li><Code>## Heading</Code> מוסיף כותרת סקציה; Collapse All / Expand All מקפלים אותן</li>
-            <li>מצב <strong>Preview</strong> מציג את הפרומפט לפי סקציות ומדגיש <Code>@tool</Code> ו-<Code>#Skill</Code></li>
-            <li>מונה התווים בפינה עוזר לשמור על פרומפט קצר</li>
+            <li><Code>## Heading</Code> adds a section; Collapse All / Expand All fold them</li>
+            <li><strong>Preview</strong> shows the prompt by section and highlights <Code>@tool</Code> and <Code>#Skill</Code></li>
+            <li>The character count in the corner helps keep a prompt short</li>
           </UL>
-          <Tip>עדיף כמה סקילים קצרים וממוקדים על סקיל אחד ארוך. התיאור צריך להיות "מתי", לא "מה".</Tip>
+          <Tip>Several short, focused skills beat one long one. The description should answer &ldquo;when&rdquo;, not &ldquo;what&rdquo;.</Tip>
         </div>
       ),
 
       /* ─────────────── TOOLS ─────────────── */
       tools: (
-        <div dir="rtl">
+        <div dir="ltr">
           <H2>Tools</H2>
-          <P>לשונית Tools נפתחת ישר במסך עבודה: רשימת הכלים בצד, עורך קוד במרכז, פאנל הרצה מתחתיו, ופאנל הגדרות בצד עם שלוש לשוניות.</P>
+          <P>The Tools tab opens straight into a working screen: the list of tools on one side, a code editor in the middle, a run panel below it, and a settings panel with three tabs.</P>
 
-          <H3>send_email — הכלי המובנה</H3>
-          <P>בסקציית <strong>BUILT-IN</strong> בסייד-בר. מתג אחד מפעיל אותו, ומתחתיו מחברים חשבון Gmail <strong>ל-AI Chatbot הזה</strong> — כל AI Chatbot שולח מהכתובת שלו. אחרי החיבור הכלי זמין בצ'אט הבדיקה, בווידג'ט וב-WhatsApp, והמודל קורא לו עם <Code>to</Code>, <Code>subject</Code> ו-<Code>body</Code>.</P>
+          <H3>send_email — the built-in one</H3>
+          <P>In the <strong>BUILT-IN</strong> section of the sidebar. One switch turns it on, and below it you connect a Gmail account <strong>to this chatbot</strong> — each chatbot sends from its own address. Once connected the tool is available in the test chat, the widget and WhatsApp, and the model calls it with <Code>to</Code>, <Code>subject</Code> and <Code>body</Code>. See the Email section for connecting one.</P>
 
-          <H3>כלי Python — חוזה ההרצה</H3>
-          <P>הקוד רץ ב-serverless מבודד, וחייב להגדיר פונקציה בשם <Code>run</Code>:</P>
+          <H3>Python tools — the execution contract</H3>
+          <P>The code runs in an isolated serverless function and must define a function called <Code>run</Code>:</P>
           <Block>{`import os
 import urllib.request, json
 
@@ -5976,478 +6037,523 @@ def run(**kwargs):
     except Exception as e:
         return f"Could not fetch the weather: {e}"`}</Block>
           <UL>
-            <li>הפרמטרים המוצהרים מגיעים כ-<Code>kwargs</Code> — קרא אותם עם <Code>kwargs.get</Code></li>
-            <li>מה שהפונקציה מחזירה עובר ל-<Code>str()</Code> ונמסר למודל כתוצאה</li>
-            <li>זמינות ספריית התקן, ובנוסף כל חבילה שרשמת ב-Packages</li>
-            <li>אין דיסק מתמיד ואין רשת פנימית; HTTPS יוצא מותר</li>
-            <li>מוטב להחזיר מחרוזת שגיאה קריאה מלזרוק חריגה</li>
+            <li>Declared parameters arrive as <Code>kwargs</Code> — read them with <Code>kwargs.get</Code></li>
+            <li>Whatever the function returns is passed through <Code>str()</Code> and handed to the model as the result</li>
+            <li>The standard library is available, plus anything listed under Packages</li>
+            <li>There is no persistent disk and no internal network; outbound HTTPS is allowed</li>
+            <li>Returning a readable error string beats raising an exception</li>
           </UL>
 
           <H3>Configuration</H3>
           <UL>
-            <li><strong>Name</strong> — שם באנגלית בסגנון <Code>snake_case</Code>; זה השם שהמודל קורא לו</li>
-            <li><strong>Description</strong> — משפט שאומר מתי להשתמש בכלי</li>
-            <li><strong>Parameters</strong> — שם, טיפוס (string / number / integer / boolean) ותיאור לכל פרמטר. אלה בדיוק המפתחות שיגיעו ל-<Code>kwargs</Code></li>
-            <li><strong>Packages</strong> — חבילות pip מופרדות בפסיק, למשל <Code>requests, beautifulsoup4</Code></li>
+            <li><strong>Name</strong> — English, <Code>snake_case</Code>; this is the name the model calls</li>
+            <li><strong>Description</strong> — one sentence saying when to use it</li>
+            <li><strong>Parameters</strong> — name, type (string / number / integer / boolean) and a description for each. These are exactly the keys that reach <Code>kwargs</Code></li>
+            <li><strong>Packages</strong> — comma-separated pip packages, e.g. <Code>requests, beautifulsoup4</Code></li>
           </UL>
 
           <H3>Secrets</H3>
-          <P>זוגות מפתח–ערך שנחשפים לקוד דרך <Code>os.environ["KEY"]</Code>. שם המפתח נשלח לאסיסטנט כדי שידע להשתמש בו; <strong>הערך עצמו לא נשלח</strong>.</P>
+          <P>Key–value pairs exposed to the code through <Code>os.environ["KEY"]</Code>. The key name is sent to the assistant so it knows to use it; <strong>the value is not</strong>.</P>
 
-          <H3>הרצה ובדיקה</H3>
-          <P>הפאנל התחתון מריץ את הכלי בלי לצאת מהמסך: <strong>Input</strong> מציג שדה לכל פרמטר מוצהר, <strong>Run</strong> מריץ, וזמן הריצה מוצג ליד הכפתור. אחרי הרצה הפאנל עובר ל-<strong>Output</strong> אם הצליח או ל-<strong>Errors</strong> אם נפל, ונקודה צבעונית מסמנת איפה יש תוכן.</P>
+          <H3>Running and checking</H3>
+          <P>The bottom panel runs the tool without leaving the screen: <strong>Input</strong> gives a field per declared parameter, <strong>Run</strong> runs it, and the elapsed time appears beside the button. Afterwards the panel switches to <strong>Output</strong> on success or <strong>Errors</strong> on failure, with a coloured dot marking where there is something to read.</P>
 
-          <H3>שימוש בכלי מתוך פרומפט</H3>
-          <P>הכלים נמסרים למודל כפונקציות אמיתיות, כך שהוא יכול לקרוא להם מעצמו. כדי לכוון אותו, כתוב את שם הכלי עם <Code>@</Code> בפרומפט הבסיס או בפרומפט של סקיל, וציין אילו פרמטרים להעביר.</P>
-          <Warn>שינוי שם כלי אחרי שהזכרת אותו בפרומפט שובר את ההפניה — עדכן גם את הפרומפט.</Warn>
+          <H3>Calling a tool from a prompt</H3>
+          <P>Tools are handed to the model as real functions, so it can call them by itself. To steer it, write the tool&rsquo;s name with an <Code>@</Code> in the base prompt or a skill prompt, and say which parameters to pass.</P>
+          <Warn>Renaming a tool after mentioning it in a prompt breaks the reference — update the prompt too.</Warn>
+        </div>
+      ),
+
+      /* ─────────────── EMAIL ─────────────── */
+      email: (
+        <div dir="ltr">
+          <H2>Email (Gmail)</H2>
+          <P>A chatbot can send email from a real mailbox: a booking confirmation, a quote, a reply. The connection is made <strong>per chatbot</strong>, on its Tools tab, under the built-in <Code>send_email</Code>.</P>
+
+          <H3>Connecting a mailbox</H3>
+          <UL>
+            <li>Turn on <Code>send_email</Code> in the BUILT-IN section</li>
+            <li>Press Connect. The browser goes to Google, you pick the account and approve, and it comes back to the same screen — or, if you started in Autopilot, back into the wizard</li>
+            <li>The address it connected to is shown beside the switch. <strong>Disconnect</strong> deletes the tokens immediately</li>
+          </UL>
+          <P>The platform asks Google for exactly two things: <Code>gmail.send</Code>, which allows sending and nothing else — it cannot read, search or delete anything — and <Code>email</Code>, to know which address you connected so it can be shown back to you.</P>
+
+          <H3>Why only some addresses can connect</H3>
+          <P>This is the question that looks like a bug and is not. <Code>gmail.send</Code> is what Google calls a <strong>sensitive</strong> scope, and while the Google Cloud project&rsquo;s OAuth consent screen is in <strong>Testing</strong>, only accounts listed as test users can approve it. Every other address is told it has no permission. Testing also allows at most 100 such users.</P>
+          <P>The second symptom of the same cause: in Testing, Google expires every refresh token after <strong>seven days</strong>. A mailbox that worked all week stops sending with <Code>invalid_grant</Code>, and it looks as though the platform lost the connection. It did not — Google withdrew it.</P>
+          <P>Both go away when the consent screen is <strong>published</strong>. <Code>gmail.send</Code> is sensitive rather than restricted, so that means a review of a few business days, not a third-party security assessment.</P>
+
+          <H3>Publishing the consent screen</H3>
+          <P>The work is in the Google Cloud console and can only be done by whoever owns that project. What the platform provides is the three things the review will not proceed without: a public home page (the sign-in screen, which describes the product), a privacy policy at <Code>/privacy</Code>, and terms at <Code>/terms</Code> — all three on the app&rsquo;s own domain, and linked from the front door.</P>
+          <UL>
+            <li><strong>1.</strong> Verify the domain in Google Search Console, <em>on the same Google account that owns the Cloud project</em>. This is the step most submissions fail on, and a failure here is not read as a failure — it is read as a missing home page</li>
+            <li><strong>2.</strong> In the Cloud console, under APIs &amp; Services → OAuth consent screen, fill in the app name, support email, the home page, the privacy URL and the terms URL, and the authorised domain</li>
+            <li><strong>3.</strong> Under Scopes, list <Code>gmail.send</Code> and <Code>email</Code> and justify the first in one plain sentence: the user connects their own mailbox so their chatbot can send email on their behalf; the app never reads mail</li>
+            <li><strong>4.</strong> Record a short screen capture that shows the whole flow — signing in, pressing Connect, the Google consent screen, and an email being sent. Google will not approve a Gmail scope without seeing it used</li>
+            <li><strong>5.</strong> Submit for verification. Expect 3–5 business days, and one round of questions</li>
+          </UL>
+          <Warn>Until it is published, add each address that needs to connect as a Test user on the consent screen. That works today, is capped at 100, and still expires tokens every seven days.</Warn>
+          <P>The README carries the same steps with the exact field names, for whoever is at the console.</P>
         </div>
       ),
 
       /* ─────────────── PLATFORM ASSISTANT ─────────────── */
       platform: (
-        <div dir="rtl">
-          <H2>אסיסטנט המערכת</H2>
-          <P>אותו אסיסטנט מופיע בשני מקומות: <strong>דף הבית</strong>, שהוא שיחה איתו על כל המסך, והכפתור <strong>שאל את האסיסטנט</strong> בפינה הימנית התחתונה בכל מסך אחר. <strong>Build with the assistant</strong> בראש טאב AI Chatbots מעביר לדף הבית עם השאלה כבר מוקלדת. לחיצה על הכפתור הצף פותחת צ'אט צף ולחיצה נוספת מקפלת אותו — כך שאפשר לבקש שינוי בזמן שרואים את מה שרוצים לשנות. זה לא AI Chatbot שאתה בונה אלא אסיסטנט שמתפעל את המערכת בשבילך — הוא מבצע פעולות, לא רק מסביר איפה ללחוץ.</P>
+        <div dir="ltr">
+          <H2>The platform assistant</H2>
+          <P>The same assistant appears in two places: <strong>Home</strong>, where it is a full-screen conversation, and the <strong>Ask the assistant</strong> button in the bottom corner of every other screen. <strong>Build with the assistant</strong> at the top of the AI Chatbots tab goes to Home with the question already typed. Clicking the floating button opens a small chat and clicking again folds it away — so you can ask for a change while looking at the thing you want changed. This is not a chatbot you are building; it is an assistant that operates the platform for you, and it performs actions rather than pointing at buttons.</P>
 
-          <H3>מה הוא עושה</H3>
+          <H3>What it does</H3>
           <UL>
-            <li>בונה AI Chatbot חדש מאפס — פרומפט, סקילים, כלי Python והודעת פתיחה, בפעולה אחת</li>
-            <li>משנה AI Chatbot קיים — משפר פרומפט, מוסיף או מתקן סקיל, כותב כלי</li>
-            <li>מריץ כלי שכתב כדי לבדוק שהוא עובד, ומתקן לפי השגיאה</li>
-            <li>מדליק <Code>send_email</Code>, מגדיר DLP, משנה שם ואווטאר</li>
-            <li>עונה על שאלות על הפלטפורמה — איך סקילים עוברים, מה חוזה ההרצה של כלי, איך מחברים WhatsApp</li>
-            <li>שולף מה קרה בשיחות לפי AI Chatbot, ערוץ או מילת חיפוש</li>
-            <li>מוחק AI Chatbot — עם שאלה בצ'אט ואישור בדפדפן לפני</li>
+            <li>Builds a new chatbot from scratch — prompt, skills, Python tools and an opening message, in one go</li>
+            <li>Changes an existing one — improves a prompt, adds or fixes a skill, writes a tool</li>
+            <li>Runs a tool it wrote to check that it works, and fixes it against the error</li>
+            <li>Turns on <Code>send_email</Code>, sets up DLP, changes a name or an avatar</li>
+            <li>Answers questions about the platform — how skills switch, what a tool&rsquo;s execution contract is, how to connect WhatsApp</li>
+            <li>Pulls up what happened in conversations, by chatbot, channel or search term</li>
+            <li>Deletes a chatbot — after asking in the chat and a browser confirmation</li>
           </UL>
 
-          <H3>מה הוא לא יכול</H3>
-          <P>לחבר Gmail, להעלות קבצים לבסיס הידע, ולהזין את מפתח ה-API. אלה פעולות שדורשות אותך בממשק, והוא יגיד לך בדיוק לאן ללכת.</P>
+          <H3>What it cannot do</H3>
+          <P>Connect Gmail, upload files to the knowledge base, or enter the API key. Those need you in the interface, and it will say exactly where to go.</P>
 
-          <H3>שפה</H3>
-          <P>ההודעה הפותחת שלו מפרטת את כל מה שהוא יודע לעשות, ואפשר לבחור בין <strong>אסיסטנט בעברית</strong> ל<strong>אסיסטנט באנגלית</strong> במסך Settings.</P>
+          <H3>It can see what broke</H3>
+          <P>It has a <Code>get_recent_errors</Code> tool returning real failures from the last two weeks: a tool that threw in a live conversation, an answer the widget could not produce, an expired WhatsApp token, a provider error. Told &ldquo;something is not working&rdquo;, it is instructed to read the log before guessing — and after fixing a tool, to run it and check.</P>
 
-          <H3>הוא רואה מה נשבר</H3>
-          <P>יש לו כלי <Code>get_recent_errors</Code> שמחזיר כשלים אמיתיים משבועיים אחורה: כלי שזרק חריגה בשיחה אמיתית, תשובה שהווידג'ט לא הצליח לייצר, טוקן WhatsApp שפג, שגיאת ספק. כשאומרים לו "משהו לא עובד" הוא מונחה לבדוק את הלוג לפני שהוא מנחש, ואחרי שהוא מתקן כלי — להריץ אותו ולבדוק.</P>
-
-          <H3>שקיפות</H3>
-          <P>כל קריאה לכלי מוצגת בשיחה עם הפרמטרים והתוצאה, כך שרואים בדיוק מה הוא עשה. הוא רץ על המפתח והמודל של החשבון, ומודל חזק יותר נותן תוצאות טובות יותר במשימות מורכבות.</P>
-          <Tip>נסה: "בנה AI Chatbot שירות לקוחות לחברת ביטוח, עם סקיל לפתיחת תביעה" או "תוסיף ל-AI Chatbot weather כלי לתחזית חמישה ימים ותריץ אותו".</Tip>
+          <H3>Transparency</H3>
+          <P>Every tool call is shown in the conversation with its parameters and result, so you can see exactly what it did. It runs on the account&rsquo;s key and model, and a stronger model does better on the harder jobs.</P>
+          <Tip>Try: &ldquo;build a customer service chatbot for an insurance company, with a skill for opening a claim&rdquo; or &ldquo;add a five-day forecast tool to the weather chatbot and run it&rdquo;.</Tip>
         </div>
       ),
 
       /* ─────────────── ASSISTANT ─────────────── */
       assistant: (
-        <div dir="rtl">
-          <H2>אסיסטנט הבנייה</H2>
-          <P>גם ב-Tools וגם ב-Skills יש לשונית <strong>Assistant</strong> בפאנל הצד, וכפתור <strong>Ask AI</strong> ליד העורך שמקפיץ אליה. זה צ'אט שכותב בשבילך — והתוצאה נכתבת ישר לתוך העורך והשדות, לא כטקסט שצריך להעתיק.</P>
+        <div dir="ltr">
+          <H2>The building assistant</H2>
+          <P>Both Tools and Skills have an <strong>Assistant</strong> tab in the side panel, and an <strong>Ask AI</strong> button beside the editor that jumps to it. It is a chat that writes for you — and the result is written straight into the editor and the fields, not handed over as text to copy.</P>
 
-          <H3>איך זה עובד</H3>
+          <H3>How it works</H3>
           <UL>
-            <li>הוא משתמש ב-<strong>מפתח ובמודל של ה-AI Chatbot עצמו</strong>, בלי כלים ובלי בסיס הידע</li>
-            <li>כל תשובה שמכילה קוד או פרומפט מוחלת מיד, עם כפתור <strong>Undo</strong> שמחזיר בדיוק את מה שהיה</li>
-            <li>השיחה נשמרת כשעוברים לשונית, ומתאפסת כשעוברים לכלי או לסקיל אחר</li>
-            <li>שאלה בלי בקשת שינוי מקבלת תשובה בלי לגעת בעורך</li>
+            <li>It uses <strong>the account&rsquo;s key and model</strong>, with no tools and no knowledge base</li>
+            <li>Any answer containing code or a prompt is applied at once, with an <strong>Undo</strong> that restores exactly what was there</li>
+            <li>The conversation survives switching tabs, and resets when you move to a different tool or skill</li>
+            <li>A question with no request for a change is answered without touching the editor</li>
           </UL>
 
-          <H3>מה הוא יודע על ה-AI Chatbot שלך</H3>
+          <H3>What it knows about your chatbot</H3>
           <UL>
-            <li><strong>בכלי:</strong> השם, התיאור, הפרמטרים המוצהרים, ה-Packages, <em>שמות</em> ה-Secrets, והקוד הנוכחי — כולל עריכות שעשית ידנית בין הודעה להודעה</li>
-            <li><strong>בסקיל:</strong> השם, התיאור, הפרומפט הנוכחי, הפרומפט הבסיס של ה-AI Chatbot, ורשימת הכלים והסקילים האמיתיים שלו — כדי שכל <Code>@tool</Code> ו-<Code>#Skill</Code> שהוא כותב יצביע על משהו שקיים</li>
+            <li><strong>In a tool:</strong> the name, description, declared parameters, packages, the <em>names</em> of the secrets, and the current code — including edits you made by hand between messages</li>
+            <li><strong>In a skill:</strong> the name, description, current prompt, the chatbot&rsquo;s base prompt, and the real list of its tools and skills — so that every <Code>@tool</Code> and <Code>#Skill</Code> it writes points at something that exists</li>
           </UL>
 
-          <H3>מה הוא ממלא</H3>
-          <P>בכלי הוא כותב את הקוד וגם את השם, התיאור, הפרמטרים וה-Packages. בסקיל הוא כותב את הפרומפט וגם את השם והתיאור. הפרומפט של סקיל נכתב <strong>תמיד באנגלית</strong>, חוץ ממשפטים שה-AI Chatbot אמור לומר למשתמש מילה-במילה בשפה אחרת.</P>
-          <P>רשימת הפרמטרים שהוא מחזיר מחליפה את הרשימה כולה, כך שההצהרה והקוד תמיד מסכימים על ה-<Code>kwargs</Code>.</P>
+          <H3>What it fills in</H3>
+          <P>In a tool it writes the code and also the name, description, parameters and packages. In a skill it writes the prompt and also the name and description. A skill prompt is written <strong>in English</strong>, except for sentences the chatbot is meant to say to a user word for word in another language.</P>
+          <P>The parameter list it returns replaces the whole list, so the declaration and the code always agree about <Code>kwargs</Code>.</P>
 
-          <H3>הם רואים את השגיאות</H3>
-          <P>אסיסטנט הכלי מקבל אוטומטית את <strong>ההרצה האחרונה</strong> של הכלי — הקלטים, ההצלחה או הכשל, וטקסט השגיאה המלא — ואת הכשלים שנרשמו לכלי הזה בשיחות אמיתיות. אסיסטנט הסקיל מקבל את הכשלים של ה-AI Chatbot. כלומר אחרי הרצה שנפלה אפשר לכתוב פשוט "תתקן" — בלי להעתיק traceback.</P>
+          <H3>They can see the errors</H3>
+          <P>The tool assistant is automatically given the <strong>last run</strong> of that tool — the inputs, whether it worked, and the full error text — and the failures recorded against it in real conversations. The skill assistant is given the chatbot&rsquo;s failures. So after a run that fell over you can simply write &ldquo;fix it&rdquo;, with no traceback to paste.</P>
 
-          <H3>קיצורי דרך</H3>
+          <H3>Shortcuts</H3>
           <UL>
-            <li><strong>Write it for me</strong> — כתיבה מאפס לפי השם והתיאור</li>
-            <li><strong>Explain the code</strong> / <strong>Add steps</strong> — הסבר על הקוד, או פירוק הפרומפט לשלבים</li>
-            <li><strong>Add error handling</strong> / <strong>Tighten it</strong> — חיסון הקוד, או צמצום הפרומפט</li>
-            <li><strong>Review it</strong> — ביקורת ותיקון</li>
+            <li><strong>Write it for me</strong> — from scratch, from the name and description</li>
+            <li><strong>Explain the code</strong> / <strong>Add steps</strong> — an explanation, or breaking the prompt into steps</li>
+            <li><strong>Add error handling</strong> / <strong>Tighten it</strong> — hardening the code, or shortening the prompt</li>
+            <li><strong>Review it</strong> — a critique, and a fix</li>
           </UL>
-          <Tip>תאר את המשימה בשפה חופשית ("כלי שמביא מזג אוויר לפי עיר") ותן לו למלא שם, תיאור, פרמטרים וקוד בבת אחת. מודל חזק יותר בהגדרות ה-AI Chatbot נותן קוד טוב יותר.</Tip>
+          <Tip>Describe the job in free text (&ldquo;a tool that fetches the weather for a city&rdquo;) and let it fill in the name, description, parameters and code at once. A stronger model in Settings gives better code.</Tip>
         </div>
       ),
 
       /* ─────────────── ASSISTANT HISTORY ─────────────── */
       history: (
-        <div dir="rtl">
-          <H2>היסטוריית אסיסטנטים</H2>
-          <P><strong>כל השיחות →</strong>, מתחת לרשימת השיחות בסייד-בר, שומרת כל שיחה עם כל אחד משלושת האסיסטנטים — של המערכת, של הכלים ושל הסקילים. רשימת השיחות עצמה בסייד-בר מראה רק את האחרונות של אסיסטנט המערכת, אלה שנפתחות בדף הבית.</P>
+        <div dir="ltr">
+          <H2>Assistant history</H2>
+          <P><strong>All conversations →</strong>, below the conversation list in the sidebar, keeps every conversation with all three assistants — the platform one, the tool one and the skill one. The sidebar list itself shows only the recent platform ones, the ones that open on Home.</P>
 
-          <H3>מה יש בה</H3>
+          <H3>What is in it</H3>
           <UL>
-            <li>סינון לפי סוג האסיסטנט: מערכת, כלים, סקילים או הכל</li>
-            <li>חיפוש בתוך כל תוכן השיחות</li>
-            <li>לכל שיחה: על איזה AI Chatbot ואיזה כלי או סקיל היא הייתה, מספר הודעות ומתי</li>
-            <li>פתיחת שיחה מציגה את התמלול המלא — כולל <strong>כל קריאה לכלי</strong> עם הפרמטרים והתוצאה, וסימון על מה שנכתב לעורך</li>
-            <li>קפיצה ל-AI Chatbot שהשיחה עסקה בו, ומחיקת שיחה מההיסטוריה</li>
+            <li>Filtering by assistant: platform, tools, skills, or everything</li>
+            <li>Search across the full content of every conversation</li>
+            <li>For each: which chatbot and which tool or skill it was about, how many messages, and when</li>
+            <li>Opening one shows the full transcript — including <strong>every tool call</strong> with its parameters and result, and a mark on what was written into the editor</li>
+            <li>Jumping to the chatbot the conversation was about, and deleting a conversation from the history</li>
           </UL>
-          <P>השיחה נשמרת אוטומטית אחרי כל תור. שיחה חדשה מתחילה כשלוחצים "שיחה חדשה" בדף הבית או בצ'אט הצף, או כשעוברים לכלי או לסקיל אחר.</P>
-          <Tip>ההיסטוריה שימושית במיוחד כדי לחזור לקוד או לפרומפט שאסיסטנט כתב לך לפני שבוע, ולראות מה בדיוק הוא שינה ולמה.</Tip>
+          <P>A conversation is saved automatically after every turn. A new one starts when you press &ldquo;New chat&rdquo; on Home or in the floating chat, or when you move to a different tool or skill.</P>
+          <Tip>The history earns its keep when you want the code or prompt an assistant wrote you last week, and to see exactly what it changed and why.</Tip>
         </div>
       ),
 
       /* ─────────────── TABLES ─────────────── */
       tables: (
-        <div dir="rtl">
+        <div dir="ltr">
           <H2>Tables</H2>
-          <P>טבלה היא שורות שהחשבון שלך מחזיק — מחירון, הזמנות, לידים, מלאי — וה-AI Chatbots קוראים מהן וכותבים אליהן תוך כדי שיחה. בניגוד ל-Knowledge, שהוא טקסט שנשלף לפי הקשר, טבלה היא נתונים מובנים שאפשר לחפש בהם, להוסיף אליהם ולעדכן אותם.</P>
-          <P>הטבלה שייכת <strong>לחשבון ולא ל-AI Chatbot אחד</strong>. כמה מהם יכולים לקרוא מאותה טבלה, וזה כל הרעיון: אותו מחירון משרת את סוכן המכירות ואת סוכן השירות.</P>
+          <P>A table is rows your account keeps — a price list, bookings, leads, stock — and your chatbots read from them and write into them mid-conversation. Unlike Knowledge, which is text pulled in by relevance, a table is structured data you can search, add to and update.</P>
+          <P>A table belongs <strong>to the account, not to one chatbot</strong>. Several of them can read the same table, and that is the whole point: one price list serves the sales chatbot and the support chatbot alike.</P>
 
-          <H3>יצירה</H3>
-          <P>בטאב <strong>Tables</strong>: שם, משפט שמסביר מה יש בטבלה, ועמודות. לכל עמודה טיפוס — <Code>text</Code>, <Code>number</Code>, <Code>date</Code> או <Code>yes/no</Code> — והערכים נשמרים בצורה הזאת. מספר שאינו מספר לא נשמר, ותאריך נשמר כיום.</P>
-          <Tip>המשפט שמסביר מה יש בטבלה הוא מה שה-AI Chatbot קורא כדי להחליט מתי להשתמש בה. שווה להשקיע בו.</Tip>
+          <H3>Making one</H3>
+          <P>On the <strong>Tables</strong> tab: a name, a sentence explaining what is in it, and columns. Each column has a type — <Code>text</Code>, <Code>number</Code>, <Code>date</Code> or <Code>yes/no</Code> — and values are stored in that shape. A number that is not a number is not stored, and a date is stored as a day.</P>
+          <Tip>The sentence explaining the table is what a chatbot reads to decide when to use it. It is worth the effort.</Tip>
 
-          <H3>מי ניגש אליה</H3>
-          <P>בכל AI Chatbot יש טאב <strong>Tables</strong> משלו, ושם מסמנים אילו טבלאות מותר לו לגעת בהן. לא מסומן — לא קיים בשבילו, והוא לא מקבל בכלל את הכלים.</P>
+          <H3>Who can reach it</H3>
+          <P>Every chatbot has a <strong>Tables</strong> tab of its own, where you tick which tables it may touch. Unticked means it does not exist for that chatbot, which is not given the tools at all.</P>
 
-          <H3>מה הוא רשאי לעשות</H3>
+          <H3>What it may do</H3>
           <UL>
-            <li><Code>table_list</Code> — אילו טבלאות יש לו ומה העמודות שלהן</li>
-            <li><Code>table_find</Code> — חיפוש בטבלה; כל שורה חוזרת עם <Code>row_id</Code></li>
-            <li><Code>table_add_row</Code> — הוספת שורה</li>
-            <li><Code>table_update_row</Code> — עדכון שורה לפי ה-<Code>row_id</Code>; רק השדות שנשלחו משתנים</li>
+            <li><Code>table_list</Code> — which tables it has and what their columns are</li>
+            <li><Code>table_find</Code> — search; every row comes back with a <Code>row_id</Code></li>
+            <li><Code>table_add_row</Code> — add a row</li>
+            <li><Code>table_update_row</Code> — update a row by its <Code>row_id</Code>; only the fields sent change</li>
           </UL>
-          <Warn>AI Chatbot לעולם לא מוחק שורה ולא משנה את מבנה הטבלה. מחיקה היא שלך בלבד, במסך Tables.</Warn>
-          <P>זה עובד בכל הערוצים באותה צורה — צ'אט הבדיקה, הווידג'ט באתר ו-WhatsApp מריצים את אותו קוד.</P>
+          <Warn>A chatbot never deletes a row and never reshapes a table. Deleting is yours alone, on the Tables screen.</Warn>
+          <P>It works the same on every channel — the test chat, the widget and WhatsApp run the same code.</P>
 
-          <H3>מי כתב מה</H3>
-          <P>כל שורה זוכרת מי הוסיף אותה — אתה, או ה-AI Chatbot ששמו מופיע בתחתית הגיליון. שורה שנראית מוזרה היא שורה שאפשר לאתר.</P>
+          <H3>Writing in any language</H3>
+          <P>A column is matched by name however it was written — spacing, case, underscores and dashes all wash out — so a chatbot naming a Hebrew column slightly differently still writes into it. And a tool call that saved nothing <strong>says so</strong>, naming the columns it could not place, rather than reporting &ldquo;added a row&rdquo; over an empty one.</P>
 
-          <H3>גם האסיסטנט</H3>
-          <P>אפשר לבקש מאסיסטנט המערכת "תבנה לי טבלת הזמנות עם מספר, לקוח וסטטוס" והיא תיווצר. הוא גם קורא וכותב שורות, ויכול לחבר טבלה ל-AI Chatbot.</P>
+          <H3>Who wrote what</H3>
+          <P>Every row remembers who added it — you, or the chatbot whose name appears at the foot of the sheet. A row that looks wrong is a row you can trace.</P>
+
+          <H3>The assistant, too</H3>
+          <P>You can ask the platform assistant to &ldquo;make me a bookings table with a number, a customer and a status&rdquo; and it will. It also reads and writes rows, and can connect a table to a chatbot.</P>
         </div>
       ),
 
       /* ─────────────── KNOWLEDGE ─────────────── */
       knowledge: (
-        <div dir="rtl">
+        <div dir="ltr">
           <H2>Knowledge (RAG)</H2>
-          <P>בסיס הידע הוא אוסף מסמכים שה-AI Chatbot שולף מהם קטעים רלוונטיים לכל הודעה, ומקבל אותם בפרומפט תחת <Code>## Relevant Context</Code>.</P>
+          <P>The knowledge base is a set of documents the chatbot pulls relevant passages from for every message, and receives in the prompt under <Code>## Relevant Context</Code>.</P>
 
-          <H3>איך מוסיפים מסמכים</H3>
+          <H3>Adding documents</H3>
           <UL>
-            <li><strong>הדבקת טקסט</strong> — כותרת ותוכן</li>
-            <li><strong>העלאת קובץ</strong> — PDF או DOCX; הטקסט מחולץ בשרת ונשמר כמסמך</li>
-            <li><strong>סריקת אתר</strong> — ראה למטה</li>
+            <li><strong>Pasting text</strong> — a title and the content</li>
+            <li><strong>Uploading a file</strong> — PDF or DOCX; the text is extracted on the server and stored as a document</li>
+            <li><strong>Crawling a site</strong> — see below</li>
           </UL>
 
-          <H3>ידע גלובלי מול ידע של סקיל</H3>
-          <P>מסמך יכול להיות משויך לכל ה-AI Chatbot או לסקיל מסוים. בצ'אט הבדיקה השליפה מצטמצמת למסמכים הגלובליים ולאלה של הסקיל הפעיל. בווידג'ט וב-WhatsApp כל הסקילים פעילים במקביל, ולכן נשלפים שם המסמכים של כולם.</P>
+          <H3>Global knowledge versus a skill&rsquo;s</H3>
+          <P>A document can belong to the whole chatbot or to one skill. In the test chat, retrieval narrows to the global documents plus the active skill&rsquo;s. In the widget and on WhatsApp every skill is live at once, so every skill&rsquo;s documents are in scope.</P>
 
-          <H3>סידור אוטומטי בהעלאה</H3>
-          <P>כשמוסיפים מסמך, הוא עובר פעם אחת דרך המודל של החשבון ונכתב מחדש לצורה שאפשר למצוא בה: סעיפים קצרים תחת כותרות, כל סעיף על נושא אחד, הפניות מפוענחות (<Code>הוא</Code>, <Code>החברה</Code> מוחלפים בשם עצמו), ובסוף כל סעיף שורת <strong>מילות מפתח בעברית ובאנגלית</strong>.</P>
-          <P>שורת מילות המפתח היא הסיבה שאפשר לשאול בעברית על מסמך שכתוב באנגלית — החיפוש הוא לקסיקלי ולא סמנטי, ובלי המילים בעברית לא הייתה חפיפה בכלל.</P>
+          <H3>Tidying on upload</H3>
+          <P>When a document is added it goes once through the account&rsquo;s model and is rewritten into a findable shape: short sections under headings, one subject per section, references resolved (<Code>it</Code>, <Code>the company</Code> replaced by the actual name), and at the end of each section a line of <strong>keywords in both Hebrew and English</strong>.</P>
+          <P>That keyword line is why a question in Hebrew can find a document written in English — the search is lexical rather than semantic, and without the Hebrew words there would be no overlap at all.</P>
           <UL>
-            <li>המקור נשמר תמיד. הכפתור <Code>↩</Code> בכרטיס המסמך מחזיר אותו</li>
-            <li>כפתור הסידור מריץ אותו שוב, תמיד מהמקור ולא מעל סידור קודם</li>
-            <li>אם אין מפתח API או שהמודל נכשל, המסמך נשמר כמו שהוא ומסומן <strong>גולמי</strong></li>
-            <li>דפים שנסרקו מאתר מחולקים לקטעים אבל לא עוברים סידור — סריקה יכולה להיות מאה דפים, וזה מאה קריאות מודל</li>
+            <li>The original is always kept. The <Code>↩</Code> button on the document card brings it back</li>
+            <li>The tidy button runs it again, always from the original rather than on top of a previous pass</li>
+            <li>With no API key, or if the model fails, the document is stored as it is and marked <strong>raw</strong></li>
+            <li>Crawled pages are split into passages but not tidied — a crawl can be a hundred pages, and that is a hundred model calls</li>
           </UL>
 
-          <H3>איך השליפה עובדת</H3>
-          <P>כל מסמך מחולק לקטעי חיפוש של כמה מאות תווים, עם חפיפה קלה ביניהם וכותרת הסעיף נגררת לתוך כל קטע. השליפה מחזירה קטעים, לא את המסמך כולו — כך ה-AI Chatbot מקבל את מה שרלוונטי במקום קובץ שלם.</P>
-          <P>החיפוש הוא <Code>tsvector</Code> של PostgreSQL על ההודעה האחרונה. המילים בשאלה מחוברות ב-<strong>OR</strong> ולא ב-AND, והאינדקס מחזיק כל מסמך גם ב-<Code>simple</Code> (מילים כפי שנכתבו — מה שעברית צריכה) וגם ב-<Code>english</Code> (גזעי מילים — כך ש-<Code>experience</Code> מוצא <Code>experiences</Code>).</P>
-          <Tip>עדיין שווה לתת למסמך כותרת תיאורית ולפצל לפי נושא. הסידור האוטומטי עושה הרבה, אבל מסמך שמאורגן היטב מלכתחילה תמיד יימצא טוב יותר.</Tip>
+          <H3>How retrieval works</H3>
+          <P>Every document is split into search passages of a few hundred characters, with a slight overlap and the section heading dragged into each one. Retrieval returns passages, not whole documents — so the chatbot gets what is relevant instead of a whole file.</P>
+          <P>The search is a PostgreSQL <Code>tsvector</Code> over the last message. The words in the question are joined with <strong>OR</strong> rather than AND, and the index holds every document both as <Code>simple</Code> (words as written — what Hebrew needs) and as <Code>english</Code> (stemmed, so <Code>experience</Code> finds <Code>experiences</Code>).</P>
+          <Tip>It is still worth giving a document a descriptive title and splitting it by subject. The automatic tidy does a lot, but a well-organised document is always found better.</Tip>
 
-          <H3>סריקת אתרים</H3>
-          <P>מזינים כתובת אחת, בוחרים כמה עמודים לקרוא, והסורק עובר על <strong>כל הדומיין</strong> — לא רק על הדף שהוזן. כל דף נשמר כמסמך מסומן <Code>web</Code>, הכותרות (<Code>h1</Code>-<Code>h6</Code>) נשמרות כסעיפים, וכל דף מחולק לקטעי חיפוש כמו כל מסמך אחר. הסריקה מתרעננת אוטומטית פעמיים ביום.</P>
-          <P>איך הוא מוצא את הדומיין: מתחילים מהכתובת שהוזנה ואחרי כל הפניה שהיא עושה, ומשם עוקבים אחרי כל קישור פנימי בכל דף. במקביל נקרא ה-<Code>sitemap.xml</Code> של האתר, וזו הדרך היחידה להגיע לדפים שאף דף אחר לא מקשר אליהם. <Code>example.com</Code> ו-<Code>www.example.com</Code> הם אותו אתר; תת-דומיין כמו <Code>blog.example.com</Code> הוא אתר אחר ודורש כתובת משלו.</P>
-          <Warn>הסורק קורא את ה-HTML שהשרת מחזיר — הוא <strong>לא מריץ JavaScript</strong>. אתר שנבנה בדפדפן (React, Vue, Angular) יחזיר דפים כמעט ריקים, והממשק יסמן כמה דפים כאלה נמצאו. במקרה כזה עדיף להדביק את התוכן ידנית.</Warn>
+          <H3>Crawling a site</H3>
+          <P>You give one address, choose how many pages to read, and the crawler walks <strong>the whole domain</strong> — not just the page you gave it. Each page is stored as a document marked <Code>web</Code>, headings (<Code>h1</Code>–<Code>h6</Code>) become sections, and each page is split into passages like any other document. The crawl refreshes itself twice a day.</P>
+          <P>How it finds the domain: it starts from the address you gave and from wherever that redirects to, and follows every internal link on every page. In parallel it reads the site&rsquo;s <Code>sitemap.xml</Code>, which is the only way to reach pages nothing else links to. <Code>example.com</Code> and <Code>www.example.com</Code> are the same site; a subdomain like <Code>blog.example.com</Code> is a different one and needs its own address.</P>
+          <Warn>The crawler reads the HTML the server returns — it does <strong>not</strong> run JavaScript. A site built in the browser (React, Vue, Angular) will return nearly empty pages, and the interface reports how many of those were found. In that case pasting the content by hand works better.</Warn>
           <UL>
-            <li>דפים שנסרקו <strong>לא</strong> עוברים את הסידור האוטומטי — סריקה יכולה להיות מאות דפים. אפשר להריץ את הסידור על דף בודד ידנית</li>
-            <li>עמוד גדול במיוחד נחתך ב-60 אלף תווים</li>
-            <li><Code>robots.txt</Code> של האתר מכובד. דפים שהאתר חוסם לא נקראים</li>
-            <li>המסמכים של הסריקה הקודמת נמחקים רק כשיש דף חדש להחליף אותם. אתר שלא עונה משאיר את הידע הקיים במקומו ומסמן שגיאה</li>
-            <li>מסמן <strong>נשאר עוד מהאתר</strong> כשנגמרו העמודים שהוקצו או הזמן — אפשר להעלות את מספר העמודים ולהריץ שוב</li>
+            <li>Crawled pages are <strong>not</strong> tidied automatically — a crawl can be hundreds of pages. You can tidy a single page by hand</li>
+            <li>A very large page is cut at 60,000 characters</li>
+            <li>The site&rsquo;s <Code>robots.txt</Code> is respected. Pages the site blocks are not read</li>
+            <li>The previous crawl&rsquo;s documents are deleted only once there is a new page to replace them. A site that does not answer leaves the existing knowledge in place and reports the error</li>
+            <li>It marks <strong>more of the site remains</strong> when the page budget or the time ran out — raise the page count and run it again</li>
           </UL>
-          <P>בנוסף, כשמשתמש שולח כתובת בצ'אט הבדיקה, עד שלוש כתובות מההודעה נסרקות מיד ונמסרות למודל תחת <Code>## Fetched Web Pages</Code> — בלי להישמר בבסיס הידע.</P>
+          <P>Separately, when a user sends a URL in the test chat, up to three addresses from that message are fetched immediately and handed to the model under <Code>## Fetched Web Pages</Code> — without being stored in the knowledge base.</P>
         </div>
       ),
 
       /* ─────────────── TEST ─────────────── */
       test: (
-        <div dir="rtl">
-          <H2>בדיקת ה-AI Chatbot</H2>
-          <P>יש שתי דרכים לדבר עם AI Chatbot, והן לא אותו דבר:</P>
+        <div dir="ltr">
+          <H2>Testing a chatbot</H2>
+          <P>There are two ways to talk to a chatbot, and they are not the same thing:</P>
           <UL>
-            <li><strong>Test במסך ה-AI Chatbots</strong> — שיחה אמיתית. היא רצה בשרת דרך אותו ערוץ שהווידג'ט משתמש בו, מנותבת לבראנץ' לפי אחוזי התנועה, ונשמרת ב-<strong>Interactions</strong> ככל שיחה אחרת.</li>
-            <li><strong>Test בתוך עורך ה-AI Chatbot</strong> — בדיקה ידנית מול ההגדרות שעל המסך, כולל הבראנץ' שאתה נמצא עליו כרגע, בלי לפרסם כלום. נשמרת ב-<strong>Manual tests</strong>.</li>
+            <li><strong>Test on the AI Chatbots screen</strong> — a real conversation. It runs on the server through the same channel the widget uses, is routed to a branch by traffic share, and is saved in <strong>Interactions</strong> like any other conversation.</li>
+            <li><strong>Test inside the editor</strong> — a manual check against the settings on screen, including the branch you are currently on, publishing nothing. Saved under <strong>Manual tests</strong>.</li>
           </UL>
-          <P>הבדיקה הידנית היא זו שמראה קריאות לכלים, מעבר סקילים וזמני תגובה — היא רצה בדפדפן, ולכן היא יכולה להראות את מה שקורה בדרך.</P>
+          <P>The manual one is what shows tool calls, skill switches and response times — it runs in the browser, so it can show what happens along the way.</P>
 
-          <H3>מה רואים בצ'אט</H3>
+          <H3>What you see in the chat</H3>
           <UL>
-            <li><strong>קריאות לכלים</strong> — כל קריאה מוצגת עם הפרמטרים שנשלחו והתוצאה שחזרה</li>
-            <li><strong>מעבר סקיל</strong> — כשה-AI Chatbot עובר לסקיל, מוצג כרטיס עם שמו והתיאור</li>
-            <li><strong>זמני תגובה</strong> — משך כל תשובה במילישניות</li>
-            <li><strong>מיסוך DLP</strong> — הודעה שמוסכה מסומנת ככזו</li>
+            <li><strong>Tool calls</strong> — each one with the parameters sent and the result returned</li>
+            <li><strong>Skill switches</strong> — a card with the skill&rsquo;s name and description</li>
+            <li><strong>Response times</strong> — how long each answer took, in milliseconds</li>
+            <li><strong>DLP masking</strong> — a masked message is marked as such</li>
           </UL>
 
-          <H3>היסטוריה — לשונית Manual tests</H3>
-          <P>כל שיחת בדיקה נשמרת בשרת אוטומטית, אחרי כל תור, כך שסגירת טאב באמצע לא מאבדת את ההרצה. אייקון השעון בכותרת הצ'אט מציג אותן, ואותן שיחות בדיוק מופיעות בלשונית <strong>Manual tests</strong> של ה-AI Chatbot — עם חיפוש בכל התמלילים, משך זמן, ומחיקה.</P>
-          <P>הן <strong>לא</strong> מופיעות ב-<strong>Interactions</strong>, ובכוונה: שם יושבות שיחות של משתמשי קצה אמיתיים דרך הווידג'ט או WhatsApp, ואלה השיחות שלך עם ה-AI Chatbot שלך.</P>
-          <P><strong>כל האסיסטנטים קוראים אותן.</strong> האסיסטנטים של הכלים, הסקילים והבייס-פרומט מקבלים את ההרצות האחרונות כחלק מהקונטקסט, ואסיסטנט המערכת יכול לבקש אותן בעצמו דרך <Code>get_test_conversations</Code>. לכן אפשר לומר לאסיסטנט "ה-AI Chatbot ענה לא נכון, תתקן" בלי להעתיק לו את השיחה.</P>
-          <Warn>כל שיחה מתחילה מאפס — ה-AI Chatbot לא זוכר שיחות קודמות. מה שצריך שיהיה זמין תמיד צריך להיות בפרומפט או בבסיס הידע.</Warn>
+          <H3>History — the Manual tests tab</H3>
+          <P>Every test conversation is saved on the server automatically, after each turn, so closing a tab halfway does not lose the run. The clock icon in the chat header lists them, and exactly those conversations appear on the chatbot&rsquo;s <strong>Manual tests</strong> tab — with search across every transcript, the duration, and a delete.</P>
+          <P>They do <strong>not</strong> appear in <strong>Interactions</strong>, deliberately: that is where real end-user conversations through the widget or WhatsApp live, and these are yours with your own chatbot.</P>
+          <P><strong>Every assistant reads them.</strong> The tool, skill and base-prompt assistants are given the recent runs as context, and the platform assistant can ask for them itself through <Code>get_test_conversations</Code>. So you can tell the assistant &ldquo;it answered wrong, fix it&rdquo; without pasting the conversation.</P>
+          <Warn>Every conversation starts from nothing — a chatbot does not remember earlier ones. Anything that must always be available belongs in the prompt or the knowledge base.</Warn>
         </div>
       ),
 
       /* ─────────────── CLI ─────────────── */
       cli: (
-        <div dir="rtl">
-          <H2>עריכה מ-IDE</H2>
-          <P>אותו AI Chatbot שאתה עורך בממשק אפשר למשוך לתיקייה, לערוך בעורך שלך, ולדחוף בחזרה. לכל AI Chatbot יש גם ריפו פרטי ב-GitHub, ו-<Code>git push</Code> אליו מופעל בדיוק כמו <Code>8legs push</Code>.</P>
+        <div dir="ltr">
+          <H2>Editing from an IDE</H2>
+          <P>The same chatbot you edit in the interface can be pulled into a folder, edited in your own editor, and pushed back. Every chatbot also has a private GitHub repo, and a <Code>git push</Code> to it runs exactly what <Code>8legs push</Code> runs.</P>
 
-          <H3>התקנה</H3>
-          <Block>{`npm i -g @8legs/cli     # ואז 8legs <פקודה> מכל תיקייה
-npx @8legs/cli <פקודה>   # בלי להתקין כלום`}</Block>
-          <P>דורש Node 18 ומעלה. אין לחבילה שום תלות חיצונית.</P>
+          <H3>Installing</H3>
+          <Block>{`npm i -g @8legs/cli     # then 8legs <command> from any folder
+npx @8legs/cli <command>   # without installing anything`}</Block>
+          <P>Needs Node 18 or later. The package has no dependencies.</P>
 
-          <H3>התחברות</H3>
-          <P>צור טוקן ב-<strong>Settings → Personal access tokens</strong>: תן לו שם שתזהה (המחשב, הסביבה) ולחץ צור. הוא מוצג פעם אחת בלבד — בשרת נשמר רק ה-hash שלו, והשם הוא מה שיעזור לדעת איזה טוקן לבטל.</P>
+          <H3>Signing in</H3>
+          <P>Make a token under <strong>Settings → Personal access tokens</strong>: give it a name you will recognise (the machine, the environment) and press create. It is shown once — the server keeps only its hash, and the name is what tells you which one to revoke.</P>
           <Block>{`8legs login
 8legs list`}</Block>
 
-          <H3>כל הפקודות</H3>
+          <H3>Every command</H3>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 16 }}>
             <tbody>
               {[
-                ['login', 'שומר טוקן. --token <t> מדלג על ההדבקה'],
-                ['logout', 'מוחק את הטוקן השמור'],
-                ['whoami', 'לאיזו התקנה אתה מחובר, וכמה AI Chatbots יש'],
-                ['list', 'ה-AI Chatbots שלך, עם ה-id של כל אחד'],
-                ['pull <AI Chatbot>', 'מוריד AI Chatbot לתיקייה. לפי id או לפי שם'],
-                ['pull', 'מרענן את התיקייה שאתה בתוכה'],
-                ['status', 'מה שונה מקומית, ואם ה-AI Chatbot זז בפלטפורמה'],
-                ['diff [קובץ]', 'השינויים עצמם, שורה-שורה'],
-                ['validate', 'בודק את התיקייה לפני דחיפה'],
-                ['push', 'שולח את השינויים'],
-                ['open', 'פותח את ה-AI Chatbot בדפדפן'],
-                ['git', 'מכוון את ה-origin של התיקייה לריפו של ה-AI Chatbot'],
-                ['branches', 'הבראנצ׳ים, ואחוז השיחות של כל אחד'],
-                ['branch <שם>', 'פותח בראנץ׳ ומעביר אליו את התיקייה'],
-                ['checkout <שם>', 'מחליף את התיקייה לבראנץ׳ אחר'],
-                ['merge [שם]', 'מחיל את הבראנץ׳ על main — כלומר מפעיל אותו'],
-                ['traffic <שם> <%>', 'שולח אחוז מהשיחות האמיתיות לבראנץ׳'],
-                ['traffic --stop', 'כל השיחות חוזרות ל-main'],
+                ['login', 'stores a token. --token <t> skips the paste'],
+                ['logout', 'deletes the stored token'],
+                ['whoami', 'which installation you are signed in to, and how many chatbots are there'],
+                ['list', 'your chatbots, with the id of each'],
+                ['pull <chatbot>', 'downloads one into a folder. By id or by name'],
+                ['pull', 'refreshes the folder you are standing in'],
+                ['status', 'what differs locally, and whether the chatbot moved on the platform'],
+                ['diff [file]', 'the changes themselves, line by line'],
+                ['validate', 'checks the folder before a push'],
+                ['push', 'sends the changes'],
+                ['open', 'opens the chatbot in a browser'],
+                ['git', 'points the folder’s origin at the chatbot’s repo'],
+                ['branches', 'the branches, and each one’s share of conversations'],
+                ['branch <name>', 'opens a branch and moves the folder onto it'],
+                ['checkout <name>', 'switches the folder to another branch'],
+                ['merge [name]', 'applies the branch to main — that is, makes it live'],
+                ['traffic <name> <%>', 'sends a share of real conversations to a branch'],
+                ['traffic --stop', 'everything goes back to main'],
               ].map(([cmd, what]) => (
                 <tr key={cmd} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td dir="ltr" style={{ padding: '7px 10px 7px 0', fontFamily: 'monospace', color: 'var(--teal)',
+                  <td dir="ltr" style={{ padding: '7px 14px 7px 0', fontFamily: 'monospace', color: 'var(--teal)',
                                          whiteSpace: 'nowrap', verticalAlign: 'top', textAlign: 'left' }}>{cmd}</td>
-                  <td style={{ padding: '7px 0 7px 14px', color: 'var(--text-2)', lineHeight: 1.6 }}>{what}</td>
+                  <td style={{ padding: '7px 0', color: 'var(--text-2)', lineHeight: 1.6 }}>{what}</td>
                 </tr>
               ))}
             </tbody>
           </table>
 
-          <H3>דגלים</H3>
+          <H3>Flags</H3>
           <UL>
-            <li><Code>--branch &lt;שם&gt;</Code> — למשוך בראנץ׳ במקום main</li>
-            <li><Code>--dir &lt;נתיב&gt;</Code> — לאיזו תיקייה למשוך</li>
-            <li><Code>--force</Code> — מרשה ל-pull או ל-checkout לדרוס שינויים מקומיים</li>
-            <li><Code>--host &lt;url&gt;</Code> — התקנה אחרת של הפלטפורמה</li>
-            <li><Code>--token &lt;טוקן&gt;</Code> — התחברות בלי prompt</li>
+            <li><Code>--branch &lt;name&gt;</Code> — pull a branch instead of main</li>
+            <li><Code>--dir &lt;path&gt;</Code> — which folder to pull into</li>
+            <li><Code>--force</Code> — lets a pull or checkout overwrite local changes</li>
+            <li><Code>--host &lt;url&gt;</Code> — a different installation of the platform</li>
+            <li><Code>--token &lt;token&gt;</Code> — sign in without a prompt</li>
           </UL>
 
-          <H3>מבנה התיקייה</H3>
-          <Block>{`config.json              זהות, ערוצים, מיסוך מידע
-prompt.md                הפרומפט הבסיסי
-skills/<שם>/skill.json   למה הסקיל, ואילו כלים שלו
-skills/<שם>/prompts/skill.md   ההוראות שלו
-tools/<שם>/tool.json     פרמטרים, חבילות, שמות משתני סביבה
-tools/<שם>/run.py        הקוד
-AGENTS.md                איך לערוך את ה-AI Chatbot — בשביל Claude Code
-.8legs/lock.json         id, בראנץ׳, גרסה`}</Block>
+          <H3>What the folder holds</H3>
+          <Block>{`config.json              identity, channels, data masking
+prompt.md                the base prompt
+skills/<name>/skill.json why the skill, and which of its tools
+skills/<name>/prompts/skill.md   its instructions
+tools/<name>/tool.json   parameters, packages, environment variable names
+tools/<name>/run.py      the code
+AGENTS.md                how to edit this chatbot — for Claude Code
+.8legs/lock.json         id, branch, version`}</Block>
 
-          <Warn>אל תשנה <Code>id</Code> באף קובץ. זה איך שהפלטפורמה מזהה את הדבר שכבר קיים אצלה — שינוי שלו מוחק סקיל ויוצר אחר במקומו.</Warn>
+          <Warn>Do not change an <Code>id</Code> in any file. That is how the platform recognises something it already has — changing one deletes a skill and creates another in its place.</Warn>
 
-          <H3>מה לא נמצא בתיקייה</H3>
+          <H3>What is not in the folder</H3>
           <UL>
-            <li><strong>סודות.</strong> מפתח ה-API, טוקני WhatsApp וערכי משתני הסביבה של כלים נשארים בפלטפורמה. <Code>config.json</Code> מפנה אליהם בצורת <Code>{'{{global.NAME}}'}</Code>; אל תחליף הפניה בערך אמיתי, push מתעלם ממנו.</li>
-            <li><strong>מסמכי ידע.</strong> יש להם מחזור חיים משלהם — העלאה, פיצול לקטעים, אינדוקס — וקרול של מאות עמודים לא אמור להיות קומיט.</li>
+            <li><strong>Secrets.</strong> The API key, WhatsApp tokens and tools&rsquo; environment values stay on the platform. <Code>config.json</Code> refers to them as <Code>{'{{global.NAME}}'}</Code>; do not replace a reference with a real value, push ignores it.</li>
+            <li><strong>Knowledge documents.</strong> They have a lifecycle of their own — upload, chunking, indexing — and a crawl of several hundred pages has no business being a commit.</li>
           </UL>
 
-          <H3>עבודה עם git</H3>
+          <H3>Working with git</H3>
           <Block>{`8legs pull <id>
-8legs git                # מכוון את origin לריפו של ה-AI Chatbot
-# ערוך, ואז
+8legs git                # points origin at the chatbot's repo
+# edit, then
 git add -A && git commit -m "…" && git push`}</Block>
-          <P>הריפו נוצר ב-pull הראשון. קומיט שעובר ולידציה מסומן ✓ ב-GitHub והופך לחי; קומיט שנופל מסומן ✗ עם הסיבה, <strong>וה-AI Chatbot החי לא זז</strong>. git כבר קיבל את הדחיפה, אז אי אפשר לדחות אותה — רק לא להפעיל אותה.</P>
+          <P>The repo is created on the first pull. A commit that passes validation is marked ✓ on GitHub and goes live; one that fails is marked ✗ with the reason, <strong>and the live chatbot does not move</strong>. Git has already taken the push, so it cannot be rejected — only left unapplied.</P>
 
-          <H3>בראנצ׳ים וניתוב שיחות</H3>
-          <Block>{`8legs branch warmer-tone      # פותח בראנץ׳ ועובר אליו
-# ערוך ודחוף — main לא זז
-8legs traffic warmer-tone 20  # 20% מהשיחות האמיתיות אליו
-8legs branches                # לראות את החלוקה
-8legs merge warmer-tone       # להפעיל אותו על כולם
-8legs traffic --stop          # או להחזיר הכל ל-main`}</Block>
-          <P>הבראנץ׳ של שיחה מוגרל פעם אחת, בהודעה הראשונה, ונשמר עליה. אף אחד לא רואה את ה-AI Chatbot מתחלף באמצע שיחה.</P>
+          <H3>Branches and routing conversations</H3>
+          <Block>{`8legs branch warmer-tone      # opens a branch and switches to it
+# edit and push — main does not move
+8legs traffic warmer-tone 20  # 20% of real conversations go to it
+8legs branches                # see the split
+8legs merge warmer-tone       # make it everyone's
+8legs traffic --stop          # or send everything back to main`}</Block>
+          <P>A conversation&rsquo;s branch is drawn once, on the first message, and stays with it. Nobody sees the chatbot change mid-conversation.</P>
 
-          <H3>כשדחיפה נדחית</H3>
+          <H3>When a push is rejected</H3>
           <UL>
-            <li><strong>"The AI Chatbot changed on the platform"</strong> — מישהו ערך בממשק. <Code>8legs pull</Code> לוקח את הגרסה שלו, ואז תחזור על העריכה ותדחוף שוב. שום דבר לא נכתב.</li>
-            <li><strong>קובץ שלא נפרס</strong> — גם כאן שום דבר לא נכתב. דחיפה היא הכל-או-כלום: JSON שבור לא יכול להשאיר AI Chatbot חי מעודכן בחצי.</li>
+            <li><strong>&ldquo;The AI Chatbot changed on the platform&rdquo;</strong> — somebody edited it in the interface. <Code>8legs pull</Code> takes their version; redo your edit and push again. Nothing was written.</li>
+            <li><strong>A file that would not parse</strong> — again, nothing was written. A push is all or nothing: broken JSON cannot leave a live chatbot half updated.</li>
           </UL>
 
-          <Tip>עריכה בממשק נכנסת ל<strong>טיוטה</strong>, לא ל-AI Chatbot החי — הפס בראש עורך ה-AI Chatbot הוא מה שמפרסם אותה. ב-CLI הטיוטה היא בראנץ׳ בשם <Code>draft</Code>.</Tip>
+          <Tip>An edit in the interface goes into a <strong>draft</strong>, not into the live chatbot — the bar at the top of the editor is what publishes it. In the CLI that draft is a branch called <Code>draft</Code>.</Tip>
         </div>
       ),
 
       /* ─────────────── WIDGET ─────────────── */
       widget: (
-        <div dir="rtl">
-          <H2>הטמעה באתר</H2>
-          <P>לשונית <strong>Export</strong> מייצרת קוד הטמעה מוכן, עם תצוגה מקדימה חיה של הווידג'ט.</P>
+        <div dir="ltr">
+          <H2>Embedding on a site</H2>
+          <P>The <strong>Export</strong> tab produces ready-made embed code, with a live preview of the widget.</P>
 
-          <H3>מה אפשר לעצב</H3>
+          <H3>What you can style</H3>
           <UL>
-            <li>כותרת, צבע ראשי וצבע הכותרת</li>
-            <li>טקסט ה-placeholder בתיבת ההקלדה</li>
-            <li>גובה ורדיוס פינות</li>
+            <li>Title, primary colour and header colour</li>
+            <li>The placeholder text in the input</li>
+            <li>Height and corner radius</li>
           </UL>
 
-          <H3>שתי דרכי הטמעה</H3>
+          <H3>Two ways to embed</H3>
           <UL>
-            <li><strong>iframe</strong> — הטמעה קבועה בתוך הדף</li>
-            <li><strong>כפתור צף</strong> — קטע script שמוסיף בועה בפינה שנפתחת ונסגרת, עם האווטאר של ה-AI Chatbot</li>
+            <li><strong>iframe</strong> — fixed in the page</li>
+            <li><strong>Floating button</strong> — a script that adds a bubble in the corner, opening and closing, with the chatbot&rsquo;s avatar</li>
           </UL>
 
-          <H3>מה קורה מאחורי הקלעים</H3>
-          <P>הווידג'ט מדבר עם נקודת קצה ציבורית של ה-AI Chatbot. היא מחזירה רק את מה שדרוש לתצוגה — שם, אווטאר והודעת פתיחה — ולא את המפתחות או ההגדרות. ה-AI Chatbot עונה בצד השרת עם המפתח שלו, כולל כלים, בסיס ידע ו-DLP, וכל שיחה נשמרת ומופיעה ב-Interactions כערוץ <Code>Widget</Code>.</P>
-          <Warn>הווידג'ט פתוח לכל מי שמגיע לדף שבו הטמעת אותו, וכל שיחה מחויבת למפתח ה-API של ה-AI Chatbot. אל תטמיע AI Chatbot יקר בדף ציבורי בלי מעקב ב-Interactions.</Warn>
+          <H3>What happens behind it</H3>
+          <P>The widget talks to a public endpoint for that chatbot. It returns only what is needed to render — the name, the avatar and the opening message — and never the keys or the configuration. The chatbot answers server-side with its own key, including tools, knowledge and DLP, and every conversation is saved and shows up in Interactions as channel <Code>Widget</Code>.</P>
+          <Warn>The widget is open to anyone who reaches the page you embedded it on, and every conversation is billed to your API key. Do not embed an expensive chatbot on a public page without watching Interactions.</Warn>
         </div>
       ),
 
       /* ─────────────── WHATSAPP ─────────────── */
       whatsapp: (
-        <div dir="rtl">
-          <H2>ערוץ WhatsApp</H2>
-          <P>לשונית <strong>Whatsapp</strong> מחברת את ה-AI Chatbot למספר WhatsApp Business דרך Meta Cloud API. אנשים כותבים למספר, וה-AI Chatbot עונה עם אותו פרומפט, כלים וידע.</P>
+        <div dir="ltr">
+          <H2>WhatsApp channel</H2>
+          <P>The <strong>Whatsapp</strong> tab connects a chatbot to a WhatsApp Business number through the Meta Cloud API. People write to the number, and the chatbot answers with the same prompt, tools and knowledge.</P>
 
-          <H3>מה צריך מ-Meta</H3>
+          <H3>What Meta gives you</H3>
           <UL>
-            <li><strong>Phone Number ID</strong> — מזהה המספר ב-WhatsApp Business</li>
-            <li><strong>Access Token</strong> — טוקן קבוע לשליחת הודעות</li>
-            <li><strong>App Secret</strong> — לאימות שכל הודעה נכנסת באמת מ-Meta</li>
-            <li><strong>Verify Token</strong> — מחרוזת שאתה בוחר (יש כפתור שמגריל אותה) ומזין גם ב-Meta</li>
+            <li><strong>Phone number ID</strong> — the number&rsquo;s id in WhatsApp Business</li>
+            <li><strong>Access token</strong> — a permanent token for sending messages</li>
+            <li><strong>App secret</strong> — for verifying that every incoming message really came from Meta</li>
+            <li><strong>Verify token</strong> — a string you choose (there is a button that generates one) and also enter at Meta</li>
           </UL>
 
-          <H3>שלבי החיבור</H3>
+          <H3>Connecting</H3>
           <UL>
-            <li>מלא את ארבעת השדות ולחץ <strong>Test connection</strong> — הבדיקה מאמתת מול Meta ומחזירה את שם התצוגה של המספר</li>
-            <li>העתק את כתובת ה-Webhook מהמסך והדבק אותה ב-Meta יחד עם ה-Verify Token</li>
-            <li>הפעל את המתג בראש הלשונית</li>
+            <li>Fill in the four fields and press <strong>Test connection</strong> — it checks against Meta and returns the number&rsquo;s display name</li>
+            <li>Copy the webhook address from the screen and paste it at Meta along with the verify token</li>
+            <li>Turn on the switch at the top of the tab</li>
           </UL>
 
-          <H3>מה קורה בכל הודעה</H3>
+          <H3>What happens on every message</H3>
           <UL>
-            <li>החתימה של Meta מאומתת מול ה-App Secret; בקשה בלי חתימה תקפה נדחית</li>
-            <li>הודעה מטופלת פעם אחת בלבד, גם אם Meta שולחת אותה שוב</li>
-            <li>ההיסטוריה נשמרת פר שולח, ועשרים ההודעות האחרונות נשלחות למודל כהקשר</li>
-            <li>תשובה ארוכה מפוצלת לכמה הודעות; הודעות שאינן טקסט מקבלות תשובה מנומסת</li>
+            <li>Meta&rsquo;s signature is checked against the app secret; a request without a valid one is refused</li>
+            <li>A message is handled exactly once, even if Meta sends it again</li>
+            <li>History is kept per sender, and the last twenty messages go to the model as context</li>
+            <li>A long answer is split across several messages; anything that is not text gets a polite reply</li>
           </UL>
-          <Warn>מספר WhatsApp יכול להיות מחובר ל-AI Chatbot אחד בלבד. אם תזין מספר שכבר מחובר ל-AI Chatbot אחר, השמירה תידחה עם הודעה.</Warn>
+          <Warn>A WhatsApp number can belong to one chatbot only. Entering a number already connected elsewhere is refused with a message.</Warn>
         </div>
       ),
 
       /* ─────────────── INTERACTIONS ─────────────── */
       interactions: (
-        <div dir="rtl">
+        <div dir="ltr">
           <H2>Interactions</H2>
-          <P>לשונית בסייד-בר שמרכזת כל השיחות שנוהלו עם ה-AI Chatbots שלך, בכל הערוצים.</P>
+          <P>A sidebar tab gathering every conversation your chatbots have had, on every channel.</P>
 
-          <H3>העמודות</H3>
+          <H3>The columns</H3>
           <UL>
-            <li><strong>AI Chatbot</strong> — ה-AI Chatbot שענה</li>
-            <li><strong>Channel</strong> — Widget, WhatsApp או Test chat</li>
-            <li><strong>Started</strong> — מתי השיחה התחילה</li>
-            <li><strong>Duration</strong> — מהפעילות הראשונה עד האחרונה בשיחה</li>
-            <li><strong>Messages</strong> — מספר ההודעות</li>
-            <li><strong>Conversation</strong> — ההודעה הראשונה של המשתמש; לחיצה על השורה פותחת את התמלול המלא</li>
+            <li><strong>AI Chatbot</strong> — which one answered</li>
+            <li><strong>Channel</strong> — Widget, WhatsApp or Test chat</li>
+            <li><strong>Started</strong> — when it began</li>
+            <li><strong>Duration</strong> — from the first activity to the last</li>
+            <li><strong>Messages</strong> — how many</li>
+            <li><strong>Conversation</strong> — the user&rsquo;s first message; clicking the row opens the full transcript</li>
           </UL>
 
-          <H3>סינון וחיפוש</H3>
-          <P>מתחת לכל כותרת יש פילטר: בחירת AI Chatbot, ערוץ, טווח תאריכים, מינימום ומקסימום שניות, ומינימום הודעות. תיבת החיפוש בעמודת Conversation מחפשת בתוך <strong>כל תוכן ההודעות</strong>, לא רק בתצוגה המקדימה. Started, Duration ו-Messages ניתנים למיון בלחיצה, ו-Clear filters מאפס הכול.</P>
-          <P>לאדמין יש כפתור נוסף שמרחיב את הרשימה לכל המשתמשים ומוסיף עמודת Owner.</P>
+          <H3>Filtering and search</H3>
+          <P>Under each heading there is a filter: chatbot, channel, date range, minimum and maximum seconds, and minimum messages. The search box in the Conversation column searches <strong>the whole content of every message</strong>, not just the preview. Started, Duration and Messages sort on click, and Clear filters resets everything.</P>
+          <P>An administrator gets an extra button that widens the list to every user and adds an Owner column.</P>
         </div>
       ),
 
       /* ─────────────── ADMIN ─────────────── */
       admin: (
-        <div dir="rtl">
+        <div dir="ltr">
           <H2>Admin</H2>
-          <P>לשונית שמופיעה רק למשתמשי אדמין.</P>
+          <P>A tab that appears for administrators only.</P>
 
-          <H3>משתמשים</H3>
+          <H3>Invitations</H3>
+          <P>The panel at the top of the screen. It is the only way an account gets made — there is no sign-up on the login screen. See the Accounts and invitations section for the whole of it.</P>
+
+          <H3>Starter AI Chatbots</H3>
+          <P>Which of your chatbots are copied into every new account at registration, exactly as they were when you marked them. The panel shows, per template, whether it is still there and what it carries.</P>
+
+          <H3>Users</H3>
           <UL>
-            <li>טבלה עם שם משתמש, טלפון, הרשאה, מספר AI Chatbots והתחברות אחרונה</li>
-            <li><strong>View AI Chatbots</strong> — צפייה ועריכה של ה-AI Chatbots של אותו משתמש, כולל שכפול AI Chatbot משלך אליו</li>
-            <li><strong>Reset Password</strong> — מגריל סיסמה זמנית ומציג אותה פעם אחת</li>
-            <li><strong>Delete User</strong> — מוחק את המשתמש, ה-AI Chatbots שלו, השיחות והמסמכים. דורש הקלדת שם המשתמש לאישור, ואי אפשר למחוק את עצמך</li>
+            <li>A table of username, phone, role, number of chatbots and last sign-in</li>
+            <li><strong>View AI Chatbots</strong> — see and edit that user&rsquo;s chatbots, including duplicating one of yours to them</li>
+            <li><strong>Reset password</strong> — generates a temporary password and shows it once</li>
+            <li><strong>Delete user</strong> — deletes the user, their chatbots, conversations and documents. Requires typing the username to confirm, and you cannot delete yourself</li>
           </UL>
-          <Warn>שכפול AI Chatbot למשתמש אחר לא מעביר את חיבור ה-Gmail ואת הגדרות ה-WhatsApp — הן מתאפסות בכוונה, כדי שלא יעברו טוקנים ומספרים בין משתמשים.</Warn>
+          <Warn>Duplicating a chatbot to another user does not carry the Gmail connection or the WhatsApp settings — those are reset on purpose, so that tokens and numbers never move between users.</Warn>
 
-          <H3>Chat History</H3>
-          <P>תצוגת כל השיחות בכל המערכת, עם תמלול מלא. Interactions נוח יותר לסינון; זה נוח יותר לסקירה כללית.</P>
+          <H3>Chat history</H3>
+          <P>Every conversation in the whole installation, with full transcripts. Interactions is better for filtering; this is better for a general look.</P>
         </div>
       ),
 
       /* ─────────────── OPS ─────────────── */
       ops: (
-        <div dir="rtl">
-          <H2>תשתית ותחזוקה</H2>
+        <div dir="ltr">
+          <H2>Infrastructure and upkeep</H2>
 
-          <H3>משתני סביבה</H3>
+          <H3>Environment variables</H3>
           <UL>
-            <li><Code>DATABASE_URL</Code> — מחרוזת החיבור ל-Neon</li>
-            <li><Code>JWT_SECRET</Code> — חתימת טוקני ההתחברות ומצב ה-OAuth של Gmail</li>
-            <li><Code>GOOGLE_CLIENT_ID</Code> / <Code>GOOGLE_CLIENT_SECRET</Code> — נדרשים לחיבור Gmail</li>
-            <li><Code>APP_URL</Code> — כתובת הבסיס לחזרה מ-OAuth (אם לא מוגדר, נגזרת מהבקשה)</li>
+            <li><Code>DATABASE_URL</Code> — the Neon connection string</li>
+            <li><Code>JWT_SECRET</Code> — signs session tokens and the Gmail OAuth state</li>
+            <li><Code>GOOGLE_CLIENT_ID</Code> / <Code>GOOGLE_CLIENT_SECRET</Code> — needed for connecting Gmail</li>
+            <li><Code>APP_URL</Code> — the base address OAuth returns to (derived from the request when unset)</li>
+            <li><Code>ADMIN_USERNAME</Code> / <Code>ADMIN_PASSWORD</Code> — used once, to create the first administrator on an empty database</li>
           </UL>
 
-          <H3>מיגרציות</H3>
-          <P>סכימת הבסיס נמצאת ב-<Code>schema.sql</Code>, וכל שינוי אחריה בתיקיית <Code>migrations/</Code>. הרצה:</P>
+          <H3>Migrations</H3>
+          <P>The base schema is in <Code>schema.sql</Code>, and every change after it lives in <Code>migrations/</Code>. To run them:</P>
           <Block>{`npm install
-npm run migrate -- --dry   # מה יורץ
-npm run migrate            # הרצה בפועל`}</Block>
-          <P>הריצה קוראת <Code>DATABASE_URL</Code> מהסביבה או מקובץ <Code>.env</Code>, מריצה כל קובץ פעם אחת ורושמת אותו בטבלת <Code>schema_migrations</Code>. הקבצים כתובים כך שהרצה חוזרת לא מזיקה.</P>
+npm run migrate -- --dry   # what would run
+npm run migrate            # run it`}</Block>
+          <P>The runner reads <Code>DATABASE_URL</Code> from the environment or from a <Code>.env</Code> file, runs each file once and records it in <Code>schema_migrations</Code>. The files are written so that running one again does no harm.</P>
 
-          <H3>משימות מתוזמנות</H3>
-          <P>סריקת האתרים של כל ה-AI Chatbots רצה פעמיים ביום דרך Vercel Cron. ל-webhook של WhatsApp ולסריקות יש חלונות זמן ארוכים יותר מברירת המחדל.</P>
+          <H3>Public pages</H3>
+          <P><Code>/privacy</Code> and <Code>/terms</Code> are plain static pages served from the same domain as the app, linked from the sign-in screen. They exist because Google&rsquo;s OAuth review will not proceed without them — see the Email section — and they need editing whenever what the platform stores changes.</P>
+
+          <H3>Scheduled work</H3>
+          <P>Crawling every chatbot&rsquo;s sites runs twice a day through Vercel Cron. The WhatsApp webhook and the crawls have longer time limits than the default.</P>
         </div>
       ),
 
       /* ─────────────── SECURITY ─────────────── */
       security: (
-        <div dir="rtl">
-          <H2>אבטחה ופרטיות</H2>
+        <div dir="ltr">
+          <H2>Security and privacy</H2>
 
-          <H3>מה מופרד בין משתמשים</H3>
+          <H3>What is kept apart between users</H3>
           <UL>
-            <li>AI Chatbot שייך למשתמש, וכל קריאה לשרת מאמתת בעלות לפני שהיא מחזירה או משנה משהו</li>
-            <li>חיבור Gmail הוא פר AI Chatbot, וניתן לגישה רק לבעל ה-AI Chatbot</li>
-            <li>מספר WhatsApp הוא בלעדי ל-AI Chatbot אחד, וניתוב הודעה נקבע לפי הוכחת ה-App Secret — לא לפי מי שהזין את המספר אחרון</li>
+            <li>A chatbot belongs to a user, and every call to the server checks ownership before it returns or changes anything</li>
+            <li>A Gmail connection is per chatbot, and reachable only by that chatbot&rsquo;s owner</li>
+            <li>A WhatsApp number is exclusive to one chatbot, and routing is decided by proof of the app secret — not by whoever entered the number last</li>
+            <li>An account is created only by an invitation code, which works once and is stored as a hash</li>
           </UL>
 
-          <H3>מה חשוב לדעת על סודות</H3>
+          <H3>What to know about secrets</H3>
           <UL>
-            <li>מפתחות ה-API, טוקני WhatsApp וה-Secrets של הכלים נשמרים בהגדרות ה-AI Chatbot בבסיס הנתונים</li>
-            <li>ערכי Secrets נחשפים לקוד הכלי שלך בזמן ריצה — כל מי שיכול לערוך את הכלי יכול לקרוא אותם</li>
-            <li>האסיסטנט מקבל את שמות ה-Secrets בלבד, לא את הערכים</li>
+            <li>API keys, WhatsApp tokens and tools&rsquo; secrets are stored in the database</li>
+            <li>Secret values are exposed to your tool&rsquo;s code at runtime — anyone who can edit the tool can read them</li>
+            <li>The assistant is given the names of secrets only, never the values</li>
+            <li>Passwords and invitation codes are stored hashed, and cannot be read back by anyone, including an administrator</li>
           </UL>
 
-          <H3>מה חשוף לציבור</H3>
+          <H3>What is exposed to the public</H3>
           <UL>
-            <li>הווידג'ט וה-webhook של WhatsApp פונים לעולם; שיחה דרכם מחויבת למפתח שלך</li>
-            <li>בסיס הידע נשלף לתוך התשובות — אל תכניס אליו מה שלא מוכן להיאמר ללקוח</li>
-            <li>DLP מסתיר תבניות של כרטיס אשראי ותעודת זהות, ולא כל מידע מזהה. הוא שכבת הגנה, לא ערובה</li>
+            <li>The widget and the WhatsApp webhook face the world; a conversation through either is billed to your key</li>
+            <li>The knowledge base is pulled into answers — do not put anything in it you are not prepared to have said to a customer</li>
+            <li>DLP hides credit card and national ID patterns, not every piece of identifying data. It is a layer, not a guarantee</li>
           </UL>
-          <Tip>עקוב אחרי Interactions כדי לראות מה באמת נשאל ומה ה-AI Chatbot ענה. זה הכלי הכי טוב לתפוס גם דליפות וגם תשובות שגויות.</Tip>
+          <Tip>Watch Interactions to see what is actually being asked and what the chatbot actually said. It is the best tool there is for catching both leaks and wrong answers.</Tip>
         </div>
       ),
     };
@@ -6456,8 +6562,8 @@ npm run migrate            # הרצה בפועל`}</Block>
       <div style={stacked ? { display: 'flex', flexDirection: 'column', gap: 16 } : { display: 'flex', gap: 32, maxWidth: 1000, margin: '0 auto' }}>
         {/* Sidebar nav — on a phone, a strip of chips above the text */}
         <div style={{ width: stacked ? '100%' : 200, flexShrink: 0 }}>
-          {!stacked && <div style={{ fontWeight: 700, fontSize: 11, color: 'var(--text-muted)', letterSpacing: 1, marginBottom: 10, textTransform: 'uppercase' }}>תוכן עניינים</div>}
-          <div className={stacked ? 'm-scroll-x' : undefined} dir={stacked ? 'rtl' : undefined} style={stacked ? { display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 } : { display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {!stacked && <div style={{ fontWeight: 700, fontSize: 11, color: 'var(--text-muted)', letterSpacing: 1, marginBottom: 10, textTransform: 'uppercase' }}>Contents</div>}
+          <div className={stacked ? 'm-scroll-x' : undefined} dir="ltr" style={stacked ? { display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 } : { display: 'flex', flexDirection: 'column', gap: 2 }}>
             {sections.map(s => (
               <button key={s.id} onClick={() => setActive(s.id)}
                 style={stacked ? {
@@ -6467,11 +6573,11 @@ npm run migrate            # הרצה בפועל`}</Block>
                   fontWeight: active === s.id ? 700 : 500,
                   border: `1px solid ${active === s.id ? 'rgba(239,159,39,0.35)' : 'var(--border)'}`,
                 } : {
-                  textAlign: 'right', padding: '8px 10px', borderRadius: 'var(--r-sm)', fontSize: 13,
+                  textAlign: 'left', padding: '8px 10px', borderRadius: 'var(--r-sm)', fontSize: 13,
                   background: active === s.id ? 'rgba(239,159,39,0.10)' : 'transparent',
                   color: active === s.id ? 'var(--primary)' : 'var(--text-2)',
                   fontWeight: active === s.id ? 600 : 400,
-                  borderRight: `3px solid ${active === s.id ? 'var(--primary)' : 'transparent'}`,
+                  borderLeft: `3px solid ${active === s.id ? 'var(--primary)' : 'transparent'}`,
                 }}
                 onMouseEnter={e => { if (active !== s.id) e.currentTarget.style.background = 'var(--bg-hover)'; }}
                 onMouseLeave={e => { if (active !== s.id) e.currentTarget.style.background = 'transparent'; }}
@@ -6480,9 +6586,9 @@ npm run migrate            # הרצה בפועל`}</Block>
           </div>
         </div>
         {/* Content */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ marginBottom: 6, fontSize: 11, color: 'var(--text-muted)', letterSpacing: 1, textTransform: 'uppercase' }}>תיעוד</div>
-          <div style={{ fontWeight: 800, fontSize: 28, marginBottom: 24, color: 'var(--text)' }}>📖 מדריך 8Legs.ai</div>
+        <div dir="ltr" style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ marginBottom: 6, fontSize: 11, color: 'var(--text-muted)', letterSpacing: 1, textTransform: 'uppercase' }}>Documentation</div>
+          <div style={{ fontWeight: 800, fontSize: 28, marginBottom: 24, color: 'var(--text)' }}>📖 The 8Legs.ai guide</div>
           {content[active]}
         </div>
       </div>
@@ -11286,20 +11392,39 @@ npm run migrate            # הרצה בפועל`}</Block>
   }
 
   /* ─────────────────── LOGIN GATE ─────────────────── */
+  /**
+   * The front door.
+   *
+   * There is no way to create an account from here. Sign-up is invitation
+   * only: an admin mints a code, hands it over, and the code screen is the
+   * only thing that opens a registration form. The check that screen makes is
+   * a courtesy — the server refuses a registration with no code, so the old
+   * two-tab toggle is gone rather than hidden.
+   */
   function LoginGate({ onLogin }) {
-    const [mode, setMode] = useState('login'); // 'login' | 'register'
+    const [mode, setMode] = useState('login');   // 'login' | 'code' | 'register'
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [phone, setPhone] = useState('');
+    const [code, setCode] = useState('');
+    const [accepted, setAccepted] = useState('');   // the code the form is being filled in against
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
-    function switchMode(m) {
-      setMode(m);
+    /* Typed in whatever shape it arrived — lower case, no dashes, dashes in
+       the wrong places, a trailing space off a paste. Regrouped as they type
+       so what is on screen matches what was handed to them; the server
+       ignores the punctuation either way. */
+    function tidyCode(raw) {
+      const bare = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+      return bare.replace(/(.{4})(?=.)/g, '$1-');
+    }
+
+    function goto(next) {
+      setMode(next);
       setError('');
-      setUsername('');
-      setPassword('');
-      setPhone('');
+      if (next === 'login') { setCode(''); setAccepted(''); setUsername(''); setPassword(''); setPhone(''); }
+      if (next === 'code') { setAccepted(''); setUsername(''); setPassword(''); setPhone(''); }
     }
 
     async function handleLogin() {
@@ -11326,15 +11451,42 @@ npm run migrate            # הרצה בפועל`}</Block>
       }
     }
 
+    /* Only asks whether the code is still open. It reserves nothing: the code
+       is spent by the registration itself, in one statement, so two people
+       racing the same code cannot both get through. */
+    async function handleCheckCode() {
+      if (code.replace(/[^A-Z0-9]/gi, '').length < 12) return;
+      setLoading(true);
+      setError('');
+      try {
+        const resp = await fetch('/api/auth/invite-check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code }),
+        });
+        if (resp.ok) {
+          setAccepted(code);
+          setMode('register');
+        } else {
+          const body = await resp.json().catch(() => ({}));
+          setError(body.error || 'That code is not valid.');
+        }
+      } catch {
+        setError('Could not connect to server.');
+      } finally {
+        setLoading(false);
+      }
+    }
+
     async function handleRegister() {
-      if (!username || !password || !phone) return;
+      if (!username || !password || !phone || !accepted) return;
       setLoading(true);
       setError('');
       try {
         const resp = await fetch('/api/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password, phone }),
+          body: JSON.stringify({ username, password, phone, inviteCode: accepted }),
         });
         if (resp.ok) {
           const data = await resp.json();
@@ -11342,7 +11494,16 @@ npm run migrate            # הרצה בפועל`}</Block>
           onLogin(data);
         } else {
           const body = await resp.json().catch(() => ({}));
-          setError(body.error || 'Registration failed.');
+          /* The code went in the seconds between the check and this — somebody
+             else used it, or it was cancelled. Send them back to the one
+             screen where that can be put right. */
+          if (resp.status === 403) {
+            setMode('code');
+            setAccepted('');
+            setError(body.error || 'That code is no longer valid.');
+          } else {
+            setError(body.error || 'Registration failed.');
+          }
         }
       } catch {
         setError('Could not connect to server.');
@@ -11356,9 +11517,24 @@ npm run migrate            # הרצה בפועל`}</Block>
     const HERO_INK = '#f2f3f7';
     const HERO_INK_DIM = 'rgba(242,243,247,0.66)';
 
-    const isLogin = mode === 'login';
-    const canSubmit = isLogin ? (username && password) : (username && password && phone);
     const isMobile = useIsMobile();   // on a phone the form is the whole screen
+    const submit = mode === 'login' ? handleLogin : mode === 'code' ? handleCheckCode : handleRegister;
+    const canSubmit = mode === 'login' ? !!(username && password)
+      : mode === 'code' ? code.replace(/[^A-Z0-9]/gi, '').length === 12
+      : !!(username && password && phone);
+    const heading = mode === 'login' ? 'Welcome back' : mode === 'code' ? 'Invitation code' : 'Create account';
+    const sub = mode === 'login' ? 'Sign in to access your AI Chatbots'
+      : mode === 'code' ? '8Legs.ai is invitation only. Paste the code you were given.'
+      : 'One code, one account.';
+    const cta = loading
+      ? (mode === 'login' ? 'Signing in…' : mode === 'code' ? 'Checking…' : 'Creating…')
+      : (mode === 'login' ? 'Sign in' : mode === 'code' ? 'Check code' : 'Create account');
+
+    const backLink = {
+      display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600,
+      color: 'var(--text-muted)', background: 'none', border: 'none', padding: 0,
+      marginBottom: 16, cursor: 'pointer',
+    };
 
     return (
       <div style={{ display: 'flex', height: 'calc(100vh / var(--ui-zoom))', background: 'var(--bg-app)', overflow: 'hidden' }}>
@@ -11408,71 +11584,93 @@ npm run migrate            # הרצה בפועל`}</Block>
             </div>
           </div>
           {/* Footer */}
-          <div style={{ position: 'absolute', bottom: 20, fontSize: 11, color: 'rgba(242,243,247,0.45)', letterSpacing: '0.04em' }}>
-            by <span style={{ color: 'var(--primary)', fontWeight: 600 }}>Ori Basson</span>
+          {/* Publicly reachable, and linked from the app's front door: Google's
+              OAuth review looks for exactly this before it will let the Gmail
+              connection out of testing. */}
+          <div style={{ position: 'absolute', bottom: 18, display: 'flex', alignItems: 'center', gap: 14, fontSize: 11, color: 'rgba(242,243,247,0.45)', letterSpacing: '0.04em' }}>
+            <span>by <span style={{ color: 'var(--primary)', fontWeight: 600 }}>Ori Basson</span></span>
+            <span style={{ opacity: 0.4 }}>·</span>
+            <a href="/privacy" target="_blank" rel="noreferrer" style={{ color: 'rgba(242,243,247,0.62)', textDecoration: 'none', borderBottom: '1px solid rgba(242,243,247,0.25)' }}>Privacy</a>
+            <a href="/terms" target="_blank" rel="noreferrer" style={{ color: 'rgba(242,243,247,0.62)', textDecoration: 'none', borderBottom: '1px solid rgba(242,243,247,0.25)' }}>Terms</a>
           </div>
         </div>
         {/* Right panel - form */}
         <div style={{ width: isMobile ? '100%' : 420, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: isMobile ? '32px 24px' : '40px 48px' }}>
           <div style={{ width: '100%', maxWidth: 340 }}>
-            <div style={{ marginBottom: 28 }}>
-              <div style={{ fontWeight: 800, fontSize: 22, letterSpacing: '-0.02em', color: 'var(--text)', marginBottom: 6 }}>
-                {isLogin ? 'Welcome back' : 'Create account'}
-              </div>
-              <div style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500 }}>
-                {isLogin ? 'Sign in to access your AI Chatbots' : 'Get started for free'}
-              </div>
+            {mode !== 'login' && (
+              <button onClick={() => goto(mode === 'register' ? 'code' : 'login')} style={backLink}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5" /><path d="m12 19-7-7 7-7" /></svg>
+                {mode === 'register' ? 'Use a different code' : 'Back to sign in'}
+              </button>
+            )}
+
+            <div style={{ marginBottom: 22 }}>
+              <div style={{ fontWeight: 800, fontSize: 22, letterSpacing: '-0.02em', color: 'var(--text)', marginBottom: 6 }}>{heading}</div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500, lineHeight: 1.6 }}>{sub}</div>
             </div>
 
-            {/* Tab toggle */}
-            <div style={{ display: 'flex', gap: 0, marginBottom: 22, background: 'var(--bg-panel)', borderRadius: 'var(--r-md)', padding: 4, border: '1px solid var(--border)' }}>
-              {['login', 'register'].map(m => (
-                <button key={m} onClick={() => switchMode(m)}
-                  style={{ flex: 1, padding: '8px 0', borderRadius: 8, fontWeight: 600, fontSize: 13,
-                    background: mode === m ? 'var(--primary)' : 'transparent',
-                    color: mode === m ? '#0a0a0a' : 'var(--text-2)',
-                    transition: 'all 0.18s ease',
-                    boxShadow: mode === m ? '0 1px 8px var(--primary-glow)' : 'none',
-                  }}>
-                  {m === 'login' ? 'Sign in' : 'Register'}
-                </button>
-              ))}
-            </div>
+            {mode === 'register' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--success)', background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.22)', borderRadius: 'var(--r-sm)', padding: '9px 11px', marginBottom: 14, lineHeight: 1.5 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12" /></svg>
+                <span>Code <strong style={{ fontFamily: MONO }}>{accepted}</strong> accepted</span>
+              </div>
+            )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ position: 'relative' }}>
-                <div style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}>{Icons.user}</div>
-                <input type="text" value={username} onChange={e => setUsername(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && (isLogin ? handleLogin() : handleRegister())}
-                  placeholder="Username" autoFocus style={{ paddingLeft: 38 }} />
-              </div>
-              <div style={{ position: 'relative' }}>
-                <div style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}>{Icons.lock}</div>
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && (isLogin ? handleLogin() : handleRegister())}
-                  placeholder="Password" style={{ paddingLeft: 38 }} />
-              </div>
-              {!isLogin && (
-                <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleRegister()}
-                  placeholder="Phone number" />
+              {mode === 'code' ? (
+                <input type="text" value={code} onChange={e => setCode(tidyCode(e.target.value))}
+                  onKeyDown={e => e.key === 'Enter' && handleCheckCode()}
+                  placeholder="XXXX-XXXX-XXXX" autoFocus spellCheck={false} autoComplete="off"
+                  style={{ fontFamily: MONO, fontSize: 15, letterSpacing: '0.18em', textAlign: 'center',
+                    borderColor: 'var(--primary)', background: 'var(--primary-dim)', boxShadow: '0 0 0 3px var(--primary-glow)' }} />
+              ) : (
+                <React.Fragment>
+                  <div style={{ position: 'relative' }}>
+                    <div style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}>{Icons.user}</div>
+                    <input type="text" value={username} onChange={e => setUsername(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && submit()}
+                      placeholder="Username" autoFocus style={{ paddingLeft: 38 }} />
+                  </div>
+                  <div style={{ position: 'relative' }}>
+                    <div style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}>{Icons.lock}</div>
+                    <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && submit()}
+                      placeholder="Password" style={{ paddingLeft: 38 }} />
+                  </div>
+                  {mode === 'register' && (
+                    <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleRegister()}
+                      placeholder="Phone number" />
+                  )}
+                </React.Fragment>
               )}
             </div>
 
             {error && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--danger)', fontSize: 13, marginTop: 12, padding: '10px 12px', background: 'rgba(239,68,68,0.08)', borderRadius: 'var(--r-sm)', border: '1px solid rgba(239,68,68,0.2)' }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--danger)', fontSize: 13, marginTop: 12, padding: '10px 12px', background: 'rgba(239,68,68,0.08)', borderRadius: 'var(--r-sm)', border: '1px solid rgba(239,68,68,0.2)', lineHeight: 1.5 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                 {error}
               </div>
             )}
 
-            <button onClick={isLogin ? handleLogin : handleRegister} disabled={loading || !canSubmit}
+            <button onClick={submit} disabled={loading || !canSubmit}
               style={{ width: '100%', background: 'var(--primary)', color: '#0a0a0a', padding: '12px 16px', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 14, marginTop: 16, boxShadow: '0 2px 12px var(--primary-glow)', transition: 'all 0.18s ease' }}
               onMouseEnter={e => { if (!loading && canSubmit) { e.currentTarget.style.background = 'var(--primary-hover)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}}
               onMouseLeave={e => { e.currentTarget.style.background = 'var(--primary)'; e.currentTarget.style.transform = 'none'; }}
             >
-              {loading ? (isLogin ? 'Signing in…' : 'Registering…') : (isLogin ? 'Sign in' : 'Create account')}
+              {cta}
             </button>
+
+            {mode === 'login' && (
+              <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)', fontSize: 12.5, color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.7 }}>
+                Been given an invitation code?
+                <br />
+                <button onClick={() => goto('code')}
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--text-2)', fontWeight: 650, fontSize: 12.5, borderBottom: '1px solid var(--border)' }}>
+                  Use it to create an account
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -11607,6 +11805,135 @@ npm run migrate            # הרצה בפועל`}</Block>
    */
   /** "1 skill", "2 skills" — a count reads wrong without it. */
   function plural(n, noun) { return `${n} ${noun}${n === 1 ? '' : 's'}`; }
+
+  /* ─────────────────── ADMIN: INVITATIONS ─────────────────── */
+  /**
+   * The only way an account gets made.
+   *
+   * A code is shown in full exactly once — at the moment it is minted, in the
+   * band under the button — because the row keeps only a hash of it. That is
+   * the same reason the list shows a prefix and not a code: there is nothing
+   * to show. An admin who loses one mints another and cancels the first.
+   */
+  function InvitationsPanel() {
+    const [rows, setRows] = useState(null);
+    const [fresh, setFresh] = useState(null);     // { code, expiresAt } — this session only
+    const [copied, setCopied] = useState(false);
+    const [busy, setBusy] = useState('');
+    const [error, setError] = useState('');
+
+    const load = useCallback(() => (
+      adminListInvites().then(setRows).catch(err => { setRows([]); setError(err.message); })
+    ), []);
+    useEffect(() => { load(); }, [load]);
+
+    async function mint() {
+      setBusy('new'); setError(''); setCopied(false);
+      try {
+        const made = await adminCreateInvite();
+        setFresh(made);
+        await load();
+      } catch (err) { setError(err.message); }
+      finally { setBusy(''); }
+    }
+
+    async function revoke(id) {
+      setBusy(id); setError('');
+      try { await adminRevokeInvite(id); await load(); }
+      catch (err) { setError(err.message); }
+      finally { setBusy(''); }
+    }
+
+    function copy() {
+      /* clipboard is unavailable over plain http and in some embedded views,
+         and a Copy that silently does nothing is worse than one that says so. */
+      try {
+        navigator.clipboard.writeText(fresh.code);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1800);
+      } catch { setError('Could not reach the clipboard — select the code and copy it.'); }
+    }
+
+    const day = iso => (iso ? new Date(iso).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
+    const tone = { open: 'teal', used: 'neutral', revoked: 'danger', expired: 'danger' };
+    const th = { padding: '13px 18px 9px', textAlign: 'start', whiteSpace: 'nowrap' };
+    const td = { padding: '12px 18px', fontSize: 13, borderTop: '1px solid var(--border)', color: 'var(--text-2)', verticalAlign: 'middle' };
+
+    return (
+      <div style={{ marginBottom: 18, borderRadius: 'var(--r-lg)', background: 'var(--bg-card)', border: '1px solid var(--border)', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', padding: '15px 18px', borderBottom: '1px solid var(--border)' }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>Invitations</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.6, maxWidth: 480 }}>
+              Nobody can sign up without one. A code works once, and expires by itself after 14 days if nobody uses it.
+            </div>
+          </div>
+          <Btn size="sm" variant="primary" icon={Icons.plus} onClick={mint} disabled={busy === 'new'}>
+            {busy === 'new' ? 'Making…' : 'Generate code'}
+          </Btn>
+        </div>
+
+        {fresh && (
+          <div style={{ margin: '15px 18px', padding: '14px 16px', borderRadius: 'var(--r-md)', background: 'var(--primary-dim)', border: '1px solid rgba(239,159,39,0.35)', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+            <div>
+              <Eyebrow style={{ padding: 0 }}>New code — copy it now</Eyebrow>
+              <div style={{ fontFamily: MONO, fontSize: 20, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text)', marginTop: 4, userSelect: 'all' }}>{fresh.code}</div>
+            </div>
+            <Btn size="sm" onClick={copy}>{copied ? 'Copied' : 'Copy'}</Btn>
+            <span style={{ fontSize: 12, color: 'var(--text-2)' }}>Expires {day(fresh.expiresAt)}</span>
+            <div style={{ flexGrow: 1 }} />
+            <span style={{ fontSize: 11.5, color: 'var(--text-muted)', maxWidth: 300, lineHeight: 1.5 }}>
+              This is the only time it can be read. Lose it and generate another.
+            </span>
+          </div>
+        )}
+
+        {error && <div style={{ padding: '0 18px 12px', fontSize: 12.5, color: 'var(--danger)' }}>{error}</div>}
+
+        {!rows ? (
+          <div style={{ padding: '18px', fontSize: 13, color: 'var(--text-muted)' }}>Loading…</div>
+        ) : rows.length === 0 ? (
+          <div style={{ padding: '18px', fontSize: 13, color: 'var(--text-muted)' }}>
+            No codes yet. Generate one and hand it to whoever is joining.
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
+              <thead>
+                <tr>{['Code', 'Created', 'Status', 'Used by', ''].map((h, n) => (
+                  <th key={n} style={th}><Eyebrow>{h}</Eyebrow></th>
+                ))}</tr>
+              </thead>
+              <tbody>
+                {rows.map(r => (
+                  <tr key={r.id}>
+                    <td style={{ ...td, fontFamily: MONO, fontSize: 12.5, color: 'var(--text)', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>
+                      {r.prefix}<span style={{ color: 'var(--text-muted)' }}>-••••-••••</span>
+                    </td>
+                    <td style={{ ...td, whiteSpace: 'nowrap' }}>{day(r.createdAt)}</td>
+                    <td style={td}>
+                      <Chip tone={tone[r.state] || 'neutral'}>{r.state[0].toUpperCase() + r.state.slice(1)}</Chip>
+                      {r.state === 'open' && (
+                        <span style={{ fontSize: 11.5, color: 'var(--text-muted)', marginInlineStart: 8 }}>until {day(r.expiresAt)}</span>
+                      )}
+                    </td>
+                    <td style={{ ...td, color: r.usedBy ? 'var(--text)' : 'var(--text-2)', fontWeight: r.usedBy ? 650 : 400 }}>{r.usedBy || '—'}</td>
+                    <td style={{ ...td, textAlign: 'end' }}>
+                      {r.state === 'open' && (
+                        <Btn size="sm" danger onClick={() => revoke(r.id)} disabled={busy === r.id}>
+                          {busy === r.id ? '…' : 'Revoke'}
+                        </Btn>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   function StarterAgentsPanel() {
     const [data, setData] = useState(null);
@@ -11795,6 +12122,8 @@ npm run migrate            # הרצה בפועל`}</Block>
               items={[{ id: 'users', label: 'Users' }, { id: 'history', label: 'Chat history' }]} />
           }
         />
+
+        <InvitationsPanel />
 
         <StarterAgentsPanel />
 
@@ -12361,11 +12690,14 @@ npm run migrate            # הרצה בפועל`}</Block>
 
             <div>
               <Eyebrow style={{ marginBottom: 8 }}>{L('Interface language', 'שפת הממשק')}</Eyebrow>
-              <SegTabs value={draft.assistantLanguage || 'en'} onChange={v => set('assistantLanguage', v)}
+              {/* Touching this is an answer to the question the first screen
+                  asks, so it also stops that screen asking again. */}
+              <SegTabs value={draft.assistantLanguage || 'en'}
+                onChange={v => { set('assistantLanguage', v); set('languageChosen', true); }}
                 items={[{ id: 'en', label: 'English' }, { id: 'he', label: 'עברית' }]} />
               <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 7, lineHeight: 1.6 }}>
-                {L('The whole interface and the assistants. The Documentation tab is written in Hebrew either way.',
-                   'כל הממשק והאסיסטנטים. טאב Documentation כתוב בעברית בכל מקרה.')}
+                {L('The whole interface and the assistants. The Documentation tab is written in English either way.',
+                   'כל הממשק והאסיסטנטים. טאב Documentation כתוב באנגלית בכל מקרה.')}
               </div>
             </div>
 
@@ -13315,20 +13647,40 @@ npm run migrate            # הרצה בפועל`}</Block>
        account gets. */
     const [autopilot, setAutopilot] = useState(null);
 
+    /* ── which language ──
+       Asked once per account, not once per browser. It used to hang off the
+       same localStorage flag as the tour, which got it wrong in both
+       directions: a second person signing in on this machine was never asked,
+       and the same person on a new laptop was asked again. The answer is a
+       column on the account now, so it follows them.
+
+       It runs on a phone too. The tour does not, because a spotlight over a
+       phone's nav is a different design — but this is a screen with two
+       buttons on it, and that reason does not apply. */
+    const [askLanguage, setAskLanguage] = useState(false);
+    const languageAsked = useRef(false);
+    useEffect(() => {
+      if (languageAsked.current || !settings) return;
+      languageAsked.current = true;
+      if (settings.languageChosen === false) setAskLanguage(true);
+    }, [settings]);
+
     /* The tour, the first time anybody arrives.
        It used to be Autopilot that opened itself here, on an account with no
        chatbots — a condition that never holds, because registration seeds
        every new account with the starter chatbots. So the wizard nobody could
        reach is replaced by the tour, which has real work of theirs to point
-       at, and whose last card is what opens Autopilot. */
+       at, and whose last card is what opens Autopilot. It waits for the
+       language question: there is no point reading five cards in a language
+       nobody picked. */
     const [tour, setTour] = useState(null);   // 'platform' | 'editor' | null
     const firstRunDone = useRef(false);
     useEffect(() => {
-      if (firstRunDone.current || loading || !settings || autopilot || isMobile) return;
+      if (firstRunDone.current || loading || !settings || autopilot || isMobile || askLanguage) return;
       firstRunDone.current = true;
       if (tourSeen()) return;
-      setTour('language');
-    }, [loading, settings, autopilot, isMobile]);
+      setTour('platform');
+    }, [loading, settings, autopilot, isMobile, askLanguage]);
 
     /* The editor tour waits for a chatbot they built. Every account is handed
        the starter chatbots at registration, so having one is not the same as
@@ -13350,17 +13702,29 @@ npm run migrate            # הרצה בפועל`}</Block>
 
     const [langBusy, setLangBusy] = useState(false);
 
-    /* Both tours are the same component; only where they walk differs. The
-       language question comes first and is a screen of its own — there is
-       nothing to point at yet, and nothing to read until it is answered. */
-    const tourNode = tour === 'language' ? (
+    /* The language question is a screen of its own rather than a step of the
+       tour: there is nothing to point at yet, and nothing to read until it is
+       answered. It is rendered ahead of everything, including on a phone. */
+    const languageNode = askLanguage ? (
       <LanguageGate busy={langBusy} onPick={async lang => {
         setLangBusy(true);
-        try { await handleSaveSettings({ ...(settings || accountApi()), assistantLanguage: lang }); }
-        catch { setAccountApi({ assistantLanguage: lang }); }   // the tour matters more than the record
-        finally { setLangBusy(false); setTour('platform'); }
+        try {
+          /* `languageChosen` is what stops it being asked again, and it is
+             sent here and only here — every other save round-trips whatever
+             the server last said, so saving an API key cannot silently answer
+             a question nobody was shown. */
+          await handleSaveSettings({ ...(settings || accountApi()), assistantLanguage: lang, languageChosen: true });
+        } catch {
+          setAccountApi({ assistantLanguage: lang });   // getting on with it matters more than the record
+        } finally {
+          setLangBusy(false);
+          setAskLanguage(false);
+        }
       }} />
-    ) : tour === 'platform' ? (
+    ) : null;
+
+    /* Both tours are the same component; only where they walk differs. */
+    const tourNode = tour === 'platform' ? (
       <PlatformTour
         steps={TOUR_STEPS()}
         onGo={step => setNav(step.nav)}
@@ -13540,6 +13904,7 @@ npm run migrate            # הרצה בפועל`}</Block>
         onReload={hydrate}
       />
       {deleteDialog}
+      {languageNode}
       {tourNode}
       {autopilot && (
         <AutopilotWizard
@@ -13686,6 +14051,7 @@ npm run migrate            # הרצה בפועל`}</Block>
           />
         )}
       </div>
+        {languageNode}
         {tourNode}
         {autopilot && (
           <AutopilotWizard

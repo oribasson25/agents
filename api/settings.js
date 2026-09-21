@@ -19,6 +19,7 @@ export default async function handler(req, res) {
       model: settings.model,
       ollamaHost: settings.ollama_host,
       assistantLanguage: settings.assistant_language,
+      languageChosen: !!settings.language_chosen,
       usable: configUsable(resolveApiConfig(settings, null)),
     });
   }
@@ -31,6 +32,7 @@ export default async function handler(req, res) {
       model: saved.model,
       ollamaHost: saved.ollama_host,
       assistantLanguage: saved.assistant_language,
+      languageChosen: !!saved.language_chosen,
       usable: configUsable(resolveApiConfig(saved, null)),
     });
   }
