@@ -463,36 +463,56 @@ the consent screen is what stops it recurring.
 sensitive means a review of a few business days, restricted would mean a CASA third-party
 security assessment and a bill. There is no assessment here.
 
-What the repo provides is the three things the review will not proceed without, all on the app's
-own domain and linked from the sign-in screen:
+**The domain is `8legs.world`.** `8legs.ai` is the product name and does not resolve — nothing in
+the submission may point at it, and no contact address may live on it. The values below are the
+ones to paste; getting one of them wrong is the usual cause of a rejection.
 
-| URL | File | What it has to do |
-| --- | --- | --- |
-| `/` | `agentforge.html` | describe the product publicly — the sign-in screen does, and now links the other two |
-| `/privacy` | `privacy.html` | name the Gmail scopes, say what is stored and for how long, how to delete it, and carry the Limited Use paragraph verbatim |
-| `/terms` | `terms.html` | the ordinary terms, plus what connecting a mailbox makes the user responsible for |
+| Console field | Value |
+| --- | --- |
+| App name | `8Legs.ai` |
+| User support email | `oribasson25@gmail.com` |
+| Application home page | `https://www.8legs.world/` |
+| Privacy policy link | `https://www.8legs.world/privacy` |
+| Terms of service link | `https://www.8legs.world/terms` |
+| Authorised domain | `8legs.world` |
+| Developer contact | `oribasson25@gmail.com` |
+| Authorised redirect URI | `https://www.8legs.world/api/gmail/callback` |
+| Scopes | `.../auth/gmail.send` and `.../auth/userinfo.email` |
 
-Both are plain static pages routed in `vercel.json`, ahead of the `/` catch-all. **Edit the
-contact address in both before submitting** — they ship with `support@8legs.ai`, and Google
-emails that address during the review. A bouncing contact fails it.
+The three public pages are already there and linked from the sign-in screen: `/` describes the
+product, and `privacy.html` and `terms.html` are plain static files routed in `vercel.json` ahead
+of the `/` catch-all. Both name the domain explicitly, because a reviewer seeing an app called
+8Legs.ai on 8legs.world will otherwise ask.
 
-Then, in the Google Cloud console, on the account that owns the project:
+Then, in order:
 
-1. **Verify the domain in Google Search Console** — on the *same Google account* that owns the
-   Cloud project. This is the step most submissions fail on, and the failure is not reported as
-   "unverified domain"; it comes back as a missing or unreachable home page.
-2. **APIs & Services -> OAuth consent screen** — app name, user support email, the app home page
-   (`https://<domain>/`), the privacy URL, the terms URL, the authorised domain, and a developer
-   contact email.
-3. **Scopes** — list `.../auth/gmail.send` and `.../auth/userinfo.email`. Justify the first in one
-   plain sentence: *the user connects their own mailbox so the chatbot they built can send email
-   on their behalf; the app never reads mail, and holds no scope that would let it.*
-4. **Demo video** — an unlisted screen recording showing the whole flow end to end: signing in,
-   the Tools tab, pressing Connect, Google's own consent screen with the scopes visible, and an
-   email arriving. Google does not approve a Gmail scope without watching it be used.
-5. **Submit for verification.** Expect 3-5 business days and one round of questions.
+1. **Verify `8legs.world` in Google Search Console**, signed in as `oribasson25@gmail.com` — the
+   same account that owns the Cloud project. This is the step most submissions fail on, and the
+   failure is not reported as "unverified domain"; it comes back as a missing or unreachable home
+   page. Either method works:
+   - *HTML file* — Search Console gives a `google<hash>.html`. Drop it in the repo root, commit,
+     push. Vercel serves root files as they are (`/widget-test.html` proves it), so it is live on
+     the next deploy and Verify passes.
+   - *DNS TXT* — a TXT record on `8legs.world`. Verifies the apex and `www` together, and does not
+     need a deploy.
+2. **Set `APP_URL` in Vercel** to `https://www.8legs.world` before submitting. Without it the
+   redirect URI is derived from the request host, so a preview deployment sends Google a
+   `redirect_uri` that is not on the authorised list and the flow dies at Google's screen.
+3. **APIs & Services -> OAuth consent screen** — fill in the table above. Set the user type to
+   **External**.
+4. **Scopes** — add `.../auth/gmail.send` and `.../auth/userinfo.email`, and justify the first in
+   one plain sentence: *the user connects their own mailbox so the chatbot they built can send
+   email on their behalf; the app never reads mail, and holds no scope that would let it.*
+5. **Demo video** — an unlisted YouTube screen recording showing the whole flow end to end:
+   signing in at `www.8legs.world`, a chatbot's Tools tab, pressing Connect, Google's own consent
+   screen with the scopes visible, and an email arriving. Google does not approve a Gmail scope
+   without watching it be used, and a video that starts after the consent screen is the second
+   most common rejection.
+6. **Publish app**, then **Submit for verification.** Expect 3-5 business days and one round of
+   questions. Answer from `oribasson25@gmail.com`, not from anywhere else.
 
-Until it is published, each address that needs to connect goes on the Test users list.
+Until it is published, each address that needs to connect goes on the Test users list — and keeps
+losing its refresh token every seven days.
 
 ## Every chatbot knows the date
 

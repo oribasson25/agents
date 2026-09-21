@@ -6087,10 +6087,11 @@ def run(**kwargs):
           <P>The work is in the Google Cloud console and can only be done by whoever owns that project. What the platform provides is the three things the review will not proceed without: a public home page (the sign-in screen, which describes the product), a privacy policy at <Code>/privacy</Code>, and terms at <Code>/terms</Code> — all three on the app&rsquo;s own domain, and linked from the front door.</P>
           <UL>
             <li><strong>1.</strong> Verify the domain in Google Search Console, <em>on the same Google account that owns the Cloud project</em>. This is the step most submissions fail on, and a failure here is not read as a failure — it is read as a missing home page</li>
-            <li><strong>2.</strong> In the Cloud console, under APIs &amp; Services → OAuth consent screen, fill in the app name, support email, the home page, the privacy URL and the terms URL, and the authorised domain</li>
-            <li><strong>3.</strong> Under Scopes, list <Code>gmail.send</Code> and <Code>email</Code> and justify the first in one plain sentence: the user connects their own mailbox so their chatbot can send email on their behalf; the app never reads mail</li>
-            <li><strong>4.</strong> Record a short screen capture that shows the whole flow — signing in, pressing Connect, the Google consent screen, and an email being sent. Google will not approve a Gmail scope without seeing it used</li>
-            <li><strong>5.</strong> Submit for verification. Expect 3–5 business days, and one round of questions</li>
+            <li><strong>2.</strong> Set <Code>APP_URL</Code> to the production address. Without it the redirect the platform sends Google is derived from whichever host the request came in on, so a preview deployment sends one that is not on the authorised list and the flow dies at Google&rsquo;s screen</li>
+            <li><strong>3.</strong> In the Cloud console, under APIs &amp; Services → OAuth consent screen, fill in the app name, support email, the home page, the privacy URL and the terms URL, and the authorised domain</li>
+            <li><strong>4.</strong> Under Scopes, list <Code>gmail.send</Code> and <Code>email</Code> and justify the first in one plain sentence: the user connects their own mailbox so their chatbot can send email on their behalf; the app never reads mail</li>
+            <li><strong>5.</strong> Record a short screen capture that shows the whole flow — signing in, pressing Connect, the Google consent screen, and an email being sent. Google will not approve a Gmail scope without seeing it used</li>
+            <li><strong>6.</strong> Publish the app, then submit for verification. Expect 3–5 business days, and one round of questions</li>
           </UL>
           <Warn>Until it is published, add each address that needs to connect as a Test user on the consent screen. That works today, is capped at 100, and still expires tokens every seven days.</Warn>
           <P>The README carries the same steps with the exact field names, for whoever is at the console.</P>
