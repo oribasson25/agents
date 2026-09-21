@@ -1,5 +1,6 @@
 import { sql } from '../_db.js';
 import { signJWT, hashPassword, verifyPassword } from '../_auth.js';
+import { clientIp, anyLocked, recordFailure, clearThrottle, LOCKED_MESSAGE } from '../_throttle.js';
 import crypto from 'crypto';
 
 // Auto-initialize admin user on first ever login if no users exist yet.
@@ -31,11 +32,23 @@ export default async function handler(req, res) {
 
   await ensureAdminExists();
 
+  /* A soft brake on guessing: too many recent failures for this username or
+     from this address, and the door is shut for a few minutes. It fails open
+     (a brake that cannot be read is off) and a correct password clears it, so
+     it cannot lock out a person who simply mistyped. */
+  const buckets = [`user:${username}`, `ip:${clientIp(req)}`];
+  if (await anyLocked(buckets)) {
+    return res.status(429).json({ error: LOCKED_MESSAGE });
+  }
+
   const [user] = await sql`select * from users where username = ${username}`;
   if (!user || !verifyPassword(password, user.password_hash)) {
+    await recordFailure(buckets[0]);
+    await recordFailure(buckets[1]);
     return res.status(401).json({ error: 'invalid credentials' });
   }
 
+  await clearThrottle(buckets);
   await sql`update users set last_login_at = now() where id = ${user.id}`;
 
   const token = signJWT({

@@ -2,6 +2,7 @@ import { sql } from '../_db.js';
 import { signJWT, hashPassword } from '../_auth.js';
 import { seedDefaultAgents } from '../_defaultAgent.js';
 import { claimInvite, releaseInvite, attachInviteUser } from '../_invites.js';
+import { clientIp, isLocked, recordFailure, LOCKED_MESSAGE } from '../_throttle.js';
 import crypto from 'crypto';
 
 /**
@@ -28,13 +29,25 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: 'An invitation code is required to create an account.' });
   }
 
+  /* A username-taken answer is a small enumeration oracle. It is useful enough
+     to a real user to keep, so instead of hiding it we cap how fast one
+     address can probe. Distinct from the login bucket, and fail-open. */
+  const regBucket = `reg-ip:${clientIp(req)}`;
+  if (await isLocked(regBucket)) {
+    return res.status(429).json({ error: LOCKED_MESSAGE });
+  }
+
   const [existing] = await sql`select id from users where username = ${username}`;
   if (existing) {
+    await recordFailure(regBucket);
     return res.status(409).json({ error: 'Username already taken' });
   }
 
   const claim = await claimInvite(inviteCode);
-  if (!claim.ok) return res.status(403).json({ error: claim.reason });
+  if (!claim.ok) {
+    await recordFailure(regBucket);
+    return res.status(403).json({ error: claim.reason });
+  }
 
   const id = crypto.randomUUID();
   try {
