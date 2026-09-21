@@ -2,7 +2,79 @@ from http.server import BaseHTTPRequestHandler
 import json
 import urllib.request
 import urllib.parse
+import os
+import hmac
+import hashlib
+import base64
+import time
 from html.parser import HTMLParser
+
+
+# ─── who may use the server as a fetcher ───────────────────────────────────
+# Was open to the internet with CORS `*` — an anonymous SSRF and read oracle.
+# Now: the internal secret (server) or a session JWT (browser), nothing else.
+# Nothing in the app currently calls this endpoint at all.
+
+def _jwt_secret() -> str:
+    return os.environ.get("JWT_SECRET") or ""
+
+
+def _internal_secret() -> str:
+    return hashlib.sha256(f"{_jwt_secret()}:internal-tool-runner".encode()).hexdigest()
+
+
+def _verify_jwt(token: str) -> bool:
+    secret = _jwt_secret()
+    if not secret:
+        return False
+    try:
+        header, body, sig = token.split(".")
+        expected = base64.urlsafe_b64encode(
+            hmac.new(secret.encode(), f"{header}.{body}".encode(), hashlib.sha256).digest()
+        ).rstrip(b"=").decode()
+        if not hmac.compare_digest(sig, expected):
+            return False
+        payload = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
+        exp = payload.get("exp")
+        if exp and int(exp) < int(time.time()):
+            return False
+        return True
+    except Exception:
+        return False
+
+
+def _authorized(headers) -> bool:
+    internal = headers.get("X-Internal-Secret", "")
+    if internal and hmac.compare_digest(internal, _internal_secret()):
+        return True
+    auth = headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return _verify_jwt(auth[7:])
+    return False
+
+
+def _points_inward(raw_url: str) -> bool:
+    """A literal check that a URL aims at the machine itself or a private net."""
+    try:
+        h = (urllib.parse.urlparse(raw_url).hostname or "").lower()
+    except Exception:
+        return True
+    if h in ("localhost", "metadata.google.internal") or h.endswith(".localhost"):
+        return True
+    if h == "::1" or h.startswith("fd") or h.startswith("fe80"):
+        return True
+    parts = h.split(".")
+    if len(parts) == 4 and all(p.isdigit() for p in parts):
+        p = [int(x) for x in parts]
+        if p[0] in (0, 10, 127):
+            return True
+        if p[0] == 169 and p[1] == 254:
+            return True
+        if p[0] == 192 and p[1] == 168:
+            return True
+        if p[0] == 172 and 16 <= p[1] <= 31:
+            return True
+    return False
 
 
 class _TextExtractor(HTMLParser):
@@ -72,6 +144,9 @@ def _scrape(url: str) -> dict:
     if not url.startswith("http"):
         url = "https://" + url
 
+    if _points_inward(url):
+        return {"error": "That address is not allowed."}
+
     parsed = urllib.parse.urlparse(url)
     base_url = f"{parsed.scheme}://{parsed.netloc}"
 
@@ -105,53 +180,39 @@ def _scrape(url: str) -> dict:
 
 
 class handler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        length = int(self.headers.get("Content-Length", 0))
-        body = json.loads(self.rfile.read(length) or b"{}")
-        url = body.get("url", "").strip()
+    def _reject(self, status, message):
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps({"error": message}).encode())
 
+    def _respond(self, url):
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
-
         if not url:
             self.wfile.write(json.dumps({"error": "url is required"}).encode())
             return
-
         try:
-            data = _scrape(url)
-            self.wfile.write(json.dumps(data).encode())
+            self.wfile.write(json.dumps(_scrape(url)).encode())
         except Exception as e:
             self.wfile.write(json.dumps({"error": str(e)}).encode())
 
+    def do_POST(self):
+        if not _authorized(self.headers):
+            return self._reject(401, "unauthorized")
+        length = int(self.headers.get("Content-Length", 0))
+        body = json.loads(self.rfile.read(length) or b"{}")
+        self._respond(body.get("url", "").strip())
+
     def do_GET(self):
+        if not _authorized(self.headers):
+            return self._reject(401, "unauthorized")
         url = ""
         if "?" in self.path:
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             url = qs.get("url", [""])[0]
-
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-
-        if not url:
-            self.wfile.write(json.dumps({"error": "url query param is required"}).encode())
-            return
-
-        try:
-            data = _scrape(url)
-            self.wfile.write(json.dumps(data).encode())
-        except Exception as e:
-            self.wfile.write(json.dumps({"error": str(e)}).encode())
-
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.end_headers()
+        self._respond(url)
 
     def log_message(self, *args):
         pass

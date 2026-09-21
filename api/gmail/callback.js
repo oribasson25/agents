@@ -1,9 +1,11 @@
 import crypto from 'crypto';
 import { sql } from '../_db.js';
+import { jwtSecret } from '../_auth.js';
 import { appBaseUrl } from '../_gmail.js';
 import { logError } from '../_errorLog.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
+// Same key the rest of the app signs with — never a hard-coded fallback.
+const JWT_SECRET = jwtSecret();
 
 function verifyState(state) {
   try {

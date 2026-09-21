@@ -3,10 +3,76 @@ import json
 import subprocess
 import sys
 import os
+import hmac
+import hashlib
+import base64
+import time
+
+
+# ─── who is allowed to run code here ───────────────────────────────────────
+#
+# This endpoint executes arbitrary Python. It used to be reachable by anyone
+# on the internet with CORS `*`, which is remote code execution as a service.
+# Now it accepts exactly two callers, and no one else:
+#
+#   • a signed-in browser, proven by its session JWT (same key the Node side
+#     signs with — verified here without any library);
+#   • the platform's own agent runner, proven by the internal secret, which is
+#     derived from JWT_SECRET the identical way api/_auth.js derives it.
+#
+# An anonymous caller has neither and is refused before a line of code runs.
+
+def _jwt_secret() -> str:
+    return os.environ.get("JWT_SECRET") or ""
+
+
+def _internal_secret() -> str:
+    return hashlib.sha256(f"{_jwt_secret()}:internal-tool-runner".encode()).hexdigest()
+
+
+def _b64url_decode(s: str) -> bytes:
+    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+
+
+def _verify_jwt(token: str) -> bool:
+    secret = _jwt_secret()
+    if not secret:
+        return False
+    try:
+        header, body, sig = token.split(".")
+        expected = base64.urlsafe_b64encode(
+            hmac.new(secret.encode(), f"{header}.{body}".encode(), hashlib.sha256).digest()
+        ).rstrip(b"=").decode()
+        if not hmac.compare_digest(sig, expected):
+            return False
+        payload = json.loads(_b64url_decode(body))
+        exp = payload.get("exp")
+        if exp and int(exp) < int(time.time()):
+            return False
+        return True
+    except Exception:
+        return False
+
+
+def _authorized(headers) -> bool:
+    internal = headers.get("X-Internal-Secret", "")
+    if internal and hmac.compare_digest(internal, _internal_secret()):
+        return True
+    auth = headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return _verify_jwt(auth[7:])
+    return False
 
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
+        if not _authorized(self.headers):
+            self.send_response(401)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "unauthorized"}).encode())
+            return
+
         length = int(self.headers.get("Content-Length", 0))
         body = json.loads(self.rfile.read(length) or b"{}")
 
@@ -19,16 +85,8 @@ class handler(BaseHTTPRequestHandler):
 
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(json.dumps(result).encode())
-
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.end_headers()
 
     def log_message(self, *args):
         pass  # suppress access logs

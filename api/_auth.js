@@ -1,6 +1,60 @@
 import crypto from 'crypto';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
+/*
+ * The key every session token is signed with.
+ *
+ * There is no hard-coded fallback: a known constant in a public repo is a
+ * skeleton key, and anyone holding it can forge a token for any user,
+ * including an admin. If JWT_SECRET is unset we generate a random one for this
+ * process instead — sessions then fail to verify across instances, which is a
+ * loud, correct failure rather than a silent open door. Set JWT_SECRET.
+ */
+const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
+if (!process.env.JWT_SECRET) {
+  console.warn('[auth] JWT_SECRET is not set — using a random per-process secret. Sessions will not verify across instances until it is set.');
+}
+
+/** The one place anything outside this file may read the signing key. */
+export function jwtSecret() {
+  return JWT_SECRET;
+}
+
+/*
+ * A secret the platform shares only with itself.
+ *
+ * The tool runner and the scrapers are called two ways: by a signed-in
+ * browser (which carries a JWT) and by the agent runner on the server (which
+ * has no user, because a widget conversation has no logged-in person). The
+ * server proves it is the platform with this secret in a header; a browser
+ * proves it is a user with its JWT. An anonymous caller has neither.
+ *
+ * Derived from JWT_SECRET rather than a second env var, so there is nothing
+ * extra to configure and it cannot be left unset while JWT_SECRET is set. The
+ * Python tool runner derives the identical value the same way.
+ */
+export function internalSecret() {
+  return crypto.createHash('sha256').update(`${JWT_SECRET}:internal-tool-runner`).digest('hex');
+}
+
+/** Constant-time check that a request carries the internal secret. */
+export function isInternalCall(req) {
+  const got = String((req.headers && req.headers['x-internal-secret']) || '');
+  const want = internalSecret();
+  if (got.length !== want.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want));
+}
+
+/**
+ * The gate for an endpoint the browser AND the server both call.
+ *
+ * Returns a truthy value and lets the request through when it is either an
+ * internal server-to-server call or an authenticated user; otherwise it has
+ * already answered 401 and returns false, exactly like checkAuth.
+ */
+export function checkInternalOrAuth(req, res) {
+  if (isInternalCall(req)) return { internal: true };
+  return checkAuth(req, res);
+}
 
 function base64url(input) {
   return Buffer.from(input).toString('base64url');

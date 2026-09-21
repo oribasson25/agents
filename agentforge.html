@@ -2040,7 +2040,7 @@ function markSvgString(color, size = 30) {
                                : pp.type === 'number'  ? parseFloat(raw) || 0
                                : raw;
         });
-        const resp = await fetch('/api/run-tool', {
+        const resp = await apiFetch('/api/run-tool', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ code: tool.code || '', inputs: typedInputs, packages, env_vars: envVars }),
@@ -2168,7 +2168,7 @@ function markSvgString(color, size = 30) {
 
     if (provider === 'ollama') {
       const host = (accountApi().ollamaHost || 'http://localhost:11434').replace(/\/$/, '');
-      const r = await fetch('/api/ollama-proxy', {
+      const r = await apiFetch('/api/ollama-proxy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ host, path: '/v1/chat/completions', body: { model, messages: [{ role: 'system', content: system }, ...history] } }),
@@ -3267,7 +3267,7 @@ function markSvgString(color, size = 30) {
       if (urls.length > 0) {
         const results = await Promise.allSettled(
           urls.map(url =>
-            fetch('/api/scrape-browser', {
+            apiFetch('/api/scrape-browser', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ url }),
@@ -3396,7 +3396,7 @@ function markSvgString(color, size = 30) {
         } else {
           const results = await Promise.allSettled(
             predefinedUrls.map(url =>
-              fetch('/api/scrape-browser', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) }).then(r => r.json())
+              apiFetch('/api/scrape-browser', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) }).then(r => r.json())
             )
           );
           const combined = results.map((r, i) => {
@@ -3408,7 +3408,7 @@ function markSvgString(color, size = 30) {
       }
       const packages = (tool?.packages || '').split(',').map(s => s.trim()).filter(Boolean);
       const envVars = Object.fromEntries((tool?.envVars || []).filter(e => e.key).map(e => [e.key, e.value]));
-      const resp = await fetch('/api/run-tool', {
+      const resp = await apiFetch('/api/run-tool', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: tool?.code || '', inputs, packages, env_vars: envVars }),
@@ -3458,7 +3458,7 @@ function markSvgString(color, size = 30) {
         if (fnTools.length > 0) body.tools = fnTools;
 
         // Route through server-side proxy to avoid mixed-content and CORS issues
-        const r = await fetch('/api/ollama-proxy', {
+        const r = await apiFetch('/api/ollama-proxy', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ host: ollamaHost, path: '/v1/chat/completions', body }),
@@ -9345,7 +9345,7 @@ npm run migrate            # run it`}</Block>
     for (let round = 0; round < maxRounds; round++) {
       const body = { model, messages: msgs, tools: fnTools };
       const r = provider === 'ollama'
-        ? await fetch('/api/ollama-proxy', {
+        ? await apiFetch('/api/ollama-proxy', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ host: (accountApi().ollamaHost || '').replace(/\/$/, ''), path: '/v1/chat/completions', body }),
           })
@@ -9847,7 +9847,7 @@ npm run migrate            # run it`}</Block>
           if (!agent) return done(`No agent with id ${input.agent_id}.`);
           const tool = (agent.tools || []).find(t => t.name === input.tool_name);
           if (!tool) return done(`Agent "${agent.name}" has no tool named ${input.tool_name}.`);
-          const resp = await fetch('/api/run-tool', {
+          const resp = await apiFetch('/api/run-tool', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

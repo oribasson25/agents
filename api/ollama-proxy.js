@@ -1,10 +1,14 @@
-export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+import { checkInternalOrAuth } from './_auth.js';
 
+export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).end();
+
+  /* The browser reaches this same-origin with its session token; the agent
+     runner reaches it with the internal secret. It used to be open to the
+     whole internet with CORS `*`, which turned the server into a proxy anyone
+     could point at an arbitrary host. */
+  if (!checkInternalOrAuth(req, res)) return;
 
   const { host, path, body } = req.body || {};
   if (!host || !path) return res.status(400).json({ error: 'host and path required' });

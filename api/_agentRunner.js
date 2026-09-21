@@ -4,6 +4,12 @@ import { searchDocuments } from './_knowledge.js';
 import { sendGmail } from './_gmail.js';
 import { logError } from './_errorLog.js';
 import { TABLE_TOOLS, runAgentTableTool } from './_tables.js';
+import { internalSecret } from './_auth.js';
+
+/* This runs server-side with no logged-in user, so it proves it is the
+   platform to the tool runner and the scraper with the internal secret
+   instead of a session token. */
+const INTERNAL_HEADERS = { 'Content-Type': 'application/json', 'x-internal-secret': internalSecret() };
 
 function applyDlp(text, dlp) {
   if (!dlp || typeof text !== 'string') return text;
@@ -203,7 +209,7 @@ async function executeTool(toolName, inputs, agent, baseUrl, agentId) {
       urls.map(url =>
         fetch(`${baseUrl}/api/scrape-browser`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: INTERNAL_HEADERS,
           body: JSON.stringify({ url }),
         }).then(r => r.json())
       )
@@ -223,7 +229,7 @@ async function executeTool(toolName, inputs, agent, baseUrl, agentId) {
 
   const resp = await fetch(`${baseUrl}/api/run-tool`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: INTERNAL_HEADERS,
     body: JSON.stringify({ code: tool.code || '', inputs, packages, env_vars: envVars }),
   });
   const data = await resp.json();

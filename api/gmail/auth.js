@@ -1,8 +1,9 @@
 import crypto from 'crypto';
-import { verifyJWT } from '../_auth.js';
+import { verifyJWT, jwtSecret } from '../_auth.js';
 import { userOwnsAgent, appBaseUrl } from '../_gmail.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
+// Same key the rest of the app signs with — never a hard-coded fallback.
+const JWT_SECRET = jwtSecret();
 
 function signState(data) {
   const payload = Buffer.from(JSON.stringify(data)).toString('base64url');
