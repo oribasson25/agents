@@ -5860,12 +5860,16 @@ function markSvgString(color, size = 30) {
           <H3>The principle</H3>
           <P>Not one question is about building agents — no base prompt, no skills. The questions are about <strong>the business</strong> and <strong>what needs to happen</strong>, and the wizard translates them into a chatbot. And nothing may be left that forces you into the editor afterwards: the key, the knowledge, the table, Gmail and the channel are all settled inside it, against the same endpoints the editor uses.</P>
 
+          <H3>The questions follow your answers</H3>
+          <P>The questions are not fixed. After you describe the business, one model call reads that description into a <strong>plan</strong> — a structured object saying exactly which capabilities this chatbot needs: which skills, whether a table (and its columns), whether it sends email, whether it needs a knowledge base at all, whether it reads the web live or reaches an outside system. <strong>Every screen after that reads the plan, not a fixed catalog.</strong></P>
+          <P>This is what makes it get the details right. A chatbot you describe as &ldquo;opens a ticket and emails it&rdquo; sets <Code>needsEmail</Code>, so the mailbox step appears and is asked for — the thing that used to be missed. A chatbot that &ldquo;answers from what I tell it&rdquo; sets <Code>needsKnowledge&nbsp;=&nbsp;false</Code>, so the knowledge step is skipped rather than forced on you. The plan screen shows every capability as a toggle you can correct before continuing.</P>
+
           <H3>The screens</H3>
           <UL>
-            <li><strong>1 · The business</strong> — six categories, plus &ldquo;I will describe it myself&rdquo; in free text</li>
-            <li><strong>2 · Jobs</strong> — derived from screen 1. Each choice becomes a <strong>skill</strong>, and this is the fork that decides screens 4 and 5</li>
-            <li><strong>3 · The key</strong> — <strong>only if the account has no working key</strong>. A stored key is checked against the provider in the background during the first question; only a key that answered takes this screen out of the flow, and the questions are counted without it</li>
-            <li><strong>4 · Knowledge</strong> — crawling a site (which runs here, with the counter), uploading files (extracted and saved here, with a status line per file), typing it out, and creating the table with suggested columns</li>
+            <li><strong>1 · The business</strong> — six categories as a quick start, and your own words. What you write is the seed the plan is built from</li>
+            <li><strong>2 · The plan</strong> — generated from your description, shown as capabilities you can toggle. This is the adaptive core: what stays on here is what the later screens ask about. The table, if one is needed, is created on the way out of this screen</li>
+            <li><strong>3 · The key</strong> — <strong>only if the account has no working key</strong>. Asked before the plan when needed, because generating the plan is itself a model call. A stored key is checked against the provider in the background; only a key that answered takes this screen out of the flow</li>
+            <li><strong>4 · Knowledge</strong> — <strong>only when the plan says a knowledge base is needed</strong>. Crawling a site (which runs here, with the counter), uploading files (extracted and saved here, with a status line per file), or typing it out</li>
             <li><strong>5 · Abilities</strong> — writing to the table, connecting Gmail (which leaves for Google and comes back into the wizard), reading the site live from a URL set right here, connecting to another company&rsquo;s system (the explicit door to a custom tool), masking a customer&rsquo;s card or ID number (DLP), and handing over to a person. Everything the editor can switch on, this screen can too.</li>
             <li><strong>6 · Connections</strong> — <strong>appears only when needed</strong>. See below</li>
             <li><strong>7 · Character</strong> — name, colour, style, and rules of your own</li>
@@ -7506,13 +7510,88 @@ npm run migrate            # run it`}</Block>
    * It asks for JSON and nothing else. A model that wraps it in prose or a
    * fence is normal, so the braces are found rather than trusted.
    */
+  /**
+   * The plan — the one call that makes the wizard adaptive.
+   *
+   * It reads what the owner described (a vertical they tapped, and/or their
+   * own words) and returns a structured plan of exactly which capabilities
+   * this chatbot needs. Every screen after it reads the plan instead of a
+   * fixed catalog: a chatbot that emails a ticket gets asked to connect a
+   * mailbox because the plan says needsEmail; a chatbot that answers from
+   * nothing is never shown the knowledge step, because the plan says
+   * needsKnowledge is false.
+   */
+  const PLAN_COL_TYPES = ['text', 'number', 'date', 'boolean'];
+  async function autopilotPlan(seed) {
+    const system = [
+      'You are setting up an AI customer-service chatbot for one business. Read what the owner tells you and decide exactly what this chatbot needs — nothing more.',
+      'Answer with ONE JSON object and nothing else. No prose, no code fence.',
+      'Shape: {',
+      '  "summary": string,            // one short line naming what the chatbot is and does',
+      '  "kind": string,               // 2-4 words, e.g. "Support chatbot" — in the brief\'s language',
+      '  "openingMessage": string,     // the first line the customer sees, fitted to THIS chatbot\'s jobs, in the brief\'s language',
+      '  "jobs": [ { "title": string, "hint": string } ],   // 1-6, each becomes a skill; language of the brief',
+      '  "needsKnowledge": boolean,    // true only if it must answer from documents, a website, or facts the owner will give',
+      '  "knowledgeHint": string,      // if needsKnowledge, what it answers about; else ""',
+      '  "knowledgeSources": [string], // any of "site","files","text" — your suggestion; [] if not needed',
+      '  "needsTable": boolean,        // true if it collects or looks up structured records (bookings, tickets, leads, orders)',
+      '  "table": { "name": string, "columns": [ { "name": string, "type": "text"|"number"|"date"|"boolean" } ] } | null,',
+      '  "needsEmail": boolean,        // true if it must SEND email (a confirmation, a summary, a ticket)',
+      '  "emailReason": string,        // one short clause why, in the brief\'s language; else ""',
+      '  "needsLiveWeb": boolean,      // true only if it must read a web page live mid-conversation (stock, prices that change daily)',
+      '  "needsExternal": boolean,     // true only if it must reach ANOTHER company\'s system over HTTP (courier, invoicing, CRM, SMS/WhatsApp provider)',
+      '  "externalDescription": string,// if needsExternal, one sentence of what and where; else ""',
+      '  "needsHuman": boolean         // hand over to a person when unsure',
+      '}',
+      'Rules for deciding:',
+      '- Be literal about what they said. "email the ticket" -> needsEmail true. "no documents" / "don\'t need a knowledge base" -> needsKnowledge false.',
+      '- A table is for structured records it collects or reads. Propose real columns fitted to the job, each with a sensible type. Dates are "date", counts and money are "number".',
+      '- needsKnowledge is true when the chatbot must answer questions about the business (prices, hours, policies, how-to). It is false when the chatbot only collects details, books, or routes.',
+      '- needsExternal is the rare one. Only when another company\'s live system is involved. When unsure, false.',
+      '- needsHuman defaults true for support and sales, false when it would not make sense.',
+      '- openingMessage must fit the actual jobs — greet and name what it can do — not a generic hello.',
+      'Return only capabilities this chatbot genuinely needs. Fewer, correct capabilities beat a long list.',
+    ].join('\n');
+
+    const raw = await callWithToolDefs({
+      system, history: [{ role: 'user', content: seed }], tools: [], execute: async () => '', maxTokens: 2048,
+    });
+    const a = raw.indexOf('{'), b = raw.lastIndexOf('}');
+    if (a < 0 || b < a) throw new Error(L('I could not read that into a plan. Add a line more and try again.', 'לא הצלחתי להפוך את זה לתוכנית. אפשר להוסיף שורה ולנסות שוב.'));
+    const p = JSON.parse(raw.slice(a, b + 1));
+    const jobs = (Array.isArray(p.jobs) ? p.jobs : []).slice(0, 6)
+      .map(j => ({ title: String(j.title || '').trim().slice(0, 80), hint: String(j.hint || '').trim().slice(0, 160) }))
+      .filter(j => j.title);
+    const cols = (p.table && Array.isArray(p.table.columns) ? p.table.columns : []).slice(0, 8)
+      .map(c => ({ name: String(c.name || '').trim().slice(0, 40), type: PLAN_COL_TYPES.includes(c.type) ? c.type : 'text' }))
+      .filter(c => c.name);
+    const needsTable = !!p.needsTable && cols.length > 0;
+    return {
+      summary: String(p.summary || '').trim().slice(0, 200),
+      kind: String(p.kind || '').trim().slice(0, 40),
+      openingMessage: String(p.openingMessage || '').trim().slice(0, 400),
+      jobs: jobs.length ? jobs : [{ title: L('Answer questions', 'לענות על שאלות'), hint: '' }],
+      needsKnowledge: !!p.needsKnowledge,
+      knowledgeHint: String(p.knowledgeHint || '').trim().slice(0, 200),
+      knowledgeSources: (Array.isArray(p.knowledgeSources) ? p.knowledgeSources : []).filter(s => ['site', 'files', 'text'].includes(s)),
+      needsTable,
+      table: needsTable ? { name: String(p.table.name || '').trim().slice(0, 60) || L('Records', 'רשומות'), columns: cols } : null,
+      needsEmail: !!p.needsEmail,
+      emailReason: String(p.emailReason || '').trim().slice(0, 160),
+      needsLiveWeb: !!p.needsLiveWeb,
+      needsExternal: !!p.needsExternal,
+      externalDescription: String(p.externalDescription || '').trim().slice(0, 300),
+      needsHuman: !!p.needsHuman,
+    };
+  }
+
   async function autopilotGenerate(brief) {
     const system = [
       'You design AI customer-service chatbots. You are given a brief about one business and you return the chatbot.',
       'Answer with ONE JSON object and nothing else. No prose, no code fence.',
       'Shape: { "name": string, "openingMessage": string, "basePrompt": string, "skills": [{ "name": string, "description": string, "prompt": string }] }',
       'name: two or three words, in the language of the brief.',
-      'openingMessage: one or two sentences the customer sees first, in the language of the brief.',
+      'openingMessage: the first line the customer sees, in the language of the brief. It must fit THIS chatbot — greet and name what it can actually do here (book, open a ticket, answer about prices), never a generic "How can I help?". One or two sentences.',
       'basePrompt: who this chatbot is, the language and tone it answers in, what it may and may not promise, and when to hand over to a person. Write it in English (it is an instruction to a model, not to a person) but state explicitly which language it must ANSWER in. 150-300 words. Do not put step-by-step procedures here — those belong in skills.',
       'skills: one per job in the brief. Each prompt is the procedure for that one task: what to collect, in what order, what to say at each stage, and when it is done. English, 80-200 words each.',
       'If the brief says the chatbot writes to a table, the relevant skill must say to call table_find before answering about existing records, and table_add_row once every required column is collected. Never invent a column that is not listed.',
@@ -7618,15 +7697,22 @@ npm run migrate            # run it`}</Block>
     };
   }
 
-  /** The brief the generator reads — every answer, in one paragraph. */
+  /**
+   * The brief the generator reads — every answer, in one paragraph.
+   *
+   * It is built from the plan when there is one (the adaptive flow), and falls
+   * back to the catalog for anything the plan does not carry. The vertical is
+   * only a seed now; the plan is the source of truth for jobs and capabilities.
+   */
   function autopilotBrief(w) {
-    const v = AUTOPILOT_CATALOG[w.biz];
-    const jobs = v.jobs.filter(j => w.jobs[j.id]);
+    const v = AUTOPILOT_CATALOG[w.biz] || null;
+    const p = w.plan || null;
+    const jobs = p ? p.jobs.map(j => j.title) : (v ? v.jobs.filter(j => w.jobs[j.id]).map(j => j.label()) : []);
     const lines = [
-      `Business: ${v.label()}.`,
+      p && p.summary ? `What this chatbot is: ${p.summary}` : (v ? `Business: ${v.label()}.` : ''),
       w.bizFree ? `In the owner's words: ${w.bizFree}` : '',
       `Interface language: ${uiHe() ? 'Hebrew' : 'English'}. The chatbot must answer in that language.`,
-      `Jobs it must handle: ${jobs.map(j => j.label()).join('; ') || 'answering general questions'}.`,
+      `Jobs it must handle: ${jobs.join('; ') || 'answering general questions'}.`,
       w.jobsFree ? `Also: ${w.jobsFree}` : '',
       w.ownText ? `Facts the owner supplied: ${w.ownText.slice(0, 2000)}` : '',
       w.siteUrl && w.sources.site ? `It has a knowledge base crawled from ${w.siteUrl}.` : '',
@@ -7723,7 +7809,7 @@ npm run migrate            # run it`}</Block>
 
   /** Indexed by step number, so an optional step does not shift the labels. */
   const AP_STEPS = () => ({
-    1: L('Business', 'העסק'), 2: L('Jobs', 'תפקידים'), 3: L('Key', 'מפתח'),
+    1: L('Business', 'העסק'), 2: L('Plan', 'תוכנית'), 3: L('Key', 'מפתח'),
     4: L('Knowledge', 'ידע'), 5: L('Abilities', 'יכולות'), 6: L('Connections', 'חיבורים'),
     7: L('Character', 'אופי'), 8: L('Building', 'בנייה'),
   });
@@ -7738,6 +7824,7 @@ npm run migrate            # run it`}</Block>
     const blank = {
       step: startStep, biz: '', bizFree: '', jobs: {}, jobsFree: '',
       provider: 'claude', apiKey: '', ollamaHost: '',
+      plan: null, planBusy: false,
       sources: {}, siteUrl: '', ownText: '', uploads: [],
       abilities: { web: false, human: true, external: false }, abilitiesFree: '', externalFree: '',
       dlp: { creditCard: false, israeliId: false },
@@ -7769,9 +7856,16 @@ npm run migrate            # run it`}</Block>
     const go = step => { setFreeOpen(false); setError(''); set({ step }); };
 
     const vertical = AUTOPILOT_CATALOG[w.biz] || null;
-    const jobs = vertical ? vertical.jobs.filter(j => w.jobs[j.id]) : [];
-    const tableJob = jobs.find(j => j.table);
-    const wantsEmail = jobs.some(j => j.email);
+    /* The plan is the source of truth once it exists; the vertical is only a
+       seed for the description and a fallback name. */
+    const plan = w.plan || null;
+    const planJobs = plan ? plan.jobs : [];
+    const needsKnowledge = plan ? !!plan.needsKnowledge : true;
+    const planTable = plan && plan.needsTable ? plan.table : null;
+    const wantsEmail = plan ? !!plan.needsEmail : false;
+    /* Kept so the old references still resolve; both now read the plan. */
+    const jobs = planJobs;
+    const tableJob = planTable ? { table: () => planTable.name, label: () => (plan && plan.kind) || L('records', 'רשומות'), id: 'plan' } : null;
 
     useEffect(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [chat, busy]);
 
@@ -7903,15 +7997,22 @@ npm run migrate            # run it`}</Block>
           body: JSON.stringify({ docId: uid(), skillId: null, title: L('What the owner told me', 'מה שכתבתי בעצמי'), content: w.ownText.trim() }),
         }).catch(() => {});
       }
-      if (w.sources.table && tableJob && !w.tableId) {
-        const name = w.tableName || tableJob.table();
-        const cols = (w.tableColumns.length ? w.tableColumns : (AUTOPILOT_COLUMNS[tableJob.id] || AUTOPILOT_COLUMNS.lead)());
-        const made = await apiCreateTable({
-          name, description: L(`What the chatbot collects for ${tableJob.label()}`, `מה שהצ'אטבוט אוסף עבור ${tableJob.label()}`),
-          columns: cols.map(c => ({ name: c, type: AUTOPILOT_COLUMN_TYPE[c] || 'text' })),
-        });
-        set({ tableId: made.id, tableName: name, tableColumns: cols });
-      }
+    }
+
+    /* The table the plan called for is created on the way out of the plan
+       screen, not in the knowledge step — a chatbot can need a table and no
+       knowledge base at all, and the knowledge step may never be shown. */
+    async function commitPlanTable() {
+      if (!planTable || w.tableId) return;
+      const id = await ensureAgent();
+      const name = planTable.name;
+      const cols = planTable.columns;   // [{ name, type }]
+      const made = await apiCreateTable({
+        name,
+        description: L(`What "${(plan && plan.kind) || name}" collects`, `מה ש"${(plan && plan.kind) || name}" אוסף`),
+        columns: cols.map(c => ({ name: c.name, type: c.type || 'text' })),
+      });
+      set({ tableId: made.id, tableName: name, tableColumns: cols.map(c => c.name) });
     }
 
     function connectGmail() {
@@ -7947,11 +8048,13 @@ npm run migrate            # run it`}</Block>
         }
         setBuildAt(lines.length - 1);
 
+        const fallbackName = (plan && plan.kind) || (vertical && vertical.name()) || L('My assistant', 'העוזר שלי');
+        const fallbackGreeting = (plan && plan.openingMessage) || (vertical && vertical.greeting()) || L('Hi! How can I help?', 'היי! איך אפשר לעזור?');
         const agent = makeAgent({
           id,
-          name: (w.name || spec.name || vertical.name()).slice(0, 60),
+          name: (w.name || spec.name || fallbackName).slice(0, 60),
           avatar: w.color,
-          openingMessage: spec.openingMessage || vertical.greeting(),
+          openingMessage: spec.openingMessage || fallbackGreeting,
           basePrompt: spec.basePrompt,
           skills: spec.skills,
           tools: writtenTools,
@@ -8027,26 +8130,57 @@ npm run migrate            # run it`}</Block>
     const haveKeyRef = useRef(null);
     if (haveKeyRef.current === null && keyChecked) haveKeyRef.current = keyWorks;
     const haveKey = haveKeyRef.current === null ? false : haveKeyRef.current;
-    const FLOW = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-      .filter(n => n !== 3 || !haveKey)
+    /* The order the person actually walks. The key comes BEFORE the plan when
+       the account has none, because generating the plan is itself a model call
+       and needs the key. Knowledge is dropped once a plan says it is not
+       needed; connections only when a tool was proposed. */
+    const FLOW = (haveKey ? [0, 1, 2, 4, 5, 6, 7, 8, 9, 10] : [0, 1, 3, 2, 4, 5, 6, 7, 8, 9, 10])
+      .filter(n => n !== 4 || !plan || plan.needsKnowledge)
       .filter(n => n !== 6 || w.tools.length > 0);
     /* Settings arrive on their own schedule, so a step can leave the flow
        while you are standing on it. Fall forward, never back to the fork. */
     const at = FLOW.indexOf(w.step);
     const after = at >= 0 ? FLOW[at + 1] : FLOW.find(n => n > w.step);
-    const before = at >= 0 ? FLOW[Math.max(at - 1, 0)] : (FLOW.filter(n => n < w.step).pop() ?? 0);
+    const before = at >= 0 ? FLOW[Math.max(at - 1, 0)] : (FLOW.filter(n => FLOW.indexOf(n) < at).pop() ?? 0);
     const stepNames = AP_STEPS();
     const railSteps = FLOW.filter(n => n >= 1 && n <= 8);
     const onRail = w.step >= 1 && w.step <= 8;
 
-    /* "Question 3 of 6" has to count the questions actually being asked. */
-    const questionSteps = [1, 2, 3, 4, 5, 7].filter(n => FLOW.includes(n));
+    /* "Question 3 of 6" counts the questions actually asked, in the order they
+       are asked (traversal order, so the key sitting before the plan reads as
+       2 then 3, not 3 then 2). */
+    const questionSteps = FLOW.filter(n => [1, 2, 3, 4, 5, 7].includes(n));
     const qNum = n => questionSteps.indexOf(n) + 1;
     const qOf = questionSteps.length;
 
+    /* Generate the plan the first time the person lands on screen 2. It is one
+       model call over what they described, and everything after it reads the
+       result. */
+    const planTriedRef = useRef(false);
+    useEffect(() => {
+      if (w.step !== 2 || w.plan || planTriedRef.current) return;
+      planTriedRef.current = true;
+      (async () => {
+        set({ planBusy: true }); setError('');
+        try {
+          const seed = [
+            vertical ? `Business type: ${vertical.label()}.` : '',
+            w.bizFree ? `The owner describes it: ${w.bizFree}` : '',
+            `Language: ${uiHe() ? 'Hebrew' : 'English'}.`,
+          ].filter(Boolean).join('\n');
+          const p = await autopilotPlan(seed);
+          set({ plan: p, planBusy: false });
+        } catch (err) {
+          planTriedRef.current = false;
+          set({ planBusy: false });
+          setError(err.message);
+        }
+      })();
+    }, [w.step]);
+
     const canNext = (() => {
       if (w.step === 1) return !!w.biz || !!w.bizFree.trim();
-      if (w.step === 2) return jobs.length > 0 || !!w.jobsFree.trim();
+      if (w.step === 2) return !!w.plan && !w.planBusy;
       // The button is what verifies the key, so it cannot wait for a verified
       // key to become pressable.
       if (w.step === 3) return keyState !== 'checking' && !!(w.provider === 'ollama' ? w.ollamaHost.trim() : w.apiKey.trim());
@@ -8054,18 +8188,32 @@ npm run migrate            # run it`}</Block>
       return true;
     })();
 
+    /* Carry the plan's capabilities into the downstream screens' defaults, so
+       the abilities step opens already reflecting what the plan decided. */
+    async function commitPlan() {
+      await commitPlanTable();
+      const p = w.plan;
+      if (!p) return;
+      set({
+        abilities: { web: !!p.needsLiveWeb, human: !!p.needsHuman, external: !!p.needsExternal },
+        externalFree: p.needsExternal ? p.externalDescription : w.externalFree,
+        toolsChecked: false,
+        sources: p.needsKnowledge
+          ? Object.fromEntries((p.knowledgeSources.length ? p.knowledgeSources : ['text']).map(s => [s, true]))
+          : {},
+      });
+    }
+
     async function next() {
       if (w.step === 3) {
         if (keyState !== 'ok' && !(await saveKey())) return;
-        /* The latch is deliberately not flipped here. Answering screen 3 is
-           what would take screen 3 out of the flow, and "question 3 of 6"
-           would become "of 5" the instant it was answered. */
-        // Sent here by a build that could not reach the model: go back to it,
-        // rather than walking the person through the questions a second time.
+        /* The latch is deliberately not flipped here. */
         if (repairing) { setRepairing(false); go(8); build(); return; }
-        go(4); return;
+        /* After the key, the plan — unless it is already made (a resumed run). */
+        go(w.plan ? (after ?? 4) : 2); return;
       }
-      if (w.step === 4) { setBusy('know'); try { await commitKnowledge(); } finally { setBusy(''); } go(5); return; }
+      if (w.step === 2) { setBusy('plan'); try { await commitPlan(); } finally { setBusy(''); } go(after ?? 5); return; }
+      if (w.step === 4) { setBusy('know'); try { await commitKnowledge(); } finally { setBusy(''); } go(after ?? 5); return; }
       if (w.step === 5) { await lookForTools(); return; }
       if (w.step === 7) { go(8); build(); return; }
       if (w.step === 10) { finish(true); return; }
@@ -8222,41 +8370,121 @@ npm run migrate            # run it`}</Block>
               </div>
             )}
 
-            {/* 2 · the jobs */}
-            {w.step === 2 && vertical && (
-              <div>
-                <ApHeading of={qOf} step={qNum(2)} title={L('What will it handle?', 'במה הוא יטפל?')}
-                  sub={L(`You chose ${vertical.label()} — these are the things people ask most. Each one becomes its own skill.`,
-                    `בחרת ${vertical.label()} — אלה הדברים שנשאלים הכי הרבה. כל בחירה הופכת למיומנות נפרדת.`)} />
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 12 }}>
-                  {vertical.jobs.map(j => (
-                    <ApCard key={j.id} on={!!w.jobs[j.id]} style={{ display: 'flex', gap: 13, alignItems: 'flex-start', minHeight: 74 }}
-                      onClick={() => { const n = { ...w.jobs }; if (n[j.id]) delete n[j.id]; else n[j.id] = true; set({ jobs: n }); }}>
-                      <ApTick on={!!w.jobs[j.id]} />
-                      <div>
-                        <div style={{ fontSize: 14.5, fontWeight: 700 }}>{j.label()}</div>
-                        <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.5 }}>{j.hint()}</div>
+            {/* 2 · the plan — generated from what they described, and theirs to correct */}
+            {w.step === 2 && (
+              <React.Fragment>
+                <ApHeading of={qOf} step={qNum(2)}
+                  title={w.planBusy || !plan ? L('Reading what you told me…', 'קורא את מה שתיארת…') : L('Here is what I will build', 'הנה מה שאני הולך לבנות')}
+                  sub={w.planBusy || !plan
+                    ? L('One moment — turning it into a plan.', 'רגע — הופך את זה לתוכנית.')
+                    : L('Everything here came from your description. Turn off anything you did not mean; what stays on is what the next questions cover.',
+                        'כל מה שכאן נגזר מהתיאור שלך. כבה כל מה שלא התכוונת אליו; מה שנשאר דלוק הוא מה שהשאלות הבאות יטפלו בו.')} />
+
+                {(w.planBusy || !plan) && (
+                  <div style={panel}>
+                    {[0, 1, 2].map(i => (
+                      <div key={i} style={{ height: 66, borderRadius: 14, background: 'var(--bg-card)', border: '1px solid var(--border)', animation: 'pulse 1.4s ease-in-out infinite', opacity: 0.7 }} />
+                    ))}
+                  </div>
+                )}
+
+                {!w.planBusy && plan && (() => {
+                  const cap = (on, patch, ic, tone, title, sub, tag, tagTone, body) => (
+                    <ApCard on={on}>
+                      <div style={{ display: 'flex', gap: 13, alignItems: 'flex-start' }}>
+                        <div style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 11, background: on ? (tone === 'teal' ? 'var(--teal-dim)' : 'var(--primary-dim)') : 'var(--bg-input)', color: on ? (tone === 'teal' ? 'var(--teal)' : 'var(--warning)') : 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{ic}</div>
+                        <div style={{ flexGrow: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 14.5, fontWeight: 700, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                            {title}{tag && <Chip tone={tagTone || 'teal'}>{tag}</Chip>}
+                          </div>
+                          <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.5, unicodeBidi: 'plaintext' }}>{sub}</div>
+                          {on && body}
+                        </div>
+                        {patch && (
+                          <button onClick={() => set({ plan: { ...plan, ...patch(plan) } })}
+                            title={on ? L('Turn off', 'כבה') : L('Turn on', 'הדלק')}
+                            style={{ flexShrink: 0, width: 44, height: 26, borderRadius: 99, border: 'none', cursor: 'pointer', position: 'relative', background: on ? 'var(--primary)' : 'var(--bg-hover)', transition: 'background .16s' }}>
+                            <span style={{ position: 'absolute', top: 3, [on ? (uiHe() ? 'left' : 'right') : (uiHe() ? 'right' : 'left')]: 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,.25)' }} />
+                          </button>
+                        )}
                       </div>
                     </ApCard>
-                  ))}
-                </div>
-                <ApFreeText open={freeOpen} onToggle={() => setFreeOpen(!freeOpen)}
-                  label={L('Something missing? I will describe it', 'חסר משהו? אתאר בעצמי')}
-                  hint={L('Another job it has to do', 'תפקיד נוסף שהוא צריך למלא')}
-                  placeholder={L('Explain how to get here and where to park', 'להסביר איך מגיעים ואיפה חונים')}
-                  value={w.jobsFree} onChange={v => set({ jobsFree: v })} />
-                <div style={{ marginTop: 12, padding: '13px 16px', borderRadius: 12, background: 'var(--teal-dim)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                  <div style={{ color: 'var(--teal)', flexShrink: 0, marginTop: 1 }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
-                  </div>
-                  <p style={{ margin: 0, fontSize: 12.5, color: 'var(--teal)', lineHeight: 1.6 }}>
-                    {jobs.length === 0
-                      ? L('With nothing chosen I will build a chatbot that only answers questions.', 'בלי בחירה אבנה צ\'אטבוט שעונה על שאלות בלבד.')
-                      : L(`I will build ${jobs.length} skills${tableJob ? `, a "${tableJob.table()}" table` : ''}${wantsEmail ? ', and an email connection' : ''} — in the screens ahead.`,
-                        `לפי הבחירה הזו אבנה ${jobs.length} מיומנויות${tableJob ? `, טבלת "${tableJob.table()}" לרישום` : ''}${wantsEmail ? ', וחיבור למייל' : ''} — במסכים הבאים.`)}
-                  </p>
-                </div>
-              </div>
+                  );
+                  return (
+                    <div style={panel}>
+                      {/* the summary line */}
+                      <div style={{ padding: '15px 17px', borderRadius: 16, background: 'var(--bg-card)', border: '1px solid var(--border)', display: 'flex', gap: 13, alignItems: 'flex-start' }}>
+                        <div style={{ flexShrink: 0, width: 34, height: 34, borderRadius: 10, background: 'var(--primary-dim)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{Icons.sparkle}</div>
+                        <div>
+                          <div style={{ fontSize: 15, fontWeight: 750 }}>{plan.kind || L('Your chatbot', 'הצ\'אטבוט שלך')}</div>
+                          <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 3, lineHeight: 1.6, unicodeBidi: 'plaintext' }}>{plan.summary}</div>
+                        </div>
+                      </div>
+
+                      {/* jobs → skills (always) */}
+                      {cap(true, null,
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z" /><path d="m2 17 10 5 10-5" /><path d="m2 12 10 5 10-5" /></svg>,
+                        'primary', L(`${plan.jobs.length} skill${plan.jobs.length !== 1 ? 's' : ''}`, `${plan.jobs.length} מיומנויות`),
+                        plan.jobs.map(j => j.title).join(' · '), null, null,
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                          {plan.jobs.map((j, i) => <span key={i} style={{ fontSize: 11.5, fontWeight: 600, background: 'var(--bg-panel)', border: '1px solid var(--border)', padding: '5px 10px', borderRadius: 99, unicodeBidi: 'plaintext' }}>{j.title}</span>)}
+                        </div>)}
+
+                      {/* table */}
+                      {plan.table && cap(plan.needsTable, p => ({ needsTable: !p.needsTable }),
+                        Icons.rows, 'teal',
+                        L(`Save records into "${plan.table.name}"`, `לרשום ל"${plan.table.name}"`),
+                        L('created for you — every record becomes a row', 'נוצרת עבורך — כל רשומה הופכת לשורה'),
+                        L("I'll create it", 'אצור אותה'), 'teal',
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                          {plan.table.columns.map((c, i) => (
+                            <span key={i} style={{ fontSize: 11.5, fontWeight: 600, background: 'var(--bg-panel)', border: '1px solid var(--border)', padding: '5px 10px', borderRadius: 99, display: 'inline-flex', gap: 6, alignItems: 'baseline', unicodeBidi: 'plaintext' }}>
+                              {c.name}<span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 500 }}>{c.type === 'date' ? L('date', 'תאריך') : c.type === 'number' ? L('number', 'מספר') : c.type === 'boolean' ? L('yes/no', 'כן/לא') : L('text', 'טקסט')}</span>
+                            </span>
+                          ))}
+                        </div>)}
+
+                      {/* email */}
+                      {cap(plan.needsEmail, p => ({ needsEmail: !p.needsEmail }),
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 7 13.03 12.7a2 2 0 0 1-2.06 0L2 7" /><rect x="2" y="4" width="20" height="16" rx="2" /></svg>,
+                        'primary', L('Send email', 'לשלוח מייל'),
+                        plan.emailReason || L('sends mail from your mailbox', 'שולח מייל מהתיבה שלך'),
+                        plan.needsEmail ? L('needs a mailbox', 'צריך תיבה') : null, 'draft')}
+
+                      {/* knowledge */}
+                      {cap(plan.needsKnowledge, p => ({ needsKnowledge: !p.needsKnowledge }),
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" /></svg>,
+                        'teal', L('Answer from a knowledge base', 'לענות ממאגר ידע'),
+                        plan.needsKnowledge ? (plan.knowledgeHint || L('documents, a site, or facts you give it', 'מסמכים, אתר, או עובדות שתיתן')) : L('not needed — nothing to look up', 'לא נדרש — אין ממה לשלוף'),
+                        plan.needsKnowledge ? null : L('skipped', 'מדולג'), 'neutral')}
+
+                      {/* live web */}
+                      {plan.needsLiveWeb && cap(true, p => ({ needsLiveWeb: !p.needsLiveWeb }),
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20Z" /></svg>,
+                        'teal', L('Read the site live', 'לקרוא מהאתר בזמן אמת'),
+                        L('for things that change daily, like stock', 'לדברים שמשתנים כל יום, כמו מלאי'))}
+
+                      {/* external system */}
+                      {plan.needsExternal && cap(true, p => ({ needsExternal: !p.needsExternal }),
+                        Icons.code, 'primary', L('Connect to another system', 'להתחבר למערכת אחרת'),
+                        plan.externalDescription || L('reaches an outside service', 'פונה לשירות חיצוני'),
+                        L('a tool, with steps', 'טול, עם הנחיות'), 'draft')}
+
+                      {/* human handover */}
+                      {cap(plan.needsHuman, p => ({ needsHuman: !p.needsHuman }),
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /></svg>,
+                        'teal', L('Hand over to a person', 'להעביר לאדם'),
+                        L('when it is unsure, instead of guessing', 'כשהוא לא בטוח, במקום לנחש'))}
+
+                      <ApFreeText open={freeOpen} onToggle={() => setFreeOpen(!freeOpen)}
+                        label={L('Something missing? Add it', 'חסר משהו? אפשר להוסיף')}
+                        hint={L('Another thing it has to do — I will fold it in', 'עוד משהו שהוא צריך לעשות — אשלב אותו')}
+                        placeholder={L('Also explain where to park', 'להסביר גם איפה חונים')}
+                        value={w.jobsFree} onChange={v => set({ jobsFree: v })} />
+                    </div>
+                  );
+                })()}
+              </React.Fragment>
             )}
 
             {/* 3 · the key */}
@@ -8314,17 +8542,17 @@ npm run migrate            # run it`}</Block>
             {w.step === 4 && (
               <React.Fragment>
                 <ApHeading of={qOf} step={qNum(4)} title={L('Where will it know the answers from?', 'מאיפה הוא יֵדע את התשובות?')}
-                  sub={L(`You chose ${jobs.map(j => j.label()).join(', ') || 'general answering'}. You can pick more than one source.`,
-                    `בחרת ${jobs.map(j => j.label()).join(', ') || 'מענה כללי'}. אפשר לבחור כמה מקורות יחד.`)} />
-                {/* Four sources open at once do not fit one screen, so the
-                    question stays put and only the answers scroll. */}
+                  sub={L(`For ${plan ? plan.jobs.map(j => j.title).join(', ') : 'answering'}. You can pick more than one source.`,
+                    `בשביל ${plan ? plan.jobs.map(j => j.title).join(', ') : 'המענה'}. אפשר לבחור כמה מקורות יחד.`)} />
+                {/* The table is not offered here any more — the plan decides it,
+                    and it is created before this screen. This screen is only
+                    about where answers come from. */}
                 <div style={panel}>
                   {[
                     { k: 'site', label: L('From my website', 'מהאתר שלי'), hint: L('I crawl the whole domain and learn from it', 'אני סורק את כל הדומיין ולומד ממנו'), tag: L('fastest', 'הכי מהיר') },
                     { k: 'file', label: L('From files', 'מקבצים'), hint: L('PDF or Word — price list, policies, FAQ', 'PDF או Word — מחירון, נהלים, שאלות נפוצות') },
                     { k: 'text', label: L('I will describe it myself', 'אתאר בעצמי'), hint: L('type it in — always available, with or without a site', 'לכתוב ידנית — תמיד זמין, גם בלי אתר וקבצים') },
-                    tableJob ? { k: 'table', label: L('A table to write into', 'טבלה לרישום'), hint: L('where it records what it collects from customers', 'כאן הוא ירשום את מה שיאסוף מהלקוחות'), tag: L(`needed for ${tableJob.label()}`, `נדרש ל${tableJob.label()}`), warn: true } : null,
-                  ].filter(Boolean).map(src => {
+                  ].map(src => {
                     const on = !!w.sources[src.k];
                     return (
                       <ApCard key={src.k} on={on}>
@@ -8395,22 +8623,6 @@ npm run migrate            # run it`}</Block>
                           </div>
                         )}
 
-                        {on && src.k === 'table' && (
-                          <div style={{ marginTop: 13, paddingTop: 13, borderTop: '1px solid var(--border)' }}>
-                            <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 10 }}>
-                              {w.tableId
-                                ? L(`Created: "${w.tableName}".`, `נוצרה: "${w.tableName}".`)
-                                : L(`I will make a table called "${w.tableName || tableJob.table()}" with these columns.`, `אצור טבלה בשם "${w.tableName || tableJob.table()}" עם העמודות האלה.`)}
-                            </div>
-                            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-                              {(w.tableColumns.length ? w.tableColumns : (AUTOPILOT_COLUMNS[tableJob.id] || AUTOPILOT_COLUMNS.lead)()).map((c, i) => (
-                                <span key={i} style={{ fontSize: 12.5, fontWeight: 600, background: 'var(--bg-card)', border: '1px solid var(--border)', padding: '7px 12px', borderRadius: 99, display: 'inline-flex', gap: 7, alignItems: 'baseline' }}>
-                                  {c}<span style={{ fontSize: 10.5, color: 'var(--text-muted)', fontWeight: 500 }}>{AUTOPILOT_COLUMN_TYPE[c] === 'date' ? L('date', 'תאריך') : (AUTOPILOT_COLUMN_TYPE[c] === 'number' ? L('number', 'מספר') : L('text', 'טקסט'))}</span>
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
                       </ApCard>
                     );
                   })}
@@ -8822,7 +9034,7 @@ npm run migrate            # run it`}</Block>
             <button onClick={onSkip} style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', textDecoration: 'underline', textUnderlineOffset: 3, padding: '12px 4px', background: 'none', border: 'none' }}>{skipLabel}</button>
             <div style={{ flexGrow: 1 }} />
             {error && w.step !== 8 && <span style={{ fontSize: 12.5, color: 'var(--danger)' }}>{error}</span>}
-            {w.step === 2 && <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{L(`${jobs.length} chosen`, `${jobs.length} נבחרו`)}</span>}
+            {w.step === 2 && plan && <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{L('adjust anything, then continue', 'אפשר לשנות, ואז להמשיך')}</span>}
             {w.step === 9 && <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{L('as many rounds as you need', 'אין הגבלה על מספר הסבבים')}</span>}
             {w.step === 10 && <Btn onClick={() => finish(false)}>{L('Later', 'אחר כך')}</Btn>}
             <Btn variant="primary" disabled={!canNext || w.step === 8 || !!busy} onClick={next}

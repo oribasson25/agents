@@ -122,7 +122,7 @@ ok(detect.includes('"steps"') && detect.includes('real, specific clicks'),
 ok(/slice\(0, 2\)/.test(detect), 'no more than two tools reach the screen');
 ok(detect.includes("return [];"), 'a detector that fails or answers rubbish proposes nothing');
 
-const writer = lift('async function autopilotWriteTool(tool, brief) {', '\n  /** The brief the generator reads');
+const writer = lift('async function autopilotWriteTool(tool, brief) {', '\n  function autopilotBrief(w) {');
 ok(writer.includes('def run(**kwargs)'), 'the writer is held to the shape a tool must have');
 ok(writer.includes('os.environ'), 'and to taking its secrets from the environment');
 ok(writer.includes('readable error string instead of raising'), 'and to failing in words a customer can read');
@@ -162,9 +162,35 @@ ok(src.includes("Connect to another system") || src.includes('להתחבר למ�
    'connecting to an outside system is an explicit choice, not only an inferred one');
 ok(src.includes("(w.tools || []).some(t => t.keep)"), 'and the brief tells the skills the tool exists');
 
-/* ── the key is asked for once, or not at all ── */
-ok(src.includes(".filter(n => n !== 3 || !haveKey)"),
-   'an account that already has a key is never asked for one again');
+/* ── the plan is what makes the questions adaptive ── */
+const planFn = lift('async function autopilotPlan(seed) {', '\n  async function autopilotGenerate');
+for (const [what, needle] of [
+  ['it decides email from what was said', '"needsEmail"'],
+  ['it decides whether a knowledge base is needed at all', '"needsKnowledge"'],
+  ['it proposes a table with typed columns', '"table"'],
+  ['it drafts a fitting opening message', '"openingMessage"'],
+  ['it is told to be literal — "email the ticket" means needsEmail', 'email the ticket'],
+  ['and "no documents" means no knowledge base', 'needsKnowledge false'],
+]) ok(planFn.includes(needle), `the plan: ${what}`, needle);
+ok(/needsTable = !!p\.needsTable && cols\.length > 0/.test(planFn),
+   'a table is only claimed when real columns came back with it');
+
+ok(src.includes('.filter(n => n !== 4 || !plan || plan.needsKnowledge)'),
+   'the knowledge screen is skipped when the plan says none is needed — the bug the user hit');
+ok(src.includes('const wantsEmail = plan ? !!plan.needsEmail : false'),
+   'the email connection is asked for because the plan said so, not because a catalog job had a flag');
+ok(src.includes('if (w.step !== 2 || w.plan || planTriedRef.current) return'),
+   'the plan is generated once, when the person reaches screen 2');
+ok(src.includes('async function commitPlanTable()') && src.includes('apiCreateTable('),
+   'the planned table is created before the downstream screens, so a table can exist without a knowledge step');
+ok(src.includes('async function commitPlan()') && src.includes('abilities: { web: !!p.needsLiveWeb, human: !!p.needsHuman, external: !!p.needsExternal }'),
+   'the plan seeds the abilities screen, so what it decided is already reflected there');
+ok(src.includes('spec.openingMessage || fallbackGreeting') && src.includes("(plan && plan.openingMessage)"),
+   'the built chatbot gets a fitting opening message, with a plan-based fallback');
+
+/* ── the key is asked for once, or not at all, and before the plan ── */
+ok(src.includes("haveKey ? [0, 1, 2, 4, 5, 6, 7, 8, 9, 10] : [0, 1, 3, 2, 4, 5, 6, 7, 8, 9, 10]"),
+   'an account with a key never sees the key screen, and one without it answers the key before the plan (the plan is a model call)');
 ok(src.includes('const haveKeyRef = useRef(null);') && src.includes('if (haveKeyRef.current === null && keyChecked)'),
    'and the answer is latched, so answering screen 3 does not renumber the run under you');
 
@@ -188,8 +214,8 @@ ok(src.includes('if (repairing) { setRepairing(false); go(8); build(); return; }
    'and a repaired key returns to the build instead of re-asking every question');
 ok(src.includes('The latch is deliberately not flipped here'),
    'answering the key screen does not renumber the run that is asking it');
-ok(src.includes('const questionSteps = [1, 2, 3, 4, 5, 7].filter(n => FLOW.includes(n));'),
-   '"question 3 of 6" counts the questions actually being asked');
+ok(src.includes('const questionSteps = FLOW.filter(n => [1, 2, 3, 4, 5, 7].includes(n));'),
+   '"question 3 of 6" counts the questions actually being asked, in the order they are asked');
 ok(src.includes('|| !settings || autopilot ||'),
    'and nothing opens by itself before the platform knows what the account has');
 ok(src.includes('const after = at >= 0 ? FLOW[at + 1] : FLOW.find(n => n > w.step);'),
