@@ -657,8 +657,15 @@
   }
 
   /* The Claude credit left: the balance typed in from the Console minus what
-     Anthropic's cost report says was spent since. The Admin key stays on the
-     server; only its last four characters come back. */
+     8legs spent with the account's key since (see CreditSection). */
+  /* Calls the browser makes to Claude go straight to Anthropic, so the
+     server never sees what they cost. Report the token counts; the server
+     prices them. Fire and forget: a lost report must not break a reply. */
+  function reportClaudeUsage(d, source) {
+    if (!d || !d.usage) return;
+    apiFetch('/api/credit', { method: 'POST', body: JSON.stringify({ model: d.model, usage: d.usage, source }) }).catch(() => {});
+  }
+
   async function apiCredit(method = 'GET', body) {
     const r = await apiFetch('/api/credit', { method, ...(body ? { body: JSON.stringify(body) } : {}) });
     const d = await r.json().catch(() => ({}));
@@ -2184,6 +2191,7 @@ function markSvgString(color, size = 30) {
         recordError('provider', d.error?.message || JSON.stringify(d), { provider: 'claude', model });
         throw new Error(d.error?.message || JSON.stringify(d));
       }
+      reportClaudeUsage(d, 'builder');
       return d.content.find(c => c.type === 'text')?.text || '';
     }
 
@@ -3453,6 +3461,7 @@ function markSvgString(color, size = 30) {
         const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: claudeHeaders, body: JSON.stringify(body) });
         const d = await r.json();
         if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
+        reportClaudeUsage(d, 'test-chat');
 
         if (d.stop_reason !== 'tool_use') return d.content.find(c => c.type === 'text')?.text || '';
 
@@ -9643,6 +9652,7 @@ npm run migrate            # run it`}</Block>
         });
         const d = await r.json();
         if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
+        reportClaudeUsage(d, 'assistant');
 
         if (d.stop_reason !== 'tool_use') {
           return d.content.filter(c => c.type === 'text').map(c => c.text).join('\n').trim();
@@ -13746,85 +13756,69 @@ npm run migrate            # run it`}</Block>
   }
 
   /**
-   * How much Claude credit is left. Anthropic has no API for the balance itself,
-   * so this is the balance the account copied from the Console minus what the
-   * organization spent since — read with an Admin key from the cost report.
+   * How much Claude credit is left. A regular API key cannot read the balance
+   * or the spend from Anthropic, so 8legs counts what it spends itself: every
+   * call it makes with the account's key is priced from the tokens it used,
+   * and taken off the balance the account copied from the Console.
    */
+  const CREDIT_SOURCES = {
+    agents:      ['AI Chatbots (widget, WhatsApp)', 'AI Chatbots (וידג׳ט, וואטסאפ)'],
+    jarvis:      ['Jarvis', 'Jarvis'],
+    knowledge:   ['Knowledge processing', 'עיבוד ידע'],
+    builder:     ['Building agents', 'בניית סוכנים'],
+    'test-chat': ['Test chat', 'צ׳אט בדיקה'],
+    assistant:   ['The assistant', 'האסיסטנט'],
+  };
+
   function CreditSection({ sectionStyle, sectionHeader }) {
     const [credit, setCredit] = useState(null);
-    const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState(null);
-    const [keyDraft, setKeyDraft] = useState('');
-    const [replacingKey, setReplacingKey] = useState(false);
     const [balanceDraft, setBalanceDraft] = useState('');
 
     async function run(method, body) {
       setBusy(true);
       setError(null);
-      try {
-        const next = await apiCredit(method, body);
-        setCredit(next);
-        return true;
-      } catch (e) { setError(e.message); return false; }
-      finally { setBusy(false); setLoading(false); }
+      try { setCredit(await apiCredit(method, body)); return true; }
+      catch (e) { setError(e.message); return false; }
+      finally { setBusy(false); }
     }
     useEffect(() => { run('GET'); }, []);
 
-    async function connect() {
-      const key = keyDraft.trim();
-      if (!key || busy) return;
-      if (await run('PUT', { adminKey: key })) { setKeyDraft(''); setReplacingKey(false); }
-    }
     async function setBalance() {
       const v = balanceDraft.trim().replace(/[$,\s]/g, '');
       if (!v || busy) return;
       if (await run('PUT', { balanceUsd: v })) setBalanceDraft('');
     }
 
-    const money = (n) => `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const money = (n) => {
+      const v = Number(n) || 0;
+      if (v > 0 && v < 0.01) return '< $0.01';
+      return `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    };
     const day = (d) => new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
     const label = { fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' };
     const note = { fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.6 };
     const c = credit || {};
-    const hasKey = !!c.configured;
-    const hasBalance = hasKey && c.balanceUsd !== null && c.balanceUsd !== undefined;
+    const hasBalance = c.balanceAt !== null && c.balanceAt !== undefined;
     const remaining = c.remainingUsd;
-    const low = remaining !== null && remaining !== undefined && remaining < 5;
-
-    const keyForm = (
-      <div>
-        <label style={label}>{L('Admin key', 'Admin key')}</label>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input type="password" value={keyDraft} onChange={e => setKeyDraft(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') connect(); }}
-            placeholder="sk-ant-admin..." autoComplete="off" style={{ flex: 1 }} />
-          <Btn size="sm" variant="primary" onClick={connect} disabled={busy || !keyDraft.trim()}>
-            {busy ? L('Checking…', 'בודק…') : L('Connect', 'חבר')}
-          </Btn>
-          {replacingKey && <Btn size="sm" onClick={() => { setReplacingKey(false); setKeyDraft(''); }}>{L('Cancel', 'ביטול')}</Btn>}
-        </div>
-        <div style={{ ...note, marginTop: 7 }}>
-          {L('Create one in the Claude Console under Settings › Admin keys. It is tried before it is kept, stays on the server and is never shown again.',
-             'יוצרים אותו ב-Claude Console תחת Settings › Admin keys. הוא נבדק לפני שנשמר, נשאר בשרת ולא מוצג שוב.')}
-        </div>
-      </div>
-    );
+    const low = hasBalance && remaining < 5;
+    const sourceName = (id) => (CREDIT_SOURCES[id] ? L(...CREDIT_SOURCES[id]) : id);
 
     return (
       <div style={sectionStyle}>
         <div style={sectionHeader}>{L('Claude credit', 'קרדיט Claude')}</div>
         <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-            {L('Anthropic does not show the remaining balance through its API. With an Admin key, 8legs reads what your organization spent and takes it off the balance you copy from the Console.',
-               'Anthropic לא חושפת את היתרה דרך ה-API. עם Admin key, 8legs קורא כמה הארגון שלך הוציא ומוריד את זה מהיתרה שאתה מעתיק מה-Console.')}
+            {L('Anthropic shows the balance only in the Console, never to an API key. So copy it here once, and 8legs takes off what it spends with your key from then on.',
+               'Anthropic מציגה את היתרה רק ב-Console, אף פעם לא למפתח API. אז מעתיקים אותה לכאן פעם אחת, ו-8legs מוריד ממנה את מה שהוא מוציא עם המפתח שלך מאותו רגע.')}
           </div>
 
-          {loading ? (
+          {!credit && !error ? (
             <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{L('Loading…', 'טוען…')}</div>
-          ) : !hasKey ? keyForm : (
+          ) : credit && (
             <React.Fragment>
-              {hasBalance && !c.error && (
+              {hasBalance && (
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
                   <div dir="ltr" style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.02em',
                                           color: low ? 'var(--warning)' : 'var(--text)' }}>
@@ -13837,57 +13831,65 @@ npm run migrate            # run it`}</Block>
                 </div>
               )}
 
-              {!c.error && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12.5, color: 'var(--text-2)' }}>
-                  {hasBalance && (
-                    <div>
-                      {L('Spent since you entered', 'הוצאה מאז שהזנת')} <span dir="ltr">{money(c.balanceUsd)}</span> {L('on ', 'ב-')}{day(c.balanceAt)}:{' '}
-                      <strong dir="ltr">{money(c.spentSinceUsd || 0)}</strong>
-                    </div>
-                  )}
-                  <div>{L('Spent this month', 'הוצאה החודש')}: <strong dir="ltr">{money(c.monthUsd || 0)}</strong></div>
-                  <div style={note}>
-                    {L('The whole organization, not only 8legs. Anthropic’s cost data runs a few minutes behind.',
-                       'כל הארגון, לא רק 8legs. נתוני העלות של Anthropic מתעדכנים באיחור של כמה דקות.')}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12.5, color: 'var(--text-2)' }}>
+                {hasBalance && (
+                  <div>
+                    {L('Spent through 8legs since you entered', 'הוצאה דרך 8legs מאז שהזנת')} <span dir="ltr">{money(c.balanceUsd)}</span> {L('on ', 'ב-')}{day(c.balanceAt)}:{' '}
+                    <strong dir="ltr">{money(c.spentSinceUsd)}</strong>
                   </div>
+                )}
+                <div>{L('Spent through 8legs this month', 'הוצאה דרך 8legs החודש')}: <strong dir="ltr">{money(c.monthUsd)}</strong></div>
+              </div>
+
+              {(c.bySource || []).length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: '10px 12px', borderRadius: 'var(--r-md)',
+                              background: 'var(--bg-panel)', border: '1px solid var(--border)' }}>
+                  <div style={{ ...note, fontWeight: 700, marginBottom: 2 }}>
+                    {hasBalance ? L('Where it went, since the balance', 'לאן זה הלך, מאז היתרה') : L('Where it went, this month', 'לאן זה הלך, החודש')}
+                  </div>
+                  {c.bySource.map(r => (
+                    <div key={r.source} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12.5, color: 'var(--text-2)' }}>
+                      <span>{sourceName(r.source)} <span style={{ color: 'var(--text-muted)' }}>· {r.calls} {L(r.calls === 1 ? 'call' : 'calls', 'קריאות')}</span></span>
+                      <span dir="ltr" style={{ fontWeight: 600 }}>{money(r.usd)}</span>
+                    </div>
+                  ))}
                 </div>
               )}
+
+              <div style={note}>
+                {L('Only what 8legs sends with this key. Anything else on your Anthropic account (Claude Code, the Console playground, other apps) is not counted, so the real balance can be lower.',
+                   'רק מה ש-8legs שולח עם המפתח הזה. שימוש אחר בחשבון Anthropic שלך (Claude Code, ה-playground ב-Console, אפליקציות אחרות) לא נספר, אז היתרה האמיתית יכולה להיות נמוכה יותר.')}
+                {c.countingSince && <> {L('Counting since', 'סופר מאז')} {day(c.countingSince)}.</>}
+                {c.unpricedCalls > 0 && (
+                  <span style={{ color: 'var(--warning)' }}> {L(`${c.unpricedCalls} calls used a model without a known price and are not in the total.`,
+                                                                 `${c.unpricedCalls} קריאות השתמשו במודל בלי מחיר ידוע ולא נכללו בסכום.`)}</span>
+                )}
+              </div>
 
               <div>
                 <label style={label}>{hasBalance ? L('Update the balance ($)', 'עדכן יתרה ($)') : L('Balance in the Console ($)', 'היתרה ב-Console ($)')}</label>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <input inputMode="decimal" value={balanceDraft} onChange={e => setBalanceDraft(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') setBalance(); }}
-                    placeholder="42.50" dir="ltr" style={{ flex: 1 }} />
+                    placeholder="6.68" dir="ltr" style={{ flex: 1 }} />
                   <Btn size="sm" variant="primary" onClick={setBalance} disabled={busy || !balanceDraft.trim()}>
                     {busy ? L('Saving…', 'שומר…') : L('Set balance', 'קבע יתרה')}
                   </Btn>
                 </div>
                 <div style={{ ...note, marginTop: 7 }}>
-                  {L('Copy it from Console › Billing. Enter it again whenever you add credit.',
-                     'מעתיקים מ-Console › Billing. מזינים שוב בכל פעם שמוסיפים קרדיט.')}
+                  {L('The amount under Credit balance in Console › Billing. Enter it again whenever you buy credit.',
+                     'הסכום שמופיע תחת Credit balance ב-Console › Billing. מזינים שוב בכל פעם שקונים קרדיט.')}
                 </div>
               </div>
 
-              {replacingKey ? keyForm : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
-                              paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-                  <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>
-                    {L('Admin key', 'Admin key')} <span dir="ltr" style={{ fontFamily: 'monospace' }}>{c.keyHint}</span>
-                  </span>
-                  <div style={{ marginInlineStart: 'auto', display: 'flex', gap: 8 }}>
-                    <Btn size="sm" onClick={() => run('GET')} disabled={busy}>{L('Refresh', 'רענן')}</Btn>
-                    <Btn size="sm" onClick={() => setReplacingKey(true)} disabled={busy}>{L('Replace key', 'החלף מפתח')}</Btn>
-                    <Btn size="sm" onClick={() => run('DELETE')} disabled={busy}>{L('Remove', 'הסר')}</Btn>
-                  </div>
-                </div>
-              )}
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                <Btn size="sm" onClick={() => run('GET')} disabled={busy}>{L('Refresh', 'רענן')}</Btn>
+                {hasBalance && <Btn size="sm" onClick={() => run('DELETE')} disabled={busy}>{L('Clear balance', 'נקה יתרה')}</Btn>}
+              </div>
             </React.Fragment>
           )}
 
-          {(error || c.error) && (
-            <div style={{ fontSize: 12, color: 'var(--danger)', lineHeight: 1.5, unicodeBidi: 'plaintext' }}>{error || c.error}</div>
-          )}
+          {error && <div style={{ fontSize: 12, color: 'var(--danger)', lineHeight: 1.5, unicodeBidi: 'plaintext' }}>{error}</div>}
         </div>
       </div>
     );
@@ -13962,7 +13964,7 @@ npm run migrate            # run it`}</Block>
       background: 'var(--bg-panel)', border: '1px solid var(--border)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
     };
-    // The credit card reads Anthropic's cost report: it means nothing for OpenAI or Ollama.
+    // The credit card prices Claude calls against a Console balance: it means nothing for OpenAI or Ollama.
     const onClaude = ((settings && settings.provider) || 'claude') === 'claude';
     const SECTIONS = [
       { id: 'set-model',      label: 'Model & key' },

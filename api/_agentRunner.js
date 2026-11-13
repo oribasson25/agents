@@ -5,6 +5,7 @@ import { sendGmail } from './_gmail.js';
 import { logError } from './_errorLog.js';
 import { TABLE_TOOLS, runAgentTableTool } from './_tables.js';
 import { internalSecret } from './_auth.js';
+import { recordUsage } from './_usage.js';
 
 /* This runs server-side with no logged-in user, so it proves it is the
    platform to the tool runner and the scraper with the internal secret
@@ -306,6 +307,7 @@ export async function runAgentTurn({ agent, agentId, messages, baseUrl }) {
       });
       const d = await llmRes.json();
       if (!llmRes.ok) throw new Error(d.error?.message || JSON.stringify(d));
+      await recordUsage({ agentId, model: d.model || model, usage: d.usage, source: 'agents' });
 
       if (d.stop_reason !== 'tool_use') {
         return { text: d.content.find(c => c.type === 'text')?.text || '', safeMessages, ended };

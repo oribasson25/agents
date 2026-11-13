@@ -1,5 +1,6 @@
 import { sql } from './_db.js';
 import { logError } from './_errorLog.js';
+import { recordUsage } from './_usage.js';
 
 /**
  * The knowledge base: how a document is prepared when it arrives, and how it
@@ -89,7 +90,7 @@ export function chunkText(text, { target = CHUNK_TARGET, overlap = CHUNK_OVERLAP
 
 /* ─────────────────── the model pass ─────────────────── */
 
-async function callModel(apiConfig, { system, user, maxTokens = 4000 }) {
+async function callModel(apiConfig, { system, user, maxTokens = 4000, agentId = null }) {
   const provider = apiConfig.provider || 'claude';
   const model = apiConfig.model;
 
@@ -101,6 +102,7 @@ async function callModel(apiConfig, { system, user, maxTokens = 4000 }) {
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
+    await recordUsage({ agentId, model: d.model || model, usage: d.usage, source: 'knowledge' });
     return (d.content || []).filter(c => c.type === 'text').map(c => c.text).join('').trim();
   }
 
@@ -186,6 +188,7 @@ export async function normalizeDocument({ title, content, apiConfig, agentId }) 
         system: NORMALIZE_SYSTEM,
         user: `Document title: ${title || '(untitled)'}${part}\n\n---\n${slices[i]}\n---`,
         maxTokens: 8000,
+        agentId,
       });
       if (text) out.push(text);
     }

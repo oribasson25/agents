@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { sql } from './_db.js';
 import { nowBlock, PLATFORM_TZ } from './_now.js';
 import { getUserSettings, resolveApiConfig } from './_settings.js';
+import { recordUsage } from './_usage.js';
 
 /*
  * Jarvis: a private personal assistant for one person on a linked WhatsApp
@@ -275,6 +276,8 @@ export async function runJarvisTurn({ person, number, texts, attachments = [] })
         messages,
         ...fallback,
       });
+      // The number owner's key paid for it, whoever on the list was talking.
+      await recordUsage({ userId: number.owner_user_id, model: response.model || model, usage: response.usage, source: 'jarvis' });
 
       if (response.stop_reason === 'pause_turn') {
         messages.push({ role: 'assistant', content: response.content });
