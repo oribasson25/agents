@@ -17,7 +17,7 @@ export default async function handler(req, res) {
       and (phone is not null or qr_wanted_until > now())
       and (lease_until is null or lease_until < now())
   `;
-  const kicked = await Promise.all(rows.map(async (r) => ({ id: r.id, ok: await kickWorker(r.id) })));
+  const kicked = await Promise.all(rows.map(async (r) => ({ id: r.id, ok: await kickWorker(r.id, { via: req.headers.host }) })));
 
   // Only the last few days matter for spotting a redelivered message.
   await sql`delete from wa_seen where created_at < now() - interval '3 days'`.catch(() => {});

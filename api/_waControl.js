@@ -133,15 +133,30 @@ export function workerSetupProblem() {
 /**
  * Starts a worker session for one number now instead of waiting for the next
  * cron tick. The worker answers 202 right away and keeps running on its own.
+ *
+ * `via` is the host the caller's own request came in on: a host that is known
+ * to reach this deployment. The production URL alone is not enough — it is
+ * often the bare domain (8legs.world), which a function inside Vercel cannot
+ * reach at all ("fetch failed"), while www works. So: the caller's host first,
+ * then the production URL's www form, then the production URL itself.
  */
-export async function kickWorker(numberId, host = process.env.VERCEL_PROJECT_PRODUCTION_URL) {
-  if (!host || !process.env.CRON_SECRET) return false;
+export async function kickWorker(numberId, { via } = {}) {
+  if (!process.env.CRON_SECRET) return false;
+  const prod = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  const hosts = [...new Set([via, prod && !prod.startsWith('www.') ? `www.${prod}` : null, prod].filter(Boolean))];
+  for (const host of hosts) {
+    if (await kickAt(host, numberId)) return true;
+  }
+  return false;
+}
+
+/** One attempt at one host. True only when a production worker took the call. */
+async function kickAt(host, numberId) {
   let url = new URL(`https://${host}/api/wa/worker?number=${encodeURIComponent(numberId)}`);
   try {
-    // The production URL is often the bare domain, which redirects to www. fetch
-    // drops the Authorization header on a redirect to another host, and the
-    // worker then refuses the call — so follow redirects here, and only within
-    // the same site, so the secret never goes anywhere else.
+    // fetch drops the Authorization header on a redirect to another host (bare
+    // domain → www), and the worker then refuses the call. So follow redirects
+    // here, only within the same site, so the secret never goes anywhere else.
     for (let hop = 0; hop < 3; hop++) {
       const res = await fetch(url, {
         method: 'POST',
@@ -150,21 +165,28 @@ export async function kickWorker(numberId, host = process.env.VERCEL_PROJECT_PRO
         signal: AbortSignal.timeout(15_000),
       });
       const location = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
-      if (!location) {
-        if (!res.ok) console.error(`[wa] worker for ${numberId} answered ${res.status} at ${url.host}`);
-        return res.ok;
+      if (location) {
+        const next = new URL(location, url);
+        if (next.protocol !== 'https:' || sameSite(next.hostname) !== sameSite(url.hostname)) {
+          console.error(`[wa] not following the worker redirect from ${url.host} to ${next.host}`);
+          return false;
+        }
+        url = next;
+        continue;
       }
-      const next = new URL(location, url);
-      if (next.protocol !== 'https:' || sameSite(next.hostname) !== sameSite(url.hostname)) {
-        console.error(`[wa] not following the worker redirect from ${url.host} to ${next.host}`);
+      if (!res.ok) {
+        console.error(`[wa] worker for ${numberId} answered ${res.status} at ${url.host}`);
         return false;
       }
-      url = next;
+      // A preview deployment answers 200 { skipped } and holds nothing.
+      const body = await res.json().catch(() => ({}));
+      return !!body.started;
     }
-    console.error(`[wa] too many redirects starting a worker for ${numberId}`);
+    console.error(`[wa] too many redirects starting a worker for ${numberId} at ${host}`);
     return false;
   } catch (err) {
-    console.error(`[wa] could not start a worker for ${numberId}:`, err.message);
+    const cause = err.cause ? ` (${err.cause.code || err.cause.message})` : '';
+    console.error(`[wa] could not start a worker for ${numberId} at ${url.host}: ${err.message}${cause}`);
     return false;
   }
 }

@@ -27,16 +27,16 @@ export default function handler(req, res) {
   const numberId = String((req.query && req.query.number) || '');
   if (!numberId) return res.status(400).json({ error: 'number is required' });
 
-  // The host this call reached, as the widget and the webhook use. kickWorker
-  // follows the bare domain's redirect, so this is the canonical www host;
-  // agent tools called back through the bare domain fail from inside Vercel.
+  // The host this call reached, as the widget and the webhook use: one that
+  // reaches this deployment from inside Vercel. The bare production domain
+  // does not ("fetch failed"), for agent tools and for the next kick alike.
   const host = req.headers.host || process.env.VERCEL_PROJECT_PRODUCTION_URL;
   const deadline = Date.now() + MAX_DURATION_S * 1000 - RESERVE_MS;
   waitUntil(
     runSession({ numberId, deadline, baseUrl: `https://${host}` })
       .then(async (result) => {
         console.log(`[wa ${numberId}] session ended: ${result}`);
-        if (result === 'done') await kickWorker(numberId);
+        if (result === 'done') await kickWorker(numberId, { via: host });
       })
       .catch((err) => console.error(`[wa ${numberId}] session crashed:`, err)),
   );

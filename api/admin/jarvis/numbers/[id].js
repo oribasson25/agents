@@ -29,7 +29,7 @@ export default async function handler(req, res) {
       await markQrWanted(id);
       if (!(await leaseHeld(id))) {
         problem = workerSetupProblem();
-        if (!problem && !(await kickWorker(id))) {
+        if (!problem && !(await kickWorker(id, { via: req.headers.host }))) {
           problem = 'The WhatsApp worker did not start. Check the Vercel function logs for /api/wa/worker.';
         }
       }
@@ -42,7 +42,7 @@ export default async function handler(req, res) {
 
     if (body.action === 'unlink') {
       await setCommand(id, 'logout');
-      if (!(await leaseHeld(id))) await kickWorker(id);
+      if (!(await leaseHeld(id))) await kickWorker(id, { via: req.headers.host });
       return res.json(await detail(id));
     }
 
@@ -63,7 +63,7 @@ export default async function handler(req, res) {
          set label = ${label}, mode = ${mode}, agent_id = ${agentId}, enabled = ${enabled}, updated_at = now()
        where id = ${id}
     `;
-    if (enabled && number.phone && !(await leaseHeld(id))) await kickWorker(id);
+    if (enabled && number.phone && !(await leaseHeld(id))) await kickWorker(id, { via: req.headers.host });
     return res.json(await detail(id));
   }
 
