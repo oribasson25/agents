@@ -80,8 +80,16 @@ const EMAIL_TOOL = {
   },
 };
 
+/* Only channels that keep a conversation open across messages (linked
+   WhatsApp numbers) turn this on, with agent.canEndConversation. The channel
+   reads `ended` from runAgentTurn and starts a fresh session next time. */
+const END_CONVERSATION_TOOL = {
+  name: 'end_conversation',
+  description: 'End this conversation. Call it when the person asks to end, stop or close the conversation, or says goodbye with nothing left open. Then reply with a short goodbye: their next message starts a new conversation that does not remember this one.',
+};
+
 function buildClaudeTools(agent) {
-  const toolDefs = (agent.tools || []).filter(t => t.name !== 'switch_skill');
+  const toolDefs = (agent.tools || []).filter(t => t.name !== 'switch_skill' && !(agent.canEndConversation && t.name === END_CONVERSATION_TOOL.name));
   const tools = toolDefs.map(t => {
     const predefinedUrls = (agent.scrapeUrls || (agent.scrapeUrl ? [agent.scrapeUrl] : [])).map(u => u.trim()).filter(Boolean);
     const hasPredefinedUrl = t.name === 'scrape_website' && predefinedUrls.length > 0;
@@ -116,11 +124,14 @@ function buildClaudeTools(agent) {
       tools.push({ name: t.name, description: t.description, input_schema: t.schema });
     }
   }
+  if (agent.canEndConversation) {
+    tools.push({ ...END_CONVERSATION_TOOL, input_schema: { type: 'object', properties: {} } });
+  }
   return tools;
 }
 
 function buildOpenAITools(agent) {
-  const toolDefs = (agent.tools || []).filter(t => t.name !== 'switch_skill');
+  const toolDefs = (agent.tools || []).filter(t => t.name !== 'switch_skill' && !(agent.canEndConversation && t.name === END_CONVERSATION_TOOL.name));
   const tools = toolDefs.map(t => {
     const predefinedUrls = (agent.scrapeUrls || (agent.scrapeUrl ? [agent.scrapeUrl] : [])).map(u => u.trim()).filter(Boolean);
     const hasPredefinedUrl = t.name === 'scrape_website' && predefinedUrls.length > 0;
@@ -160,6 +171,9 @@ function buildOpenAITools(agent) {
     for (const t of TABLE_TOOLS) {
       tools.push({ type: 'function', function: { name: t.name, description: t.description, parameters: t.schema } });
     }
+  }
+  if (agent.canEndConversation) {
+    tools.push({ type: 'function', function: { ...END_CONVERSATION_TOOL, parameters: { type: 'object', properties: {} } } });
   }
   return tools;
 }
@@ -268,6 +282,15 @@ export async function runAgentTurn({ agent, agentId, messages, baseUrl }) {
     throw err;
   }
 
+  let ended = false;
+  const runTool = async (name, inputs) => {
+    if (name === END_CONVERSATION_TOOL.name && agent.canEndConversation) {
+      ended = true;
+      return 'Done. Now say a short goodbye.';
+    }
+    return executeTool(name, inputs, agent, baseUrl, agentId);
+  };
+
   if (provider === 'claude') {
     let msgs = [...safeMessages];
 
@@ -285,12 +308,12 @@ export async function runAgentTurn({ agent, agentId, messages, baseUrl }) {
       if (!llmRes.ok) throw new Error(d.error?.message || JSON.stringify(d));
 
       if (d.stop_reason !== 'tool_use') {
-        return { text: d.content.find(c => c.type === 'text')?.text || '', safeMessages };
+        return { text: d.content.find(c => c.type === 'text')?.text || '', safeMessages, ended };
       }
 
       const toolUses = d.content.filter(c => c.type === 'tool_use');
       const toolResults = await Promise.all(toolUses.map(async tu => {
-        const result = await executeTool(tu.name, tu.input, agent, baseUrl, agentId);
+        const result = await runTool(tu.name, tu.input);
         return { type: 'tool_result', tool_use_id: tu.id, content: result };
       }));
 
@@ -316,12 +339,12 @@ export async function runAgentTurn({ agent, agentId, messages, baseUrl }) {
 
       const choice = d.choices[0];
       if (choice.finish_reason !== 'tool_calls') {
-        return { text: choice.message.content, safeMessages };
+        return { text: choice.message.content, safeMessages, ended };
       }
 
       const toolResultMsgs = await Promise.all((choice.message.tool_calls || []).map(async tc => {
         const inputs = JSON.parse(tc.function.arguments);
-        const result = await executeTool(tc.function.name, inputs, agent, baseUrl, agentId);
+        const result = await runTool(tc.function.name, inputs);
         return { role: 'tool', tool_call_id: tc.id, content: result };
       }));
 
@@ -347,12 +370,12 @@ export async function runAgentTurn({ agent, agentId, messages, baseUrl }) {
 
       const choice = d.choices[0];
       if (choice.finish_reason !== 'tool_calls') {
-        return { text: choice.message.content, safeMessages };
+        return { text: choice.message.content, safeMessages, ended };
       }
 
       const toolResultMsgs = await Promise.all((choice.message.tool_calls || []).map(async tc => {
         const inputs = JSON.parse(tc.function.arguments);
-        const result = await executeTool(tc.function.name, inputs, agent, baseUrl, agentId);
+        const result = await runTool(tc.function.name, inputs);
         return { role: 'tool', tool_call_id: tc.id, content: result };
       }));
 

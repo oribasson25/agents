@@ -12,6 +12,8 @@ const STALE_MS = 10 * 60 * 1000;
 const DEBOUNCE_MS = 2500;
 // Images and PDFs bigger than this are described, not read.
 const MAX_MEDIA_BYTES = 5 * 1024 * 1024;
+// A conversation with the number's AI Chatbot ends after this much silence.
+const SESSION_IDLE_MS = 30 * 60 * 1000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const jidOf = (phone) => `${phone}@s.whatsapp.net`;
@@ -172,38 +174,44 @@ export function createRouter(wa, numberId, { baseUrl }) {
     if (!agentRow) return null;
     let agent = { ...agentRow.data, apiConfig: await resolveAgentApiConfig(agentRow) };
 
-    const phone = msgs[0].senderPhone;
-    const sessionId = `wal_${numberId}_${agentId}_${phone}`;
+    const text = msgs.map((m) => m.text).filter(Boolean).join('\n');
+    if (!text.trim()) return null;
+    const userMsg = { role: 'user', content: text };
+
+    const { sessionId, stored } = await currentSession(agentId, msgs[0].senderPhone);
     const branchId = await branchForSession(agentId, sessionId);
     if (branchId) {
       const chosen = await loadForConversation(agentId, branchId);
       agent = { ...chosen.agent, apiConfig: agent.apiConfig };
     }
+    agent.canEndConversation = true;
 
-    const text = msgs.map((m) => m.text).filter(Boolean).join('\n');
-    if (!text.trim()) return null;
-    const userMsg = { role: 'user', content: text };
-
-    const [sess] = await sql`select messages from chat_sessions where id = ${sessionId}`;
-    const stored = Array.isArray(sess?.messages) ? sess.messages : [];
     const context = normalizeHistory([...stored, userMsg].slice(-20));
 
     let reply;
+    let ended = false;
     try {
       const result = await runAgentTurn({ agent, agentId, messages: context, baseUrl });
+      ended = !!result.ended;
       reply = typeof result.text === 'string' ? result.text.trim() : '';
       if (!reply) {
         await logError({ agentId, source: 'whatsapp-linked', message: 'The provider returned an empty reply', context: { numberId } });
         reply = 'Sorry, I could not generate a reply. Please try again.';
       }
     } catch (err) {
-      await logError({ agentId, source: 'whatsapp-linked', message: err.message, context: { code: err.code || null, numberId } });
+      // "fetch failed" alone says nothing: the reason is on err.cause.
+      const cause = err.cause ? ` (${err.cause.code || err.cause.message || err.cause})` : '';
+      await logError({ agentId, source: 'whatsapp-linked', message: `${err.message}${cause}`, context: { code: err.code || null, numberId, baseUrl } });
       reply = err.code === 'NO_API_KEY'
         ? "This agent isn't fully configured yet. Please contact the owner."
         : 'Sorry, something went wrong. Please try again in a moment.';
     }
 
-    const exchange = [...dlpMessages([userMsg], agent.dlp || {}), { role: 'assistant', content: reply }];
+    // `ended` on the last message closes the session: the next message opens a new one.
+    const exchange = [
+      ...dlpMessages([userMsg], agent.dlp || {}),
+      { role: 'assistant', content: reply, ...(ended ? { ended: true } : {}) },
+    ];
     await sql`
       insert into chat_sessions (id, agent_id, source, messages, branch_id, started_at, updated_at)
       values (${sessionId}, ${agentId}, 'whatsapp', ${JSON.stringify(exchange)}, ${branchId}, now(), now())
@@ -212,6 +220,27 @@ export function createRouter(wa, numberId, { baseUrl }) {
             updated_at = now()
     `;
     return reply;
+  }
+
+  /**
+   * The conversation a message belongs to. One person has a series of sessions
+   * with the number's AI Chatbot: a new one starts after SESSION_IDLE_MS of
+   * silence, or after the agent ended the last one (end_conversation).
+   * Ids are `wal_<number>_<agent>_<phone>_<start ms>`; the bare
+   * `wal_<number>_<agent>_<phone>` is the single session from before sessions ended.
+   */
+  async function currentSession(agentId, phone) {
+    const prefix = `wal_${numberId}_${agentId}_${phone}`;
+    const [last] = await sql`
+      select id, messages, updated_at > now() - ${`${SESSION_IDLE_MS} milliseconds`}::interval as recent
+      from chat_sessions
+      where agent_id = ${agentId} and (id = ${prefix} or starts_with(id, ${`${prefix}_`}))
+      order by started_at desc
+      limit 1
+    `;
+    const messages = Array.isArray(last?.messages) ? last.messages : [];
+    if (last && last.recent && !messages.at(-1)?.ended) return { sessionId: last.id, stored: messages };
+    return { sessionId: `${prefix}_${Date.now()}`, stored: [] };
   }
 
   /** Reminders that came due, sent to the people on this number. */
