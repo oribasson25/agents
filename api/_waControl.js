@@ -136,15 +136,37 @@ export function workerSetupProblem() {
  */
 export async function kickWorker(numberId, host = process.env.VERCEL_PROJECT_PRODUCTION_URL) {
   if (!host || !process.env.CRON_SECRET) return false;
+  let url = new URL(`https://${host}/api/wa/worker?number=${encodeURIComponent(numberId)}`);
   try {
-    const res = await fetch(`https://${host}/api/wa/worker?number=${encodeURIComponent(numberId)}`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
-      signal: AbortSignal.timeout(15_000),
-    });
-    return res.ok;
+    // The production URL is often the bare domain, which redirects to www. fetch
+    // drops the Authorization header on a redirect to another host, and the
+    // worker then refuses the call — so follow redirects here, and only within
+    // the same site, so the secret never goes anywhere else.
+    for (let hop = 0; hop < 3; hop++) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+        redirect: 'manual',
+        signal: AbortSignal.timeout(15_000),
+      });
+      const location = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+      if (!location) {
+        if (!res.ok) console.error(`[wa] worker for ${numberId} answered ${res.status} at ${url.host}`);
+        return res.ok;
+      }
+      const next = new URL(location, url);
+      if (next.protocol !== 'https:' || sameSite(next.hostname) !== sameSite(url.hostname)) {
+        console.error(`[wa] not following the worker redirect from ${url.host} to ${next.host}`);
+        return false;
+      }
+      url = next;
+    }
+    console.error(`[wa] too many redirects starting a worker for ${numberId}`);
+    return false;
   } catch (err) {
     console.error(`[wa] could not start a worker for ${numberId}:`, err.message);
     return false;
   }
 }
+
+const sameSite = (hostname) => hostname.toLowerCase().replace(/^www\./, '');
