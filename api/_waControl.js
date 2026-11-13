@@ -116,6 +116,21 @@ export function workerAuthorized(req) {
 }
 
 /**
+ * Why a worker cannot be started on this deployment, in words an admin can
+ * act on — or null when nothing is missing. Without it the QR screen just
+ * waits forever for a code no worker will ever publish.
+ */
+export function workerSetupProblem() {
+  if (!process.env.CRON_SECRET) {
+    return 'CRON_SECRET is not set in this Vercel project, so the WhatsApp worker cannot start. Add it under Settings › Environment Variables (Production) and redeploy.';
+  }
+  if (!process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return 'VERCEL_PROJECT_PRODUCTION_URL is missing, so the WhatsApp worker cannot be started. Turn on "Automatically expose System Environment Variables" in the Vercel project settings and redeploy.';
+  }
+  return null;
+}
+
+/**
  * Starts a worker session for one number now instead of waiting for the next
  * cron tick. The worker answers 202 right away and keeps running on its own.
  */

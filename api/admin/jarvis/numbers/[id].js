@@ -1,6 +1,6 @@
 import { sql } from '../../../_db.js';
 import { checkAdmin } from '../../../_auth.js';
-import { getNumber, kickWorker, leaseHeld, markQrWanted, setCommand } from '../../../_waControl.js';
+import { getNumber, kickWorker, leaseHeld, markQrWanted, setCommand, workerSetupProblem } from '../../../_waControl.js';
 
 /**
  * One linked number. Admins only.
@@ -22,11 +22,19 @@ export default async function handler(req, res) {
   if (!number) return res.status(404).json({ error: 'No such number.' });
 
   if (req.method === 'GET') {
+    // Set only when the QR screen is open and no worker holds the number: the
+    // reason no code will ever show up, so the screen can say it instead of waiting.
+    let problem = null;
     if (req.query.qr) {
       await markQrWanted(id);
-      if (!(await leaseHeld(id))) await kickWorker(id);
+      if (!(await leaseHeld(id))) {
+        problem = workerSetupProblem();
+        if (!problem && !(await kickWorker(id))) {
+          problem = 'The WhatsApp worker did not start. Check the Vercel function logs for /api/wa/worker.';
+        }
+      }
     }
-    return res.json(await detail(id, { withQr: !!req.query.qr }));
+    return res.json({ ...(await detail(id, { withQr: !!req.query.qr })), problem });
   }
 
   if (req.method === 'PATCH') {

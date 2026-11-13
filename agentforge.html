@@ -12863,6 +12863,11 @@ npm run migrate            # run it`}</Block>
               <div style={{ width: 280, height: 280, borderRadius: 16, border: '1px solid var(--border)', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 {qr
                   ? <img src={qr} alt="WhatsApp linking QR code" width="256" height="256" style={{ imageRendering: 'pixelated' }} />
+                  : detail && detail.problem
+                  ? <div style={{ textAlign: 'center', color: 'var(--warning)', fontSize: 12.5, padding: 20, lineHeight: 1.6 }}>
+                      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>{Icons.alert}</div>
+                      The connection cannot start yet. The message in this window says why.
+                    </div>
                   : <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 12.5, padding: 20, lineHeight: 1.6 }}>
                       <div style={{ display: 'flex', justifyContent: 'center', gap: 4, marginBottom: 10 }}><span className="typing-dot" /><span className="typing-dot" /><span className="typing-dot" /></div>
                       Starting the connection. The code shows up in a few seconds.
@@ -12879,9 +12884,16 @@ npm run migrate            # run it`}</Block>
                 </div>
                 {detail && detail.state && detail.state.error && <JvError error={detail.state.error} />}
                 <JvError error={error} />
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, fontSize: 12.5, color: 'var(--text-2)' }}>
-                  <StatusDot on={!!qr} />{qr ? 'Waiting for the scan' : 'Connecting to WhatsApp…'}
-                </div>
+                {detail && detail.problem && !qr ? (
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginTop: 16, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.32)', borderRadius: 'var(--r-md)', padding: '12px 14px' }}>
+                    <span style={{ color: 'var(--warning)', display: 'flex' }}>{Icons.alert}</span>
+                    <span style={{ fontSize: 12.5, color: 'var(--text)', lineHeight: 1.6 }}>{detail.problem}</span>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, fontSize: 12.5, color: 'var(--text-2)' }}>
+                    <StatusDot on={!!qr} />{qr ? 'Waiting for the scan' : 'Connecting to WhatsApp…'}
+                  </div>
+                )}
                 <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
                   <Btn onClick={onClose}>Close</Btn>
                 </div>
