@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/crawl-all",
       "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/wa/cron",
+      "schedule": "* * * * *"
     }
   ],
   "functions": {
@@ -32,6 +36,12 @@
       "maxDuration": 60
     },
     "api/github/webhook.js": {
+      "maxDuration": 60
+    },
+    "api/wa/worker.mjs": {
+      "maxDuration": 800
+    },
+    "api/wa/cron.js": {
       "maxDuration": 60
     }
   },
@@ -103,6 +113,14 @@
     {
       "source": "/api/github/webhook",
       "destination": "/api/github/webhook.js"
+    },
+    {
+      "source": "/api/wa/worker",
+      "destination": "/api/wa/worker.mjs"
+    },
+    {
+      "source": "/api/wa/cron",
+      "destination": "/api/wa/cron.js"
     },
     {
       "source": "/privacy",

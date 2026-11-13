@@ -1,0 +1,88 @@
+import * as control from './_waControl.js';
+import { isLinked } from './_waAuth.mjs';
+import { WhatsApp } from './_waConnection.mjs';
+import { createRouter } from './_waRouter.mjs';
+
+const RENEW_MS = 45_000;
+const COMMAND_POLL_MS = 5_000;
+const REMINDER_POLL_MS = 30_000;
+const DRAIN_MS = 45_000;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Holds one number's WhatsApp connection until `deadline`, then shuts down
+ * cleanly so the next session can take over. The lease on the wa_numbers row
+ * makes sure only one session is connected for a number at any moment.
+ *
+ * Returns why it ended: 'busy' (another session holds the lease), 'idle'
+ * (nothing linked and nobody looking at the QR), 'disabled', 'done' (reached
+ * the deadline), 'logout', 'replaced', 'lost-lease'.
+ */
+export async function runSession({ numberId, deadline, baseUrl }) {
+  const token = await control.acquireLease(numberId);
+  if (!token) return 'busy';
+
+  let result = 'done';
+  let wa;
+  try {
+    let number = await control.getNumber(numberId);
+    if (!number || !number.enabled) return (result = 'disabled');
+    const qrWanted = () => !!number.qr_wanted_until && new Date(number.qr_wanted_until) > new Date();
+    if (!(await isLinked(numberId)) && !qrWanted()) return (result = 'idle');
+
+    wa = new WhatsApp({ numberId });
+    wa.on('state', (s) => {
+      control.publishState(numberId, s).catch((err) => console.warn(`[wa ${numberId}] state publish failed:`, err.message));
+    });
+    const router = createRouter(wa, numberId, { baseUrl });
+    await wa.start();
+
+    let lastRenew = Date.now();
+    let lastCommand = 0;
+    let lastReminders = 0;
+    while (Date.now() < deadline) {
+      await sleep(1000);
+      if (wa.fatal) {
+        result = wa.fatal;
+        break;
+      }
+      if (Date.now() - lastCommand >= COMMAND_POLL_MS) {
+        lastCommand = Date.now();
+        if ((await control.takeCommand(numberId)) === 'logout') {
+          await wa.logout();
+          result = 'logout';
+          break;
+        }
+      }
+      if (Date.now() - lastReminders >= REMINDER_POLL_MS) {
+        lastReminders = Date.now();
+        await router.sendDueReminders().catch((err) => console.warn(`[wa ${numberId}] reminders failed:`, err.message));
+      }
+      if (Date.now() - lastRenew >= RENEW_MS) {
+        lastRenew = Date.now();
+        if (!(await control.renewLease(numberId, token))) {
+          result = 'lost-lease';
+          break;
+        }
+        number = await control.getNumber(numberId);
+        if (!number || !number.enabled) {
+          result = 'disabled';
+          break;
+        }
+        if (!wa.linked && !qrWanted()) {
+          result = 'idle';
+          break;
+        }
+      }
+    }
+    if (result === 'done') await router.drain(DRAIN_MS);
+  } finally {
+    await wa?.stop().catch((err) => console.warn(`[wa ${numberId}] stop failed:`, err.message));
+    if (result !== 'lost-lease') await control.releaseLease(numberId, token);
+    if (result === 'idle' || result === 'disabled') {
+      await control.publishState(numberId, { status: result === 'idle' ? 'unlinked' : 'paused', qr: null }).catch(() => {});
+    }
+  }
+  return result;
+}

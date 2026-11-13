@@ -3,9 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
     "@neondatabase/serverless": "^0.9.0",
     "@sparticuz/chromium": "^147.0.0",
-    "playwright-core": "^1.59.1"
+    "@vercel/functions": "^3.11.2",
+    "baileys": "^7.0.0-rc14",
+    "pino": "^10.4.0",
+    "playwright-core": "^1.59.1",
+    "qrcode": "^1.5.4"
   },
   "scripts": {
     "migrate": "node migrations/run.mjs",

@@ -379,6 +379,8 @@
     play: <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5l12 7.5-12 7.5z"/></svg>,
     tidy: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="18" x2="18" y2="18"/></svg>,
     users: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
+    jarvis: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 6.5l1 2.3 2.3 1-2.3 1L12 13l-1-2.2-2.3-1 2.3-1z"/></svg>,
+    alert: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
   };
 
   /* The mono face the redesign leans on: branch names, model ids, eyebrow
@@ -820,6 +822,15 @@
     const r = await apiFetch(`/api/tables/${id}/rows?rowId=${encodeURIComponent(rowId)}`, { method: 'DELETE' });
     if (!r.ok) throw new Error(`Could not delete the row (${r.status})`);
     return r.json();
+  }
+
+  /* ─────────────────── JARVIS API (admins only) ─────────────────── */
+  async function jarvisApi(path, { method = 'GET', body } = {}) {
+    const r = await apiFetch(path, { method, ...(body !== undefined && { body: JSON.stringify(body) }) });
+    if (r.status === 204) return null;
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `Request failed (${r.status})`);
+    return d;
   }
 
   /* ─────────────────── ADMIN API ─────────────────── */
@@ -11559,7 +11570,10 @@ npm run migrate            # run it`}</Block>
       { id: 'interactions', label: 'Interactions',  icon: Icons.interactions },
       { id: 'docs',         label: 'Documentation', icon: Icons.docs },
       { id: 'settings',     label: 'Settings',      icon: Icons.settings },
-      ...(user && user.isAdmin ? [{ id: 'admin', label: 'Admin', icon: Icons.admin }] : []),
+      ...(user && user.isAdmin ? [
+        { id: 'jarvis', label: 'Jarvis', icon: Icons.jarvis, badge: 'NEW' },
+        { id: 'admin', label: 'Admin', icon: Icons.admin },
+      ] : []),
     ];
     const en = (language || uiLang()) !== 'he';
 
@@ -11597,6 +11611,9 @@ npm run migrate            # run it`}</Block>
               >
                 <span style={{ display: 'flex', alignItems: 'center', opacity: active ? 1 : 0.75 }}>{item.icon}</span>
                 {item.label}
+                {item.badge && (
+                  <span style={{ marginInlineStart: 'auto', fontFamily: MONO, fontSize: 9.5, fontWeight: 700, letterSpacing: '0.08em', padding: '2px 7px', borderRadius: 999, background: 'var(--sel)', color: 'var(--sel-ink)' }}>{item.badge}</span>
+                )}
               </button>
             );
           })}
@@ -12510,6 +12527,881 @@ npm run migrate            # run it`}</Block>
     );
   }
 
+  /* ═══════════════════ JARVIS ═══════════════════
+     WhatsApp numbers linked as a device (the way WhatsApp on a computer is),
+     and the private Jarvis each person on a number's list gets. Admins only:
+     the sidebar shows the entry to admins and the server refuses everyone
+     else. What a person says to their Jarvis never reaches this screen — it
+     shows their settings and how much there is, never what it says. */
+
+  const JV_STATUS = {
+    open:       { label: 'Connected',             tone: 'live' },
+    connecting: { label: 'Connecting…',           tone: 'draft' },
+    starting:   { label: 'Starting…',             tone: 'draft' },
+    qr:         { label: 'Waiting for the scan',  tone: 'draft' },
+    logged_out: { label: 'Unlinked on the phone', tone: 'danger' },
+    unlinked:   { label: 'Not linked',            tone: 'neutral' },
+    paused:     { label: 'Paused',                tone: 'neutral' },
+    offline:    { label: 'Reconnecting',          tone: 'draft' },
+  };
+
+  /** What to say about a number's connection, from its row and whether a worker holds it. */
+  function jvStatus(n) {
+    if (!n.enabled) return JV_STATUS.paused;
+    const s = n.status || (n.state && n.state.status);
+    if (!n.phone) return s === 'qr' ? JV_STATUS.qr : JV_STATUS.unlinked;
+    if (s === 'open' && n.running) return JV_STATUS.open;
+    if (s === 'logged_out') return JV_STATUS.logged_out;
+    return n.running ? (JV_STATUS[s] || JV_STATUS.connecting) : JV_STATUS.offline;
+  }
+
+  function jvPhone(digits) {
+    const d = String(digits || '');
+    if (!d) return '—';
+    if (d.startsWith('972') && d.length === 12) return `+972 ${d.slice(3, 5)}-${d.slice(5, 8)}-${d.slice(8)}`;
+    return '+' + d;
+  }
+
+  /* Mirrors normalizePhone on the server, for the "who would answer" check. */
+  function jvDigits(raw) {
+    let d = String(raw || '').replace(/\D/g, '');
+    if (d.startsWith('00')) d = d.slice(2);
+    if (d.startsWith('0')) d = '972' + d.slice(1);
+    return d;
+  }
+
+  function jvAgo(at) {
+    if (!at) return 'never';
+    const s = Math.max(0, (Date.now() - new Date(at).getTime()) / 1000);
+    if (s < 90) return 'just now';
+    if (s < 3600) return `${Math.round(s / 60)} min ago`;
+    if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+    return new Date(at).toLocaleDateString([], { day: 'numeric', month: 'short' });
+  }
+
+  const JV_AVATAR_TONES = [
+    ['var(--violet-dim)', 'var(--violet)'],
+    ['var(--teal-dim)', 'var(--teal)'],
+    ['var(--primary-dim)', 'var(--warning)'],
+  ];
+  function JvAvatar({ name, i = 0, size = 32 }) {
+    const [bg, fg] = JV_AVATAR_TONES[i % JV_AVATAR_TONES.length];
+    return (
+      <span style={{
+        width: size, height: size, borderRadius: '50%', flexShrink: 0, background: bg, color: fg,
+        fontSize: Math.round(size * 0.42), fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        border: '2px solid var(--bg-card)',
+      }}>{(name || '?').trim().charAt(0).toUpperCase()}</span>
+    );
+  }
+
+  function JvToggle({ on, onChange, label, disabled }) {
+    return (
+      <button role="switch" aria-checked={!!on} aria-label={label} title={label} disabled={disabled}
+        onClick={() => onChange(!on)}
+        style={{
+          width: 44, height: 24, borderRadius: 12, padding: 0, flexShrink: 0, position: 'relative', cursor: 'pointer',
+          background: on ? 'var(--teal)' : 'var(--bg-hover)', border: '1px solid ' + (on ? 'var(--teal)' : 'var(--border)'),
+          transition: 'background 0.2s',
+        }}>
+        <span style={{
+          position: 'absolute', top: 2, left: on ? 22 : 2, width: 18, height: 18, borderRadius: '50%',
+          background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.2)', transition: 'left 0.15s',
+        }} />
+      </button>
+    );
+  }
+
+  const jvCard = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' };
+  const jvH2 = { fontSize: 15, fontWeight: 700, margin: 0 };
+  const jvSub = { fontSize: 12.5, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.55 };
+
+  function JvBack({ label, onClick }) {
+    return (
+      <button onClick={onClick} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'transparent', color: 'var(--text-2)', fontSize: 12.5, fontWeight: 600, padding: 0, marginBottom: 14 }}>
+        {Icons.back}{label}
+      </button>
+    );
+  }
+
+  function JvError({ error }) {
+    if (!error) return null;
+    return <div style={{ fontSize: 12.5, color: 'var(--danger)', marginTop: 8 }}>{error}</div>;
+  }
+
+  function JarvisView() {
+    const [route, setRoute] = useState({ kind: 'list' });
+    const [linking, setLinking] = useState(null);   // { numberId? } while the link dialog is open
+    const [reloadKey, setReloadKey] = useState(0);
+
+    let body;
+    if (route.kind === 'number') {
+      body = <JarvisNumberView key={route.id + reloadKey} id={route.id}
+        onBack={() => setRoute({ kind: 'list' })}
+        onOpenPerson={pid => setRoute({ kind: 'person', id: pid, numberId: route.id })}
+        onShowQr={() => setLinking({ numberId: route.id })} />;
+    } else if (route.kind === 'person') {
+      body = <JarvisPersonView id={route.id} onBack={() => setRoute({ kind: 'number', id: route.numberId })} />;
+    } else {
+      body = <JarvisNumbersList key={reloadKey} onOpen={id => setRoute({ kind: 'number', id })} onLink={() => setLinking({})} />;
+    }
+
+    /* No fade-in wrapper here: its leftover transform makes every dialog on
+       these screens position itself against the page instead of the window,
+       which on a long page puts the dialog below the fold. */
+    return (
+      <div>
+        {body}
+        {linking && (
+          <JarvisLinkDialog
+            numberId={linking.numberId}
+            onClose={() => { setLinking(null); setReloadKey(k => k + 1); }}
+            onOpenNumber={id => { setLinking(null); setReloadKey(k => k + 1); setRoute({ kind: 'number', id }); }}
+          />
+        )}
+      </div>
+    );
+  }
+
+  function JarvisNumbersList({ onOpen, onLink }) {
+    const [numbers, setNumbers] = useState(null);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+      let alive = true;
+      const load = () => jarvisApi('/api/admin/jarvis/numbers')
+        .then(rows => { if (alive) { setNumbers(rows); setError(null); } })
+        .catch(err => alive && setError(err.message));
+      load();
+      const t = setInterval(load, 15000);
+      return () => { alive = false; clearInterval(t); };
+    }, []);
+
+    const list = numbers || [];
+    const people = list.reduce((sum, n) => sum + (n.people || 0), 0);
+    const online = list.filter(n => jvStatus(n) === JV_STATUS.open).length;
+    const stat = (label, value, note, dot) => (
+      <div style={{ ...jvCard, flex: '1 1 200px', padding: '18px 20px' }}>
+        <Eyebrow>{label}</Eyebrow>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+          {dot !== undefined && <StatusDot on={dot} size={8} />}
+          <span style={{ fontFamily: MONO, fontSize: 24, fontWeight: 600 }}>{value}</span>
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{note}</div>
+      </div>
+    );
+
+    return (
+      <div>
+        <PageHeader
+          eyebrow="WhatsApp · admins only"
+          title="Jarvis"
+          subtitle="WhatsApp numbers linked as a device. Each number answers with an AI Chatbot by default, and with a private Jarvis for the people you put on its list."
+          actions={<Btn variant="primary" icon={Icons.plus} onClick={onLink}>Link a number</Btn>}
+        />
+
+        {error && <div style={{ ...jvCard, padding: 14, color: 'var(--danger)', fontSize: 13, marginBottom: 16 }}>{error}</div>}
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginBottom: 24 }}>
+          {stat('Numbers', numbers ? list.length : '…', 'linked or waiting to be')}
+          {stat('People on Jarvis', numbers ? people : '…', 'each with a private Jarvis')}
+          {stat('Connected', numbers ? `${online}/${list.length}` : '…', 'holding a live connection now', numbers ? online > 0 : undefined)}
+        </div>
+
+        <Eyebrow style={{ marginBottom: 10 }}>Numbers</Eyebrow>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'stretch', marginBottom: 20 }}>
+          {list.map(n => {
+            const st = jvStatus(n);
+            const names = n.people_names || [];
+            return (
+              <button key={n.id} onClick={() => onOpen(n.id)} style={{
+                ...jvCard, flex: '1 1 340px', maxWidth: 520, display: 'flex', flexDirection: 'column', gap: 14,
+                padding: 20, textAlign: 'start', color: 'var(--text)', boxShadow: 'var(--shadow)', cursor: 'pointer',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
+                  <span style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{Icons.phone}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span dir="auto" style={{ display: 'block', fontSize: 15, fontWeight: 700, textAlign: 'left' }}>{n.label}</span>
+                    <span dir="ltr" style={{ display: 'block', fontFamily: MONO, fontSize: 12, color: 'var(--text-2)', marginTop: 2 }}>{jvPhone(n.phone)}</span>
+                  </span>
+                  <Chip tone={st.tone}>{st.label}</Chip>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13, width: '100%' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Mode</span>
+                    <Chip>{n.mode === 'jarvis' ? 'Jarvis only' : 'AI Chatbot + Jarvis list'}</Chip>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Everyone else</span>
+                    {n.mode === 'jarvis'
+                      ? <Chip>No reply</Chip>
+                      : n.agent_name ? <Chip tone="tools"><span dir="auto">{n.agent_name}</span></Chip> : <Chip tone="danger">No AI Chatbot chosen</Chip>}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Jarvis list</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ display: 'flex' }}>
+                        {names.slice(0, 4).map((p, i) => <span key={i} style={{ marginInlineStart: i ? -8 : 0 }}><JvAvatar name={p.name} i={i} size={26} /></span>)}
+                      </span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-2)' }}>{n.people} {n.people === 1 ? 'person' : 'people'}</span>
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                    <span style={{ color: 'var(--text-muted)' }}>AI Chatbots and key from</span>
+                    <span style={{ fontFamily: MONO, fontSize: 12, color: 'var(--text-2)' }}>{n.owner_username}</span>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', borderTop: '1px solid var(--bg-hover)', paddingTop: 12, marginTop: 'auto' }}>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Added {jvAgo(n.created_at)}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--warning)' }}>Open →</span>
+                </div>
+              </button>
+            );
+          })}
+          <button onClick={onLink} style={{
+            flex: '1 1 260px', maxWidth: 520, minHeight: 230, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            gap: 10, border: '1.5px dashed var(--border)', borderRadius: 'var(--r-lg)', background: 'transparent', color: 'var(--text-2)', padding: 20,
+          }}>
+            <span style={{ width: 44, height: 44, borderRadius: 14, background: 'var(--primary-dim)', border: '1px solid rgba(239,159,39,0.28)', color: 'var(--warning)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{Icons.plus}</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>Link a number</span>
+            <span style={{ fontSize: 12.5, color: 'var(--text-muted)', maxWidth: 230, lineHeight: 1.5 }}>Scan a QR code with the phone that holds the number.</span>
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.32)', borderRadius: 'var(--r-lg)', padding: '16px 18px' }}>
+          <span style={{ color: 'var(--warning)', display: 'flex' }}>{Icons.alert}</span>
+          <div>
+            <div style={{ fontSize: 13.5, fontWeight: 700 }}>Linked-device connection</div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 4, lineHeight: 1.6 }}>
+              Numbers connect the way WhatsApp on a computer does, not through Meta's Cloud API. Use a dedicated number, let its phone come online at least every 14 days, and never send bulk messages, or WhatsApp may block the number.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /**
+   * Linking: name the number, pick whose AI Chatbots and key it uses, then
+   * scan. While this is open the worker keeps a QR on offer; closing it lets
+   * an unlinked number go back to sleep.
+   */
+  function JarvisLinkDialog({ numberId: existingId, onClose, onOpenNumber }) {
+    const [numberId, setNumberId] = useState(existingId || null);
+    const [label, setLabel] = useState('');
+    const [owner, setOwner] = useState('');
+    const [users, setUsers] = useState([]);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const [detail, setDetail] = useState(null);
+
+    useEffect(() => { if (!existingId) adminListUsers().then(setUsers).catch(() => {}); }, []);
+
+    useEffect(() => {
+      if (!numberId) return;
+      let alive = true;
+      const poll = () => jarvisApi(`/api/admin/jarvis/numbers/${numberId}?qr=1`)
+        .then(d => alive && setDetail(d))
+        .catch(err => alive && setError(err.message));
+      poll();
+      const t = setInterval(poll, 2500);
+      return () => { alive = false; clearInterval(t); };
+    }, [numberId]);
+
+    async function create() {
+      setBusy(true); setError(null);
+      try {
+        const row = await jarvisApi('/api/admin/jarvis/numbers', { method: 'POST', body: { label: label.trim(), ownerUserId: owner || undefined } });
+        setNumberId(row.id);
+      } catch (err) { setError(err.message); }
+      finally { setBusy(false); }
+    }
+
+    const linked = detail && detail.phone && detail.state && detail.state.status === 'open';
+    const qr = detail && detail.state && detail.state.qr;
+
+    return (
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: 20 }}>
+        <div onClick={e => e.stopPropagation()} style={{ ...jvCard, width: 'min(760px, 100%)', boxShadow: 'var(--shadow-lg)', padding: 26, maxHeight: '90vh', overflowY: 'auto' }}>
+          <Eyebrow style={{ marginBottom: 8 }}>{numberId ? 'Step 2 of 2' : 'Step 1 of 2'}</Eyebrow>
+          <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>Link a WhatsApp number</div>
+
+          {!numberId ? (
+            <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div className="field-group" style={{ marginBottom: 0 }}>
+                <label className="field-label" htmlFor="jv-label">Name it</label>
+                <input id="jv-label" dir="auto" value={label} onChange={e => setLabel(e.target.value)} placeholder="Jarvis — main" />
+              </div>
+              <div className="field-group" style={{ marginBottom: 0 }}>
+                <label className="field-label" htmlFor="jv-owner">AI Chatbots and API key from the account</label>
+                <select id="jv-owner" value={owner} onChange={e => setOwner(e.target.value)}>
+                  <option value="">Mine</option>
+                  {users.map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
+                </select>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>The number answers with this account's AI Chatbots, and its key pays for every Jarvis on it.</div>
+              </div>
+              <JvError error={error} />
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <Btn onClick={onClose}>Cancel</Btn>
+                <Btn variant="primary" onClick={create} disabled={busy}>{busy ? 'Creating…' : 'Continue to QR'}</Btn>
+              </div>
+            </div>
+          ) : linked ? (
+            <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14 }}>
+                <Chip tone="live">Connected</Chip>
+                <span>Linked as <b dir="ltr" style={{ fontFamily: MONO }}>{jvPhone(detail.phone)}</b></span>
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>Next: choose who answers on it, and add the people who get a private Jarvis.</div>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <Btn onClick={onClose}>Close</Btn>
+                <Btn variant="primary" onClick={() => onOpenNumber(numberId)}>Set up who answers</Btn>
+              </div>
+            </div>
+          ) : (
+            <div style={{ marginTop: 18, display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+              <div style={{ width: 280, height: 280, borderRadius: 16, border: '1px solid var(--border)', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                {qr
+                  ? <img src={qr} alt="WhatsApp linking QR code" width="256" height="256" style={{ imageRendering: 'pixelated' }} />
+                  : <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 12.5, padding: 20, lineHeight: 1.6 }}>
+                      <div style={{ display: 'flex', justifyContent: 'center', gap: 4, marginBottom: 10 }}><span className="typing-dot" /><span className="typing-dot" /><span className="typing-dot" /></div>
+                      Starting the connection. The code shows up in a few seconds.
+                    </div>}
+              </div>
+              <div style={{ flex: '1 1 280px', minWidth: 0 }}>
+                <ol style={{ fontSize: 13.5, color: 'var(--text-2)', lineHeight: 1.9, paddingInlineStart: 20, margin: 0 }}>
+                  <li>On the phone that has the number, open <b>WhatsApp</b> (or WhatsApp Business).</li>
+                  <li>Go to <b>Linked devices</b> and tap <b>Link a device</b>.</li>
+                  <li>Point the camera at this code.</li>
+                </ol>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 12, lineHeight: 1.6 }}>
+                  The code refreshes on its own. Keep this window open until the number shows as connected.
+                </div>
+                {detail && detail.state && detail.state.error && <JvError error={detail.state.error} />}
+                <JvError error={error} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, fontSize: 12.5, color: 'var(--text-2)' }}>
+                  <StatusDot on={!!qr} />{qr ? 'Waiting for the scan' : 'Connecting to WhatsApp…'}
+                </div>
+                <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+                  <Btn onClick={onClose}>Close</Btn>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function JarvisNumberView({ id, onBack, onOpenPerson, onShowQr }) {
+    const [n, setN] = useState(null);
+    const [error, setError] = useState(null);
+    const [saving, setSaving] = useState(false);
+    const [adding, setAdding] = useState(false);
+    const [newName, setNewName] = useState('');
+    const [newPhone, setNewPhone] = useState('');
+    const [addError, setAddError] = useState(null);
+    const [testPhone, setTestPhone] = useState('');
+    const [confirm, setConfirm] = useState(null);   // 'unlink' | 'delete'
+    const [label, setLabel] = useState('');
+
+    useEffect(() => {
+      let alive = true;
+      const load = () => jarvisApi(`/api/admin/jarvis/numbers/${id}`)
+        .then(d => { if (alive) { setN(d); setLabel(l => l || d.label); } })
+        .catch(err => alive && setError(err.message));
+      load();
+      const t = setInterval(load, 10000);
+      return () => { alive = false; clearInterval(t); };
+    }, [id]);
+
+    async function patch(body) {
+      setSaving(true); setError(null);
+      try { setN(await jarvisApi(`/api/admin/jarvis/numbers/${id}`, { method: 'PATCH', body })); }
+      catch (err) { setError(err.message); }
+      finally { setSaving(false); }
+    }
+
+    async function addPerson() {
+      setAddError(null);
+      try {
+        const row = await jarvisApi('/api/admin/jarvis/people', { method: 'POST', body: { numberId: id, name: newName, phone: newPhone } });
+        setAdding(false); setNewName(''); setNewPhone('');
+        onOpenPerson(row.id);
+      } catch (err) { setAddError(err.message); }
+    }
+
+    async function remove() {
+      try { await jarvisApi(`/api/admin/jarvis/numbers/${id}`, { method: 'DELETE' }); onBack(); }
+      catch (err) { setError(err.message); setConfirm(null); }
+    }
+
+    if (!n) return <div><JvBack label="Jarvis" onClick={onBack} />{error ? <JvError error={error} /> : <div style={{ color: 'var(--text-2)' }}>Loading…</div>}</div>;
+
+    const st = jvStatus({ ...n, status: n.state.status });
+    const agentName = (n.agents.find(a => a.id === n.agent_id) || {}).name;
+    const elseLabel = n.mode === 'jarvis' ? 'No reply' : (agentName || 'No AI Chatbot chosen');
+    const testDigits = jvDigits(testPhone);
+    const testHit = testDigits.length >= 8 ? n.people.find(p => p.active && p.phone === testDigits) : null;
+    const testResult = testDigits.length < 8 ? null
+      : testHit ? { text: `Private Jarvis · ${testHit.name}`, tone: 'skills' }
+      : n.mode === 'jarvis' || !agentName ? { text: 'Nobody — no reply', tone: 'neutral' }
+      : { text: `AI Chatbot · ${agentName}`, tone: 'tools' };
+
+    const modeCard = (value, title, text) => {
+      const on = n.mode === value;
+      return (
+        <button onClick={() => !on && patch({ mode: value })} aria-pressed={on} style={{
+          flex: '1 1 240px', display: 'flex', gap: 12, alignItems: 'flex-start', textAlign: 'start', padding: 16,
+          borderRadius: 14, color: 'var(--text)', cursor: 'pointer',
+          border: `1.5px solid ${on ? 'var(--primary)' : 'var(--border)'}`, background: on ? 'rgba(239,159,39,0.07)' : 'var(--bg-card)',
+        }}>
+          <span style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, marginTop: 1, boxSizing: 'border-box', background: '#fff', border: on ? '5px solid var(--primary)' : '1.5px solid var(--text-muted)' }} />
+          <span>
+            <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700 }}>{title}</span>
+            <span style={{ display: 'block', fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.55, marginTop: 4 }}>{text}</span>
+          </span>
+        </button>
+      );
+    };
+    const flowBox = (children, style) => <div style={{ borderRadius: 12, padding: '11px 14px', ...style }}>{children}</div>;
+    const arrow = <span aria-hidden="true" style={{ color: 'var(--text-muted)', fontSize: 18 }}>→</span>;
+
+    return (
+      <div>
+        <JvBack label="Jarvis" onClick={onBack} />
+        <PageHeader
+          eyebrow="Number"
+          size={32}
+          title={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+            <span dir="auto">{n.label}</span>
+            <span dir="ltr" style={{ fontFamily: MONO, fontSize: 13, fontWeight: 500, color: 'var(--text-2)', letterSpacing: 0 }}>{jvPhone(n.phone)}</span>
+            <Chip tone={st.tone}>{st.label}</Chip>
+          </span>}
+          actions={<>
+            {saving && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Saving…</span>}
+            {!n.phone && <Btn variant="primary" onClick={onShowQr}>Show QR to link</Btn>}
+            {n.phone && <Btn onClick={() => patch({ enabled: !n.enabled })}>{n.enabled ? 'Pause replies' : 'Resume replies'}</Btn>}
+            {n.phone
+              ? <Btn danger onClick={() => setConfirm('unlink')}>Unlink</Btn>
+              : <Btn danger onClick={() => setConfirm('delete')}>Delete</Btn>}
+          </>}
+        />
+        <JvError error={error} />
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
+          <div style={{ flex: '3 1 520px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <section style={{ ...jvCard, padding: 22, display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <h2 style={jvH2}>Who answers on this number</h2>
+                <div style={jvSub}>Switching takes effect on the next message. No new QR scan.</div>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                {modeCard('agent', 'AI Chatbot + Jarvis list', 'Everyone gets the AI Chatbot you pick. People on the Jarvis list get their own private Jarvis instead.')}
+                {modeCard('jarvis', 'Jarvis only', 'Only people on the list get answers. Messages from anyone else are kept, and nobody replies.')}
+              </div>
+              {n.mode === 'agent' && (
+                <div className="field-group" style={{ marginBottom: 0 }}>
+                  <label className="field-label" htmlFor="jv-agent">AI Chatbot for everyone else</label>
+                  <select id="jv-agent" dir="auto" value={n.agent_id || ''} onChange={e => patch({ agentId: e.target.value || null })}>
+                    <option value="">Choose an AI Chatbot…</option>
+                    {n.agents.map(a => <option key={a.id} value={a.id}>{a.name || a.id}</option>)}
+                  </select>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    From the AI Chatbots of <span style={{ fontFamily: MONO }}>{n.owner_username}</span>. Its conversations show up in Interactions like any other WhatsApp chat.
+                  </div>
+                </div>
+              )}
+            </section>
+
+            <section style={{ ...jvCard, padding: 22 }}>
+              <h2 style={{ ...jvH2, marginBottom: 16 }}>How a message is routed</h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                {flowBox(<><div style={{ fontSize: 13, fontWeight: 700 }}>Message comes in</div><div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3 }}>text, photo, file or voice</div></>, { background: 'var(--bg-panel)', border: '1px solid var(--border)', flex: '0 1 160px' })}
+                {arrow}
+                {flowBox(<div style={{ fontSize: 13, fontWeight: 700 }}>Is the sender on the Jarvis list?</div>, { background: 'var(--sel)', color: 'var(--sel-ink)', flex: '0 1 180px' })}
+                {arrow}
+                <div style={{ flex: '1 1 240px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, color: 'var(--violet)', width: 30 }}>YES</span>
+                    {flowBox(<><div style={{ fontSize: 13, fontWeight: 700, color: 'var(--violet)' }}>Their own private Jarvis</div><div style={{ fontSize: 11.5, color: 'var(--text-2)', marginTop: 2 }}>own memory, reminders and history</div></>, { flex: 1, background: 'var(--violet-dim)', border: '1px solid rgba(109,92,224,0.28)' })}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, color: 'var(--warning)', width: 30 }}>NO</span>
+                    {flowBox(<><div dir="auto" style={{ fontSize: 13, fontWeight: 700, color: 'var(--warning)' }}>{elseLabel}</div><div style={{ fontSize: 11.5, color: 'var(--text-2)', marginTop: 2 }}>{n.mode === 'jarvis' ? 'the message is kept, nothing is sent back' : 'AI Chatbot from 8Legs · shows in Interactions'}</div></>, { flex: 1, background: 'var(--primary-dim)', border: '1px solid rgba(239,159,39,0.3)' })}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section style={{ ...jvCard, padding: 22, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <h2 style={jvH2}>Check a number</h2>
+              <div className="field-group" style={{ marginBottom: 0 }}>
+                <label className="field-label" htmlFor="jv-test">Phone number</label>
+                <input id="jv-test" dir="ltr" value={testPhone} onChange={e => setTestPhone(e.target.value)} placeholder="054-123-4567" style={{ fontFamily: MONO }} />
+              </div>
+              {testResult && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Answered by</span>
+                  <Chip tone={testResult.tone}><span dir="auto">{testResult.text}</span></Chip>
+                </div>
+              )}
+            </section>
+          </div>
+
+          <div style={{ flex: '2 1 360px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <section style={{ ...jvCard, overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '18px 20px', borderBottom: '1px solid var(--bg-hover)' }}>
+                <div>
+                  <h2 style={jvH2}>Jarvis list</h2>
+                  <div style={{ ...jvSub, marginTop: 2 }}>{n.people.length} {n.people.length === 1 ? 'person gets' : 'people get'} a private Jarvis</div>
+                </div>
+                {!adding && <Btn size="sm" icon={Icons.plus} onClick={() => setAdding(true)}>Add person</Btn>}
+              </div>
+
+              {adding && (
+                <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--bg-hover)', background: 'var(--bg-panel)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <div className="field-group" style={{ marginBottom: 0, flex: '1 1 140px' }}>
+                      <label className="field-label" htmlFor="jv-new-name">Name</label>
+                      <input id="jv-new-name" dir="auto" value={newName} onChange={e => setNewName(e.target.value)} placeholder="דנה כהן" />
+                    </div>
+                    <div className="field-group" style={{ marginBottom: 0, flex: '1 1 140px' }}>
+                      <label className="field-label" htmlFor="jv-new-phone">WhatsApp number</label>
+                      <input id="jv-new-phone" dir="ltr" value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="054-123-4567" style={{ fontFamily: MONO }} />
+                    </div>
+                  </div>
+                  <JvError error={addError} />
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <Btn size="sm" onClick={() => { setAdding(false); setAddError(null); }}>Cancel</Btn>
+                    <Btn size="sm" variant="primary" onClick={addPerson} disabled={!newName.trim() || !newPhone.trim()}>Add and set up</Btn>
+                  </div>
+                </div>
+              )}
+
+              {n.people.length === 0 && !adding && (
+                <div style={{ padding: '18px 20px', fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                  Nobody yet. Add yourself first to try Jarvis.
+                </div>
+              )}
+              {n.people.map((p, i) => (
+                <button key={p.id} onClick={() => onOpenPerson(p.id)} style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '13px 20px', background: 'transparent',
+                  borderBottom: '1px solid var(--bg-hover)', color: 'var(--text)', textAlign: 'start', opacity: p.active ? 1 : 0.55,
+                }}>
+                  <JvAvatar name={p.name} i={i} size={34} />
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span dir="auto" style={{ display: 'block', fontSize: 13.5, fontWeight: 700, textAlign: 'left' }}>{p.name}</span>
+                    <span dir="ltr" style={{ display: 'block', fontFamily: MONO, fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>{jvPhone(p.phone)}</span>
+                  </span>
+                  <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{!p.active ? 'paused' : p.last_message_at ? `active ${jvAgo(p.last_message_at)}` : 'no messages yet'}</span>
+                  <span style={{ color: 'var(--text-muted)', display: 'flex', transform: 'rotate(180deg)' }}>{Icons.back}</span>
+                </button>
+              ))}
+
+              <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '14px 20px', background: 'var(--bg-panel)' }}>
+                <span style={{ color: 'var(--text-2)', display: 'flex' }}>{Icons.lock}</span>
+                <span style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6 }}>
+                  Each Jarvis is private: its own memory, reminders and history. Nobody on the list can reach anyone else's, and admins see settings and counts, never content.
+                </span>
+              </div>
+            </section>
+
+            <section style={{ ...jvCard, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <h2 style={jvH2}>Connection</h2>
+              <div className="field-group" style={{ marginBottom: 0 }}>
+                <label className="field-label" htmlFor="jv-rename">Name</label>
+                <input id="jv-rename" dir="auto" value={label} onChange={e => setLabel(e.target.value)}
+                  onBlur={() => label.trim() && label.trim() !== n.label && patch({ label: label.trim() })} />
+              </div>
+              {[
+                ['Status', st.label],
+                ['Last change', n.state.updatedAt ? jvAgo(n.state.updatedAt) : '—'],
+                ['Worker', n.running ? 'holding the connection' : 'not running'],
+                ['AI Chatbots and key from', n.owner_username],
+              ].map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12.5 }}>
+                  <span style={{ color: 'var(--text-muted)' }}>{k}</span>
+                  <span style={{ color: 'var(--text-2)', textAlign: 'end' }}>{v}</span>
+                </div>
+              ))}
+              {n.state.error && <JvError error={n.state.error} />}
+            </section>
+          </div>
+        </div>
+
+        {confirm === 'unlink' && (
+          <ConfirmDialog
+            title="Unlink this number?"
+            body="The device is removed from the phone's linked devices and nothing answers on it until it is scanned again. The Jarvis list and everyone's private data stay."
+            confirmLabel="Unlink" cancelLabel="Cancel"
+            onConfirm={() => { setConfirm(null); patch({ action: 'unlink' }); }}
+            onCancel={() => setConfirm(null)}
+          />
+        )}
+        {confirm === 'delete' && (
+          <ConfirmDialog
+            title="Delete this number?"
+            body="This also deletes its Jarvis list and every person's private Jarvis data on it. It cannot be undone."
+            confirmLabel="Delete" cancelLabel="Cancel"
+            onConfirm={remove}
+            onCancel={() => setConfirm(null)}
+          />
+        )}
+      </div>
+    );
+  }
+
+  /* What a Jarvis can do. `live: false` is set up here but not switched on in
+     Jarvis yet — the admin's choice is kept for when it arrives. */
+  const JV_CAPABILITIES = [
+    { key: 'web',      title: 'Web search',           desc: 'Current answers: prices, opening hours, news', live: true },
+    { key: 'docs',     title: 'Images and documents', desc: 'Reads photos, receipts, screenshots and PDFs', live: true },
+    { key: 'cal',      title: 'Google Calendar',      desc: 'Reads their calendar, creates and moves their own events', live: false },
+    { key: 'gmail',    title: 'Gmail',                desc: 'Summarizes, searches and drafts. Sending waits for their OK', live: false },
+    { key: 'tasks',    title: 'Tasks',                desc: 'Opens and updates tasks on their board', live: false, tasks: true },
+    { key: 'voiceIn',  title: 'Voice messages',       desc: 'Understands their voice notes (OpenAI transcription)', live: false },
+    { key: 'voiceOut', title: 'Voice replies',        desc: 'Answers with a voice note when they send one', live: false },
+    { key: 'files',    title: 'Send files',           desc: 'Sends back documents, tables and PDFs it made', live: false },
+  ];
+  const JV_PROACTIVE = [
+    { key: 'remind', title: 'Reminders',     desc: 'Anything they ask to be reminded of', live: true },
+    { key: 'brief',  title: 'Morning brief', desc: 'Their day, mail that needs them, tasks and weather', live: false, brief: true },
+    { key: 'alerts', title: 'Smart alerts',  desc: 'Urgent mail, clashing meetings, something waiting on them', live: false },
+    { key: 'follow', title: 'Follow-ups',    desc: 'Nudges about things they said they would do', live: false },
+  ];
+  const JV_DAYS = [['sun', 'Sun'], ['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['fri', 'Fri'], ['sat', 'Sat']];
+  const JV_ZONES = ['Asia/Jerusalem', 'Europe/London', 'Europe/Berlin', 'America/New_York', 'America/Los_Angeles', 'UTC'];
+
+  function JarvisPersonView({ id, onBack }) {
+    const [p, setP] = useState(null);
+    const [error, setError] = useState(null);
+    const [saving, setSaving] = useState(false);
+    const [prompt, setPrompt] = useState('');
+    const [callName, setCallName] = useState('');
+    const [confirm, setConfirm] = useState(false);
+
+    useEffect(() => {
+      jarvisApi(`/api/admin/jarvis/people/${id}`)
+        .then(d => { setP(d); setPrompt(d.prompt || ''); setCallName(d.callName || ''); })
+        .catch(err => setError(err.message));
+    }, [id]);
+
+    async function patch(body) {
+      setSaving(true); setError(null);
+      try { setP(await jarvisApi(`/api/admin/jarvis/people/${id}`, { method: 'PATCH', body })); }
+      catch (err) { setError(err.message); }
+      finally { setSaving(false); }
+    }
+
+    async function remove() {
+      try { await jarvisApi(`/api/admin/jarvis/people/${id}`, { method: 'DELETE' }); onBack(); }
+      catch (err) { setError(err.message); setConfirm(false); }
+    }
+
+    if (!p) return <div><JvBack label="Number" onClick={onBack} />{error ? <JvError error={error} /> : <div style={{ color: 'var(--text-2)' }}>Loading…</div>}</div>;
+
+    const row = (item, on, onToggle, extra) => (
+      <div key={item.key} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 22px', borderBottom: '1px solid var(--bg-hover)', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13.5, fontWeight: 650 }}>{item.title}</span>
+            {!item.live && <Chip style={{ padding: '1px 8px', fontSize: 10.5 }}>Not active yet</Chip>}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{item.desc}</div>
+        </div>
+        {on && extra}
+        <JvToggle on={on} label={item.title} onChange={onToggle} />
+      </div>
+    );
+    const sectionHead = (title, sub, right) => (
+      <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--bg-hover)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+        <div><h2 style={jvH2}>{title}</h2>{sub && <div style={jvSub}>{sub}</div>}</div>
+        {right}
+      </div>
+    );
+    const capsOn = JV_CAPABILITIES.filter(c => p.capabilities[c.key]).length;
+    const zones = JV_ZONES.includes(p.timezone) ? JV_ZONES : [p.timezone, ...JV_ZONES];
+
+    return (
+      <div>
+        <JvBack label="Number" onClick={onBack} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap', marginBottom: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <JvAvatar name={p.name} size={56} />
+            <div>
+              <Eyebrow style={{ marginBottom: 6 }}>Private Jarvis</Eyebrow>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <span dir="auto" style={{ fontSize: 30, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1.1 }}>{p.name}</span>
+                <span dir="ltr" style={{ fontFamily: MONO, fontSize: 13, color: 'var(--text-2)' }}>{jvPhone(p.phone)}</span>
+                <Chip tone={p.active ? 'live' : 'neutral'}>{!p.active ? 'Paused' : p.lastMessageAt ? `Active · last message ${jvAgo(p.lastMessageAt)}` : 'Active · no messages yet'}</Chip>
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{saving ? 'Saving…' : 'Changes save automatically'}</span>
+            <Btn onClick={() => patch({ active: !p.active })}>{p.active ? 'Pause Jarvis' : 'Resume Jarvis'}</Btn>
+            <Btn danger onClick={() => setConfirm(true)}>Remove from list</Btn>
+          </div>
+        </div>
+        <JvError error={error} />
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
+          <div style={{ flex: '3 1 520px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <section style={{ ...jvCard, padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <h2 style={jvH2}>Personality</h2>
+                <div style={jvSub}>Free-form instructions for this person's Jarvis. They win over every other setting.</div>
+              </div>
+              <div className="field-group" style={{ marginBottom: 0 }}>
+                <label className="field-label" htmlFor="jv-prompt">Prompt</label>
+                <textarea id="jv-prompt" dir="auto" rows={6} value={prompt} onChange={e => setPrompt(e.target.value)}
+                  onBlur={() => prompt !== p.prompt && patch({ prompt })}
+                  placeholder="אתה Jarvis, העוזר האישי של דנה. ענה תמיד בעברית, קצר ולעניין…"
+                  style={{ resize: 'vertical', lineHeight: 1.7 }} />
+              </div>
+              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                <div className="field-group" style={{ marginBottom: 0, flex: '1 1 200px' }}>
+                  <label className="field-label" htmlFor="jv-call">What Jarvis calls them</label>
+                  <input id="jv-call" dir="auto" value={callName} onChange={e => setCallName(e.target.value)}
+                    onBlur={() => callName !== p.callName && patch({ callName })} />
+                </div>
+                <div className="field-group" style={{ marginBottom: 0, flex: '1 1 200px' }}>
+                  <label className="field-label" htmlFor="jv-tz">Time zone</label>
+                  <select id="jv-tz" value={p.timezone} onChange={e => patch({ timezone: e.target.value })}>
+                    {zones.map(z => <option key={z} value={z}>{z}</option>)}
+                  </select>
+                </div>
+              </div>
+            </section>
+
+            <section style={{ ...jvCard, overflow: 'hidden' }}>
+              {sectionHead('What their Jarvis can do', 'Remembering things and reminders are always on. Anything switched off is hidden from their Jarvis.',
+                <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, color: 'var(--text-2)' }}>{capsOn}/{JV_CAPABILITIES.length} on</span>)}
+              {JV_CAPABILITIES.map(c => row(c, !!p.capabilities[c.key],
+                v => patch({ capabilities: { [c.key]: v } }),
+                c.tasks ? (
+                  <select aria-label="Task app" value={p.proactive.taskApp} onChange={e => patch({ proactive: { taskApp: e.target.value } })} style={{ width: 130, padding: '7px 10px', fontSize: 13 }}>
+                    <option value="trello">Trello</option>
+                    <option value="monday">Monday</option>
+                    <option value="jira">Jira</option>
+                  </select>
+                ) : null))}
+            </section>
+
+            <section style={{ ...jvCard, overflow: 'hidden' }}>
+              {sectionHead('On its own', 'What Jarvis sends them without being asked. Only ever to them.')}
+              {JV_PROACTIVE.map(c => row(c, !!p.proactive[c.key],
+                v => patch({ proactive: { [c.key]: v } }),
+                c.brief ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <input type="time" aria-label="Morning brief time" value={p.proactive.briefTime}
+                      onChange={e => patch({ proactive: { briefTime: e.target.value } })} style={{ width: 110, padding: '6px 10px', fontSize: 13 }} />
+                    <span style={{ display: 'flex', gap: 4 }}>
+                      {JV_DAYS.map(([d, label]) => {
+                        const on = (p.proactive.briefDays || []).includes(d);
+                        return (
+                          <button key={d} aria-pressed={on} onClick={() => patch({ proactive: { briefDays: on ? p.proactive.briefDays.filter(x => x !== d) : [...(p.proactive.briefDays || []), d] } })}
+                            style={{ padding: '4px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700, background: on ? 'var(--sel)' : 'var(--bg-input)', color: on ? 'var(--sel-ink)' : 'var(--text-2)' }}>{label}</button>
+                        );
+                      })}
+                    </span>
+                  </div>
+                ) : null))}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 22px', flexWrap: 'wrap', background: 'var(--bg-panel)' }}>
+                <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 650 }}>Quiet hours</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Nothing arrives in this window except reminders they set for it.</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input type="time" aria-label="Quiet hours start" value={p.proactive.quietFrom} onChange={e => patch({ proactive: { quietFrom: e.target.value } })} style={{ width: 110, padding: '6px 10px', fontSize: 13 }} />
+                  <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>to</span>
+                  <input type="time" aria-label="Quiet hours end" value={p.proactive.quietTo} onChange={e => patch({ proactive: { quietTo: e.target.value } })} style={{ width: 110, padding: '6px 10px', fontSize: 13 }} />
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div style={{ flex: '2 1 360px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <section style={{ ...jvCard, overflow: 'hidden' }}>
+              {sectionHead('Their connected accounts')}
+              {[
+                ['Google · Calendar and Gmail', Icons.email],
+                [{ trello: 'Trello', monday: 'Monday', jira: 'Jira' }[p.proactive.taskApp] || 'Tasks', Icons.grid],
+              ].map(([name, icon]) => (
+                <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px', borderBottom: '1px solid var(--bg-hover)', flexWrap: 'wrap' }}>
+                  <span style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{icon}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 650 }}>{name}</span>
+                    <span style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Not connected</span>
+                  </span>
+                  <Btn size="sm" disabled title="Per-person sign-in arrives in the next phase">Send a connect link</Btn>
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '14px 20px', background: 'var(--bg-panel)' }}>
+                <span style={{ color: 'var(--text-2)', display: 'flex' }}>{Icons.lock}</span>
+                <span style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6 }}>
+                  Only they can connect their accounts, from a one-time link their Jarvis sends them in WhatsApp. You will see whether they're connected, never their mail, calendar or tasks.
+                </span>
+              </div>
+            </section>
+
+            <section style={{ ...jvCard, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <h2 style={jvH2}>Asks them first</h2>
+              {[['Sending an email', 'Always asks', 'tools'], ['Inviting other people to a meeting', 'Always asks', 'tools'], ['Reminders, notes, their own events', 'Right away', 'neutral']].map(([what, how, tone]) => (
+                <div key={what} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, fontSize: 13 }}>
+                  <span>{what}</span><Chip tone={tone}>{how}</Chip>
+                </div>
+              ))}
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', borderTop: '1px solid var(--bg-hover)', paddingTop: 12 }}>Their Jarvis never writes to anyone but them.</div>
+            </section>
+
+            <section style={{ ...jvCard, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ color: 'var(--text-2)', display: 'flex' }}>{Icons.lock}</span>
+                <h2 style={jvH2}>Private to them</h2>
+              </div>
+              {[
+                ['Memory', `${p.private.memory} ${p.private.memory === 1 ? 'fact' : 'facts'}`],
+                ['Reminders', `${p.private.reminders} open`],
+                ['Conversation', p.private.messages ? `${p.private.messages} messages since ${new Date(p.private.since).toLocaleDateString([], { day: 'numeric', month: 'short' })}` : 'not started'],
+              ].map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13 }}>
+                  <span style={{ color: 'var(--text-muted)' }}>{k}</span>
+                  <span style={{ fontFamily: MONO, fontSize: 12.5, color: 'var(--text-2)' }}>{v}</span>
+                </div>
+              ))}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, borderTop: '1px solid var(--bg-hover)', paddingTop: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 650 }}>Admins can open their memory</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.5 }}>Off: only they see it, by asking their Jarvis in WhatsApp. The conversation itself is never shown here.</div>
+                </div>
+                <JvToggle on={p.adminCanViewMemory} label="Admins can open their memory" onChange={v => patch({ adminCanViewMemory: v })} />
+              </div>
+              {p.adminCanViewMemory && Array.isArray(p.memory) && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, background: 'var(--bg-panel)', borderRadius: 10, padding: 12 }}>
+                  {p.memory.length === 0
+                    ? <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Nothing remembered yet.</span>
+                    : p.memory.map(m => <div key={m.id} dir="auto" style={{ fontSize: 12.5, color: 'var(--text-2)' }}>• {m.fact}</div>)}
+                </div>
+              )}
+            </section>
+          </div>
+        </div>
+
+        {confirm && (
+          <ConfirmDialog
+            title={`Remove ${p.name} from the list?`}
+            body="Their private Jarvis is erased: its memory, reminders and conversation. Their messages then go to whoever answers everyone else on this number. It cannot be undone."
+            confirmLabel="Remove" cancelLabel="Cancel"
+            onConfirm={remove}
+            onCancel={() => setConfirm(false)}
+          />
+        )}
+      </div>
+    );
+  }
+
   /* ─────────────────── ADMIN: USER AGENTS ─────────────────── */
   function UserAgentsView({ targetUser, myAgents, onBack, stacked }) {
     const [agents, setAgents] = useState(null);
@@ -13317,6 +14209,7 @@ npm run migrate            # run it`}</Block>
         </div>
         <Row icon={Icons.rows} label="Tables" hint={L('Shared rows your AI Chatbots read and write', 'שורות משותפות שה-AI Chatbots קוראים וכותבים')} onClick={() => onOpen('tables')} />
         <Row icon={Icons.docs} label="Documentation" hint={L('How every part of this works', 'איך כל חלק במערכת עובד')} onClick={() => onOpen('docs')} />
+        {user.isAdmin && <Row icon={Icons.jarvis} label="Jarvis" hint={L('WhatsApp numbers and private assistants', 'מספרי וואטסאפ ועוזרים אישיים')} onClick={() => onOpen('jarvis')} />}
         {user.isAdmin && <Row icon={Icons.admin} label="Admin" hint={L('Users and the template AI Chatbots', 'משתמשים וAI Chatbots של התבנית')} onClick={() => onOpen('admin')} />}
         <div style={{ height: 6 }} />
         <Row icon={Icons.logout} label="Log out" onClick={onLogout} danger />
@@ -13771,6 +14664,15 @@ npm run migrate            # run it`}</Block>
           <MobileTopBar title="Documentation" onBack={() => go('home')} />
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px 16px 24px' }}>
             <DocsView stacked />
+          </div>
+        </div>
+      );
+    } else if (nav === 'jarvis' && user.isAdmin) {
+      screen = (
+        <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <MobileTopBar title="Jarvis" onBack={() => go('home')} />
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px 16px 24px' }}>
+            <JarvisView />
           </div>
         </div>
       );
@@ -14229,6 +15131,7 @@ npm run migrate            # run it`}</Block>
       interactions: ['Workspace', 'Interactions'],
       docs: ['Workspace', 'Documentation'],
       settings: ['Workspace', 'Settings'],
+      jarvis: ['Workspace', 'Jarvis'],
       admin: ['Workspace', 'Admin'],
     };
     const inEditor = nav === 'agents' && state.view === 'editor' && editingAgent;
@@ -14288,6 +15191,8 @@ npm run migrate            # run it`}</Block>
             <TablesView agents={state.agents} onChanged={hydrate} />
           ) : nav === 'docs' ? (
             <DocsView onReplayTour={which => setTour(which)} />
+          ) : nav === 'jarvis' && user.isAdmin ? (
+            <JarvisView />
           ) : nav === 'admin' ? (
             adminSelectedUser ? (
               <UserAgentsView
