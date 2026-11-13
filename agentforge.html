@@ -656,6 +656,16 @@
     if (!r.ok && r.status !== 204) throw new Error(`Could not revoke the token (${r.status})`);
   }
 
+  /* The Claude credit left: the balance typed in from the Console minus what
+     Anthropic's cost report says was spent since. The Admin key stays on the
+     server; only its last four characters come back. */
+  async function apiCredit(method = 'GET', body) {
+    const r = await apiFetch('/api/credit', { method, ...(body ? { body: JSON.stringify(body) } : {}) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `Could not load the credit (${r.status})`);
+    return d;
+  }
+
   async function apiGetSettings() {
     const r = await apiFetch('/api/settings');
     if (!r.ok) throw new Error(`Could not load settings (${r.status})`);
@@ -13735,6 +13745,154 @@ npm run migrate            # run it`}</Block>
     );
   }
 
+  /**
+   * How much Claude credit is left. Anthropic has no API for the balance itself,
+   * so this is the balance the account copied from the Console minus what the
+   * organization spent since — read with an Admin key from the cost report.
+   */
+  function CreditSection({ sectionStyle, sectionHeader }) {
+    const [credit, setCredit] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const [keyDraft, setKeyDraft] = useState('');
+    const [replacingKey, setReplacingKey] = useState(false);
+    const [balanceDraft, setBalanceDraft] = useState('');
+
+    async function run(method, body) {
+      setBusy(true);
+      setError(null);
+      try {
+        const next = await apiCredit(method, body);
+        setCredit(next);
+        return true;
+      } catch (e) { setError(e.message); return false; }
+      finally { setBusy(false); setLoading(false); }
+    }
+    useEffect(() => { run('GET'); }, []);
+
+    async function connect() {
+      const key = keyDraft.trim();
+      if (!key || busy) return;
+      if (await run('PUT', { adminKey: key })) { setKeyDraft(''); setReplacingKey(false); }
+    }
+    async function setBalance() {
+      const v = balanceDraft.trim().replace(/[$,\s]/g, '');
+      if (!v || busy) return;
+      if (await run('PUT', { balanceUsd: v })) setBalanceDraft('');
+    }
+
+    const money = (n) => `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const day = (d) => new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    const label = { fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' };
+    const note = { fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.6 };
+    const c = credit || {};
+    const hasKey = !!c.configured;
+    const hasBalance = hasKey && c.balanceUsd !== null && c.balanceUsd !== undefined;
+    const remaining = c.remainingUsd;
+    const low = remaining !== null && remaining !== undefined && remaining < 5;
+
+    const keyForm = (
+      <div>
+        <label style={label}>{L('Admin key', 'Admin key')}</label>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input type="password" value={keyDraft} onChange={e => setKeyDraft(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') connect(); }}
+            placeholder="sk-ant-admin..." autoComplete="off" style={{ flex: 1 }} />
+          <Btn size="sm" variant="primary" onClick={connect} disabled={busy || !keyDraft.trim()}>
+            {busy ? L('Checking…', 'בודק…') : L('Connect', 'חבר')}
+          </Btn>
+          {replacingKey && <Btn size="sm" onClick={() => { setReplacingKey(false); setKeyDraft(''); }}>{L('Cancel', 'ביטול')}</Btn>}
+        </div>
+        <div style={{ ...note, marginTop: 7 }}>
+          {L('Create one in the Claude Console under Settings › Admin keys. It is tried before it is kept, stays on the server and is never shown again.',
+             'יוצרים אותו ב-Claude Console תחת Settings › Admin keys. הוא נבדק לפני שנשמר, נשאר בשרת ולא מוצג שוב.')}
+        </div>
+      </div>
+    );
+
+    return (
+      <div style={sectionStyle}>
+        <div style={sectionHeader}>{L('Claude credit', 'קרדיט Claude')}</div>
+        <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+            {L('Anthropic does not show the remaining balance through its API. With an Admin key, 8legs reads what your organization spent and takes it off the balance you copy from the Console.',
+               'Anthropic לא חושפת את היתרה דרך ה-API. עם Admin key, 8legs קורא כמה הארגון שלך הוציא ומוריד את זה מהיתרה שאתה מעתיק מה-Console.')}
+          </div>
+
+          {loading ? (
+            <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{L('Loading…', 'טוען…')}</div>
+          ) : !hasKey ? keyForm : (
+            <React.Fragment>
+              {hasBalance && !c.error && (
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+                  <div dir="ltr" style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.02em',
+                                          color: low ? 'var(--warning)' : 'var(--text)' }}>
+                    ≈ {money(Math.max(0, remaining))}
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--text-2)' }}>
+                    {remaining < 0 ? L('left — the credit has probably run out', 'נשאר — כנראה שהקרדיט נגמר')
+                                   : L('left', 'נשאר')}
+                  </div>
+                </div>
+              )}
+
+              {!c.error && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12.5, color: 'var(--text-2)' }}>
+                  {hasBalance && (
+                    <div>
+                      {L('Spent since you entered', 'הוצאה מאז שהזנת')} <span dir="ltr">{money(c.balanceUsd)}</span> {L('on ', 'ב-')}{day(c.balanceAt)}:{' '}
+                      <strong dir="ltr">{money(c.spentSinceUsd || 0)}</strong>
+                    </div>
+                  )}
+                  <div>{L('Spent this month', 'הוצאה החודש')}: <strong dir="ltr">{money(c.monthUsd || 0)}</strong></div>
+                  <div style={note}>
+                    {L('The whole organization, not only 8legs. Anthropic’s cost data runs a few minutes behind.',
+                       'כל הארגון, לא רק 8legs. נתוני העלות של Anthropic מתעדכנים באיחור של כמה דקות.')}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label style={label}>{hasBalance ? L('Update the balance ($)', 'עדכן יתרה ($)') : L('Balance in the Console ($)', 'היתרה ב-Console ($)')}</label>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input inputMode="decimal" value={balanceDraft} onChange={e => setBalanceDraft(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') setBalance(); }}
+                    placeholder="42.50" dir="ltr" style={{ flex: 1 }} />
+                  <Btn size="sm" variant="primary" onClick={setBalance} disabled={busy || !balanceDraft.trim()}>
+                    {busy ? L('Saving…', 'שומר…') : L('Set balance', 'קבע יתרה')}
+                  </Btn>
+                </div>
+                <div style={{ ...note, marginTop: 7 }}>
+                  {L('Copy it from Console › Billing. Enter it again whenever you add credit.',
+                     'מעתיקים מ-Console › Billing. מזינים שוב בכל פעם שמוסיפים קרדיט.')}
+                </div>
+              </div>
+
+              {replacingKey ? keyForm : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                              paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                  <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>
+                    {L('Admin key', 'Admin key')} <span dir="ltr" style={{ fontFamily: 'monospace' }}>{c.keyHint}</span>
+                  </span>
+                  <div style={{ marginInlineStart: 'auto', display: 'flex', gap: 8 }}>
+                    <Btn size="sm" onClick={() => run('GET')} disabled={busy}>{L('Refresh', 'רענן')}</Btn>
+                    <Btn size="sm" onClick={() => setReplacingKey(true)} disabled={busy}>{L('Replace key', 'החלף מפתח')}</Btn>
+                    <Btn size="sm" onClick={() => run('DELETE')} disabled={busy}>{L('Remove', 'הסר')}</Btn>
+                  </div>
+                </div>
+              )}
+            </React.Fragment>
+          )}
+
+          {(error || c.error) && (
+            <div style={{ fontSize: 12, color: 'var(--danger)', lineHeight: 1.5, unicodeBidi: 'plaintext' }}>{error || c.error}</div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   function SettingsPanel({ user, onLogout, settings, onSaveSettings, stacked }) {
     const [draft, setDraft] = useState(() => settings || accountApi());
     const [showKey, setShowKey] = useState(false);
@@ -13804,8 +13962,11 @@ npm run migrate            # run it`}</Block>
       background: 'var(--bg-panel)', border: '1px solid var(--border)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
     };
+    // The credit card reads Anthropic's cost report: it means nothing for OpenAI or Ollama.
+    const onClaude = ((settings && settings.provider) || 'claude') === 'claude';
     const SECTIONS = [
       { id: 'set-model',      label: 'Model & key' },
+      ...(onClaude ? [{ id: 'set-credit', label: L('Claude credit', 'קרדיט Claude') }] : []),
       { id: 'set-tokens',     label: 'Access tokens' },
       { id: 'set-account',    label: 'Account' },
     ];
@@ -13920,6 +14081,12 @@ npm run migrate            # run it`}</Block>
             </div>
           </div>
         </div>
+
+        {onClaude && (
+          <div id="set-credit">
+            <CreditSection sectionStyle={sectionStyle} sectionHeader={sectionHeader} />
+          </div>
+        )}
 
         <div id="set-tokens">
           <TokensSection sectionStyle={sectionStyle} sectionHeader={sectionHeader}
