@@ -134,23 +134,35 @@ export function workerSetupProblem() {
  * Starts a worker session for one number now instead of waiting for the next
  * cron tick. The worker answers 202 right away and keeps running on its own.
  *
- * `via` is the host the caller's own request came in on: a host that is known
- * to reach this deployment. The production URL alone is not enough — it is
- * often the bare domain (8legs.world), which a function inside Vercel cannot
- * reach at all ("fetch failed"), while www works. So: the caller's host first,
- * then the production URL's www form, then the production URL itself.
+ * `via` is the host the caller's own request came in on. From the admin
+ * screen and from a worker handing over, that is a public address that
+ * reaches production. From the cron it is the deployment's own URL, which
+ * Vercel's Deployment Protection answers with a redirect to its login page.
+ * The production URL is no sure thing either: it can be a bare domain a
+ * function inside Vercel cannot reach ("fetch failed"), or a domain added to
+ * the project before its DNS was set up (it does not resolve at all).
+ *
+ * So: the caller's host, then the address that last worked for this number
+ * (kept in wa_numbers.worker_host), then the production URL's www form, then
+ * the production URL itself. Whichever works is remembered for next time.
  */
 export async function kickWorker(numberId, { via } = {}) {
   if (!process.env.CRON_SECRET) return false;
   const prod = process.env.VERCEL_PROJECT_PRODUCTION_URL;
-  const hosts = [...new Set([via, prod && !prod.startsWith('www.') ? `www.${prod}` : null, prod].filter(Boolean))];
+  const [row] = await sql`select worker_host from wa_numbers where id = ${numberId}`.catch(() => []);
+  const hosts = [...new Set([via, row?.worker_host, prod && !prod.startsWith('www.') ? `www.${prod}` : null, prod].filter(Boolean))];
   for (const host of hosts) {
-    if (await kickAt(host, numberId)) return true;
+    const reached = await kickAt(host, numberId);
+    if (!reached) continue;
+    if (reached !== row?.worker_host) {
+      await sql`update wa_numbers set worker_host = ${reached} where id = ${numberId}`.catch(() => {});
+    }
+    return true;
   }
   return false;
 }
 
-/** One attempt at one host. True only when a production worker took the call. */
+/** One attempt at one host: the host that answered when a production worker took the call, else null. */
 async function kickAt(host, numberId) {
   let url = new URL(`https://${host}/api/wa/worker?number=${encodeURIComponent(numberId)}`);
   try {
@@ -169,25 +181,25 @@ async function kickAt(host, numberId) {
         const next = new URL(location, url);
         if (next.protocol !== 'https:' || sameSite(next.hostname) !== sameSite(url.hostname)) {
           console.error(`[wa] not following the worker redirect from ${url.host} to ${next.host}`);
-          return false;
+          return null;
         }
         url = next;
         continue;
       }
       if (!res.ok) {
         console.error(`[wa] worker for ${numberId} answered ${res.status} at ${url.host}`);
-        return false;
+        return null;
       }
       // A preview deployment answers 200 { skipped } and holds nothing.
       const body = await res.json().catch(() => ({}));
-      return !!body.started;
+      return body.started ? url.host : null;
     }
     console.error(`[wa] too many redirects starting a worker for ${numberId} at ${host}`);
-    return false;
+    return null;
   } catch (err) {
     const cause = err.cause ? ` (${err.cause.code || err.cause.message})` : '';
     console.error(`[wa] could not start a worker for ${numberId} at ${url.host}: ${err.message}${cause}`);
-    return false;
+    return null;
   }
 }
 

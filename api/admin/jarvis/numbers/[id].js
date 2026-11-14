@@ -34,6 +34,10 @@ export default async function handler(req, res) {
           problem = 'The WhatsApp worker did not start. Check the Vercel function logs for /api/wa/worker.';
         }
       }
+    } else if (number.enabled && number.phone && !(await leaseHeld(id))) {
+      // A linked number with no worker shows as reconnecting: bring it back from
+      // here, through the address the admin is using, which reaches production.
+      await kickWorker(id, { via: req.headers.host });
     }
     return res.json({ ...(await detail(id, { withQr: !!req.query.qr })), problem });
   }
