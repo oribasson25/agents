@@ -1,4 +1,5 @@
 import { sql } from './_db.js';
+import { DEFAULT_CLAUDE_MODEL, currentClaudeModel } from './_claudeModels.js';
 
 /**
  * Account-level API settings. One key, provider and model drive everything the
@@ -7,7 +8,7 @@ import { sql } from './_db.js';
  */
 
 export const DEFAULT_MODELS = {
-  claude: 'claude-sonnet-4-5',
+  claude: DEFAULT_CLAUDE_MODEL,
   openai: 'gpt-4o',
   ollama: 'gemma4:12b',
 };
@@ -39,7 +40,7 @@ export async function saveUserSettings(userId, patch) {
   const provider = ['claude', 'openai', 'ollama'].includes(patch.provider) ? patch.provider : 'claude';
   const language = ASSISTANT_LANGUAGES.includes(patch.assistantLanguage) ? patch.assistantLanguage : 'en';
   const apiKey = typeof patch.apiKey === 'string' ? patch.apiKey.trim() : '';
-  const model = (typeof patch.model === 'string' && patch.model.trim()) || DEFAULT_MODELS[provider];
+  const model = currentModel(provider, (typeof patch.model === 'string' && patch.model.trim()) || DEFAULT_MODELS[provider]);
   const ollamaHost = typeof patch.ollamaHost === 'string' ? patch.ollamaHost.trim().replace(/\/$/, '') : '';
   /* Only ever set, never cleared — `or` in the UPDATE below. Every screen that
      saves settings sends the whole object back, including a `languageChosen`
@@ -63,6 +64,11 @@ export async function saveUserSettings(userId, patch) {
   return row;
 }
 
+/** The model to call: a retired Claude id becomes its replacement; other providers' ids are left alone. */
+export function currentModel(provider, model) {
+  return (provider || 'claude') === 'claude' ? currentClaudeModel(model) : model;
+}
+
 /** Is this config able to reach a model at all? */
 export function configUsable(cfg) {
   if (!cfg) return false;
@@ -79,7 +85,7 @@ export function resolveApiConfig(settings, agent) {
     ? {
         provider: settings.provider || 'claude',
         apiKey: settings.api_key || '',
-        model: settings.model || DEFAULT_MODELS[settings.provider || 'claude'],
+        model: currentModel(settings.provider, settings.model || DEFAULT_MODELS[settings.provider || 'claude']),
         ollamaHost: settings.ollama_host || '',
       }
     : null;
@@ -89,7 +95,7 @@ export function resolveApiConfig(settings, agent) {
   return {
     provider: own.provider || 'claude',
     apiKey: own.apiKey || '',
-    model: own.model || DEFAULT_MODELS[own.provider || 'claude'],
+    model: currentModel(own.provider, own.model || DEFAULT_MODELS[own.provider || 'claude']),
     ollamaHost: (own.ollamaHost || '').replace(/\/$/, ''),
   };
 }

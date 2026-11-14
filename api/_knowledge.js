@@ -1,6 +1,7 @@
 import { sql } from './_db.js';
 import { logError } from './_errorLog.js';
 import { recordUsage } from './_usage.js';
+import { currentClaudeModel, claudeRequestShape, claudeText } from './_claudeModels.js';
 
 /**
  * The knowledge base: how a document is prepared when it arrives, and how it
@@ -95,15 +96,18 @@ async function callModel(apiConfig, { system, user, maxTokens = 4000, agentId = 
   const model = apiConfig.model;
 
   if (provider === 'claude') {
+    const claudeModel = currentClaudeModel(model);
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiConfig.apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] }),
+      body: JSON.stringify({ model: claudeModel, ...claudeRequestShape(claudeModel, maxTokens), system, messages: [{ role: 'user', content: user }] }),
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
-    await recordUsage({ agentId, model: d.model || model, usage: d.usage, source: 'knowledge' });
-    return (d.content || []).filter(c => c.type === 'text').map(c => c.text).join('').trim();
+    await recordUsage({ agentId, model: d.model || claudeModel, usage: d.usage, source: 'knowledge' });
+    // Fail the whole pass, so a document never loses just the part that was declined.
+    if (d.stop_reason === 'refusal') throw new Error(`Claude declined to rewrite this (${d.stop_details?.category || 'no category given'})`);
+    return claudeText(d);
   }
 
   const base = provider === 'ollama'

@@ -1,5 +1,5 @@
 import { checkAuth } from './_auth.js';
-import { getUserSettings, saveUserSettings, emptySettings, configUsable, resolveApiConfig } from './_settings.js';
+import { getUserSettings, saveUserSettings, emptySettings, configUsable, resolveApiConfig, currentModel } from './_settings.js';
 
 /**
  * The account's API settings. The key is returned to the browser because that
@@ -16,7 +16,8 @@ export default async function handler(req, res) {
     return res.json({
       provider: settings.provider,
       apiKey: settings.api_key,
-      model: settings.model,
+      // A retired id shows as its replacement, so the picker has it and the next save stores it.
+      model: currentModel(settings.provider, settings.model),
       ollamaHost: settings.ollama_host,
       assistantLanguage: settings.assistant_language,
       languageChosen: !!settings.language_chosen,

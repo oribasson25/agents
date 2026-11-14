@@ -388,7 +388,8 @@
   const MONO = "'JetBrains Mono','Fira Code',ui-monospace,monospace";
 
   /* ─────────────────── CONSTANTS ─────────────────── */
-  const CLAUDE_MODELS = ['claude-opus-4-5', 'claude-sonnet-4-5', 'claude-haiku-4-5'];
+  // Kept in step with api/_claudeModels.js. The second entry is the default.
+  const CLAUDE_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'];
   const OPENAI_MODELS = ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'];
   const OLLAMA_MODELS = ['gemma4:4b', 'gemma4:12b', 'gemma4:27b', 'gemma3:latest', 'llama3.2:latest', 'mistral:latest', 'qwen2.5:latest'];
 
@@ -483,6 +484,23 @@
   // mirrors it here, so a change re-renders the tree that reads it.
   const MODELS_BY_PROVIDER = { claude: CLAUDE_MODELS, openai: OPENAI_MODELS, ollama: OLLAMA_MODELS };
   const DEFAULT_MODEL = { claude: CLAUDE_MODELS[1], openai: OPENAI_MODELS[0], ollama: OLLAMA_MODELS[0] };
+
+  /* A copy of claudeRequestShape() in api/_claudeModels.js, for the calls the
+     browser makes itself. Claude 5 models think unless told otherwise and the
+     thinking counts toward max_tokens, so a cap sized for the reply alone can
+     come back with no text: ask for the least thinking, and leave room for it. */
+  const CLAUDE_THINKS_BY_DEFAULT = /^claude-(opus-5|sonnet-5|haiku-5|fable|mythos)/;
+  function claudeRequestShape(model, replyTokens) {
+    if (!CLAUDE_THINKS_BY_DEFAULT.test(model || '')) return { max_tokens: replyTokens };
+    return { max_tokens: replyTokens + 4096, output_config: { effort: 'low' } };
+  }
+  /** The reply text of a Claude response: every text block, never thinking. A refusal is an error, with its reason. */
+  function claudeReplyText(d) {
+    if (d && d.stop_reason === 'refusal') {
+      throw new Error(L(`Claude declined to answer (${d.stop_details?.category || 'no reason given'}).`, `Claude סירב לענות (${d.stop_details?.category || 'ללא סיבה'}).`));
+    }
+    return ((d && d.content) || []).filter(c => c.type === 'text').map(c => c.text).join('\n').trim();
+  }
 
   let ACCOUNT_API = { provider: 'claude', apiKey: '', model: DEFAULT_MODEL.claude, ollamaHost: '', assistantLanguage: 'en' };
   function accountApi() { return ACCOUNT_API; }
@@ -929,7 +947,7 @@
       basePrompt: '',
       skills: [],
       tools: [],
-      apiConfig: { provider: 'claude', apiKey: '', model: 'claude-sonnet-4-5', ollamaHost: '' },
+      apiConfig: { provider: 'claude', apiKey: '', model: DEFAULT_MODEL.claude, ollamaHost: '' },
       dlp: { creditCard: false, israeliId: false },
       scrapeUrls: [],
       emailEnabled: false,
@@ -2184,7 +2202,7 @@ function markSvgString(color, size = 30) {
           'anthropic-version': '2023-06-01',
           'anthropic-dangerous-direct-browser-access': 'true',
         },
-        body: JSON.stringify({ model, max_tokens: maxTokens, system, messages: history }),
+        body: JSON.stringify({ model, ...claudeRequestShape(model, maxTokens), system, messages: history }),
       });
       const d = await r.json();
       if (!r.ok) {
@@ -2192,7 +2210,7 @@ function markSvgString(color, size = 30) {
         throw new Error(d.error?.message || JSON.stringify(d));
       }
       reportClaudeUsage(d, 'builder');
-      return d.content.find(c => c.type === 'text')?.text || '';
+      return claudeReplyText(d);
     }
 
     if (provider === 'ollama') {
@@ -3451,7 +3469,7 @@ function markSvgString(color, size = 30) {
       let msgs = dlpMessages([...history], dlp);
 
       for (let round = 0; round < 10; round++) {
-        const body = { model, max_tokens: 1024, system: systemPrompt, messages: msgs };
+        const body = { model, ...claudeRequestShape(model, 1024), system: systemPrompt, messages: msgs };
         // Gate on what was actually built, not on the agent's own tools —
         // send_email and switch_skill are built in, and an agent with no tools
         // of its own was being handed none of them.
@@ -3463,7 +3481,7 @@ function markSvgString(color, size = 30) {
         if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
         reportClaudeUsage(d, 'test-chat');
 
-        if (d.stop_reason !== 'tool_use') return d.content.find(c => c.type === 'text')?.text || '';
+        if (d.stop_reason !== 'tool_use') return claudeReplyText(d);
 
         // Execute all tool_use blocks (may be multiple)
         const toolUses = d.content.filter(c => c.type === 'tool_use');
@@ -6002,7 +6020,7 @@ function markSvgString(color, size = 30) {
           <H3>Model and API key — at the account level</H3>
           <P>The key, the provider and the model are set <strong>once, on the Settings screen</strong>, and drive every chatbot, every channel and every assistant. There is no per-chatbot setting.</P>
           <UL>
-            <li><strong>Claude</strong> — <Code>claude-opus-4-5</Code>, <Code>claude-sonnet-4-5</Code>, <Code>claude-haiku-4-5</Code>. Needs an Anthropic key.</li>
+            <li><strong>Claude</strong> — <Code>claude-opus-5-5</Code>, <Code>claude-sonnet-5-5</Code> (the default), <Code>claude-haiku-5-5</Code>. Needs an Anthropic key.</li>
             <li><strong>OpenAI</strong> — <Code>gpt-4o</Code>, <Code>gpt-4o-mini</Code>, <Code>gpt-4-turbo</Code>, <Code>gpt-3.5-turbo</Code>. Needs an OpenAI key.</li>
             <li><strong>Ollama</strong> — a local model. Instead of a key you give a server address, and the calls go through a proxy on the server.</li>
           </UL>
@@ -9646,7 +9664,7 @@ npm run migrate            # run it`}</Block>
             'anthropic-dangerous-direct-browser-access': 'true',
           },
           body: JSON.stringify({
-            model, max_tokens: maxTokens, system, messages: msgs,
+            model, ...claudeRequestShape(model, maxTokens), system, messages: msgs,
             tools: tools.map(t => ({ name: t.name, description: t.description, input_schema: t.input_schema })),
           }),
         });
@@ -9654,9 +9672,7 @@ npm run migrate            # run it`}</Block>
         if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
         reportClaudeUsage(d, 'assistant');
 
-        if (d.stop_reason !== 'tool_use') {
-          return d.content.filter(c => c.type === 'text').map(c => c.text).join('\n').trim();
-        }
+        if (d.stop_reason !== 'tool_use') return claudeReplyText(d);
         const uses = d.content.filter(c => c.type === 'tool_use');
         const results = [];
         for (const u of uses) {
@@ -14697,6 +14713,11 @@ npm run migrate            # run it`}</Block>
               <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Model</label>
               <select value={draft.model || ''} onChange={e => set('model', e.target.value)} style={{ borderRadius: 'var(--r-md)' }}>
                 {models.map(m => <option key={m} value={m}>{m}</option>)}
+                {/* A model saved before the list changed: shown, so the select does not
+                    pretend the first option is the one in use. */}
+                {draft.model && !models.includes(draft.model) && (
+                  <option value={draft.model}>{draft.model} {L('(older model)', '(מודל ישן)')}</option>
+                )}
               </select>
             </div>
 
