@@ -12653,13 +12653,27 @@ npm run migrate            # run it`}</Block>
     const [route, setRoute] = useState({ kind: 'list' });
     const [linking, setLinking] = useState(null);   // { numberId? } while the link dialog is open
     const [reloadKey, setReloadKey] = useState(0);
+    const rootRef = React.useRef(null);
+
+    // A new screen starts at its top: the page scrolls inside the shell, which
+    // otherwise keeps the old position and can open a short screen on blank space.
+    useEffect(() => {
+      for (let el = rootRef.current && rootRef.current.parentElement; el && el !== document.body; el = el.parentElement) {
+        const oy = getComputedStyle(el).overflowY;
+        if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight) { el.scrollTop = 0; break; }
+      }
+    }, [route.kind, route.id, route.jid]);
 
     let body;
     if (route.kind === 'number') {
       body = <JarvisNumberView key={route.id + reloadKey} id={route.id}
         onBack={() => setRoute({ kind: 'list' })}
         onOpenPerson={pid => setRoute({ kind: 'person', id: pid, numberId: route.id })}
+        onOpenGroup={(jid, label) => setRoute({ kind: 'group', jid, numberId: route.id, numberLabel: label })}
         onShowQr={() => setLinking({ numberId: route.id })} />;
+    } else if (route.kind === 'group') {
+      body = <JarvisGroupView numberId={route.numberId} jid={route.jid} numberLabel={route.numberLabel}
+        onBack={() => setRoute({ kind: 'number', id: route.numberId })} />;
     } else if (route.kind === 'person') {
       body = <JarvisPersonView id={route.id} onBack={() => setRoute({ kind: 'number', id: route.numberId })} />;
     } else {
@@ -12670,7 +12684,7 @@ npm run migrate            # run it`}</Block>
        these screens position itself against the page instead of the window,
        which on a long page puts the dialog below the fold. */
     return (
-      <div>
+      <div ref={rootRef}>
         {body}
         {linking && (
           <JarvisLinkDialog
@@ -12925,7 +12939,7 @@ npm run migrate            # run it`}</Block>
     );
   }
 
-  function JarvisNumberView({ id, onBack, onOpenPerson, onShowQr }) {
+  function JarvisNumberView({ id, onBack, onOpenPerson, onOpenGroup, onShowQr }) {
     const [n, setN] = useState(null);
     const [error, setError] = useState(null);
     const [saving, setSaving] = useState(false);
@@ -13066,6 +13080,8 @@ npm run migrate            # run it`}</Block>
               </div>
             </section>
 
+            <JarvisGroupsSection n={n} onOpenGroup={jid => onOpenGroup(jid, n.label)} />
+
             <section style={{ ...jvCard, padding: 22, display: 'flex', flexDirection: 'column', gap: 12 }}>
               <h2 style={jvH2}>Check a number</h2>
               <div className="field-group" style={{ marginBottom: 0 }}>
@@ -13159,6 +13175,8 @@ npm run migrate            # run it`}</Block>
               ))}
               {n.state.error && <JvError error={n.state.error} />}
             </section>
+
+            <JarvisGroupSettingsCard n={n} saving={saving} onSave={gs => patch({ groupSettings: gs })} />
           </div>
         </div>
 
@@ -13180,6 +13198,633 @@ npm run migrate            # run it`}</Block>
             onCancel={() => setConfirm(null)}
           />
         )}
+      </div>
+    );
+  }
+
+  /* ─────────────────── WhatsApp groups of a linked number ─────────────────── */
+
+  /* How the number takes part in one group (ported from the Grois group bot). */
+  const JV_GROUP_MODES = [
+    { id: 'off',     title: 'Off',                 chip: 'neutral', text: 'Reads along and keeps the messages. Never writes.' },
+    { id: 'mention', title: 'Only when addressed', chip: 'teal',    text: 'Answers when tagged, called by name or a trigger word, or when someone replies to its message.' },
+    { id: 'smart',   title: 'Decides by itself',   chip: 'tools',   text: 'Reads everything and joins in when it has something to add, within the limits of the number.' },
+    { id: 'always',  title: 'Every message',       chip: 'skills',  text: 'Responds to every burst of messages, with a reply or a reaction.' },
+  ];
+  const jvGroupMode = (id) => JV_GROUP_MODES.find(m => m.id === id) || JV_GROUP_MODES[0];
+  const JV_GROUP_ACTIONS = {
+    reply:     ['Replied', 'live'],
+    react:     ['Reacted', 'teal'],
+    silent:    ['Stayed silent', 'neutral'],
+    limited:   ['Held back by a limit', 'draft'],
+    error:     ['Error', 'danger'],
+    knowledge: ['Learned the group', 'skills'],
+  };
+
+  /*
+   * Reads a WhatsApp "Export chat" file in the browser and prepares it for
+   * learning: parses the messages, splits them into parts small enough for one
+   * request each, and picks real excerpts that show how the group writes. The
+   * file never leaves the browser whole. Ported from the Grois group bot.
+   */
+  const ChatExport = (() => {
+    // Directional marks WhatsApp sprinkles into exports, especially around Hebrew text.
+    const MARKS = /[‎‏‪-‮⁦-⁩﻿]/g;
+    // "[27/10/2026, 14:03:12] Name: text" (iPhone) or "27.10.2026, 14:03 - Name: text" (Android),
+    // in any of the date orders and 12/24-hour styles WhatsApp uses.
+    const HEADER = /^\[?(\d{1,4})[./-](\d{1,2})[./-](\d{1,4}),?\s+(\d{1,2})[:.](\d{2})(?:[:.]\d{2})?(?:\s*([AaPp]\.?\s*[Mm]\.?|לפנה[״"']?צ|אחה[״"']?צ))?\]?\s*(?:[-–]\s+)?(.*)$/;
+    const PLACEHOLDER = /^<[^<>]{1,60}>$|\b(?:image|video|audio|sticker|GIF|document|Contact card) omitted$|\((?:file attached|קובץ מצורף)\)$|הושמט|^(?:This message was deleted|You deleted this message|ההודעה (?:הזו )?נמחקה|מחקת את ההודעה)\.?$|^null$/i;
+    const NOTICE = /end-to-end encrypted|מוצפנות מקצה לקצה/i;
+    const EDITED = /\s*<(?:This message was edited|ההודעה נערכה|הודעה זו נערכה)>$/i;
+
+    const CHUNK_CHARS = 120000;  // ~60-80K tokens of Hebrew: Haiku's cheaper price tier
+    const MAX_CHUNKS = 40;       // larger histories keep only the most recent part
+    const RECENT_CHARS = 100000; // raw recent messages the final step reads directly
+    const SAMPLE_CHARS = 16000;  // style excerpts that go into every prompt
+    const SAMPLE_COUNT = 24;
+
+    /** Text of an exported chat: a .txt file, or the .zip WhatsApp makes on iPhone. */
+    async function readFile(file) {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      const isZip = buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04;
+      return new TextDecoder('utf-8').decode(isZip ? await chatFromZip(buf) : buf);
+    }
+
+    /** Minimal zip reader: finds the chat .txt through the central directory and inflates it. */
+    async function chatFromZip(buf) {
+      const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+      let eocd = -1;
+      for (let i = buf.length - 22; i >= Math.max(0, buf.length - 66000); i--) {
+        if (view.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+      }
+      if (eocd < 0) throw new Error('The zip file is damaged.');
+      const entries = [];
+      let p = view.getUint32(eocd + 16, true);
+      for (let n = view.getUint16(eocd + 10, true); n > 0; n--) {
+        if (view.getUint32(p, true) !== 0x02014b50) break;
+        const nameLen = view.getUint16(p + 28, true);
+        entries.push({
+          method: view.getUint16(p + 10, true),
+          size: view.getUint32(p + 20, true),
+          offset: view.getUint32(p + 42, true),
+          name: new TextDecoder().decode(buf.subarray(p + 46, p + 46 + nameLen)),
+        });
+        p += 46 + nameLen + view.getUint16(p + 30, true) + view.getUint16(p + 32, true);
+      }
+      const texts = entries.filter(e => /\.txt$/i.test(e.name) && !e.name.startsWith('__MACOSX'));
+      const entry = texts.find(e => /_chat\.txt$/i.test(e.name)) || texts.sort((a, b) => b.size - a.size)[0];
+      if (!entry) throw new Error('No chat file inside the zip.');
+      const start = entry.offset + 30 + view.getUint16(entry.offset + 26, true) + view.getUint16(entry.offset + 28, true);
+      const data = buf.subarray(start, start + entry.size);
+      if (entry.method === 0) return data;
+      if (entry.method !== 8) throw new Error('This zip uses a compression the browser cannot open.');
+      const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      return new Uint8Array(await new Response(stream).arrayBuffer());
+    }
+
+    /** Messages in the export, oldest first: { ts, sender, text }. Skips system lines and media. */
+    function parse(raw) {
+      // iPhone marks system lines and attachments with a leading LRM; flag them before the marks go.
+      const lines = raw.replace(/: ‎/g, ': \u0000').replace(MARKS, '').split(/\r?\n/);
+      const heads = lines.map(l => HEADER.exec(l));
+      // 03/04/2025 is ambiguous; a day above 12 anywhere in the file settles the order.
+      let dayFirst = true;
+      if (!heads.some(h => h && h[1].length < 4 && +h[1] > 12) && heads.some(h => h && +h[2] > 12)) dayFirst = false;
+
+      const messages = [];
+      let current = null;
+      lines.forEach((line, i) => {
+        const h = heads[i];
+        if (!h) {
+          if (current && line.trim()) current.text += '\n' + line.trim();
+          return;
+        }
+        current = null;
+        const rest = h[7];
+        const colon = rest.indexOf(': ');
+        if (colon <= 0 || colon > 60) return; // "X added Y", the encryption notice, ...
+        let [y, m, d] = h[1].length === 4 ? [h[1], h[2], h[3]] : dayFirst ? [h[3], h[2], h[1]] : [h[3], h[1], h[2]];
+        y = +y < 100 ? 2000 + +y : +y;
+        let hour = +h[4] % (h[6] ? 12 : 24);
+        if (h[6] && /^p|אחה/i.test(h[6])) hour += 12;
+        const ts = new Date(y, +m - 1, +d, hour, +h[5]).getTime();
+        current = { ts: Number.isNaN(ts) ? null : ts, sender: rest.slice(0, colon).trim(), text: rest.slice(colon + 2) };
+        messages.push(current);
+      });
+      return messages
+        .map(msg => ({ ...msg, text: msg.text.replace(EDITED, '').trim() }))
+        .filter(msg => msg.text && !msg.text.startsWith('\u0000') && !NOTICE.test(msg.text) && !(msg.text.length <= 80 && PLACEHOLDER.test(msg.text)));
+    }
+
+    const pad = (n) => String(n).padStart(2, '0');
+    function stamp(ts, withTime = true) {
+      if (!ts) return '';
+      const d = new Date(ts);
+      const date = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${String(d.getFullYear()).slice(2)}`;
+      return withTime ? `${date} ${pad(d.getHours())}:${pad(d.getMinutes())}` : date;
+    }
+    const line = (msg) => `[${stamp(msg.ts)}] ${msg.sender}: ${msg.text.replace(/\n+/g, ' ↵ ')}`;
+
+    /** Real conversation bursts with several people talking, spread over the recent history. */
+    function pickSamples(messages) {
+      const bursts = [];
+      let burst = [];
+      messages.forEach((msg, i) => {
+        const prev = messages[i - 1];
+        const gap = prev?.ts && msg.ts ? msg.ts - prev.ts > 30 * 60000 : burst.length >= 20;
+        if (gap && burst.length) { bursts.push(burst); burst = []; }
+        burst.push(msg);
+      });
+      if (burst.length) bursts.push(burst);
+      const good = bursts
+        .map(b => b.slice(0, 14))
+        .filter(b => b.length >= 6 && new Set(b.map(msg => msg.sender)).size >= 2 && b.every(msg => msg.text.length < 400))
+        .slice(-300);
+      const step = Math.max(1, good.length / SAMPLE_COUNT);
+      const picked = [];
+      for (let i = good.length - 1; i >= 0 && picked.length < SAMPLE_COUNT; i -= step) picked.unshift(good[Math.floor(i)]);
+      const blocks = [];
+      let size = 0;
+      for (const b of picked.reverse()) {
+        const block = `--- ${stamp(b[0].ts, false)}\n` + b.map(msg => `${msg.sender}: ${msg.text.replace(/\n+/g, ' ↵ ')}`).join('\n');
+        if (size + block.length > SAMPLE_CHARS) break;
+        blocks.unshift(block);
+        size += block.length;
+      }
+      return blocks.join('\n\n');
+    }
+
+    /** Everything the import needs, plus numbers for the confirmation step. */
+    function plan(messages) {
+      let chunks = [];
+      let chunk = null;
+      for (const msg of messages) {
+        const l = line(msg);
+        if (!chunk || chunk.chars + l.length > CHUNK_CHARS) {
+          chunk = { lines: [], chars: 0, from: msg.ts, to: msg.ts, count: 0 };
+          chunks.push(chunk);
+        }
+        chunk.lines.push(l);
+        chunk.chars += l.length + 1;
+        chunk.to = msg.ts;
+        chunk.count++;
+      }
+      const skipped = chunks.length > MAX_CHUNKS ? chunks.slice(0, -MAX_CHUNKS) : [];
+      chunks = chunks.slice(-MAX_CHUNKS);
+
+      const recent = [];
+      for (let i = messages.length - 1, size = 0; i >= 0; i--) {
+        const l = line(messages[i]);
+        if (size + l.length > RECENT_CHARS) break;
+        recent.unshift(l);
+        size += l.length + 1;
+      }
+      const counts = {};
+      for (const msg of messages) counts[msg.sender] = (counts[msg.sender] || 0) + 1;
+      const chars = chunks.reduce((n, c) => n + c.chars, 0);
+      const tokens = Math.round(chars / 2); // Hebrew runs about two characters per token
+      // Haiku 5.5 reads the parts ($0.10/$0.50 per MTok), Opus 5.5 writes the profile ($4/$20).
+      const cost = (tokens * 0.1 + chunks.length * 4000 * 0.5 + (chunks.length * 4000 + RECENT_CHARS / 2) * 4 + 12000 * 20) / 1e6;
+      return {
+        parts: chunks.map((c, i) => ({ part: i + 1, from: stamp(c.from, false), to: stamp(c.to, false), text: c.lines.join('\n') })),
+        recent: recent.join('\n'),
+        samples: pickSamples(messages),
+        stats: {
+          messages: messages.length,
+          used: chunks.reduce((n, c) => n + c.count, 0),
+          skippedBefore: skipped.length ? stamp(skipped.at(-1).to, false) : null,
+          from: stamp(messages[0]?.ts, false),
+          to: stamp(messages.at(-1)?.ts, false),
+          participants: Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([name, n]) => ({ name, messages: n })),
+          tokens,
+          cost: Math.round(cost * 100) / 100,
+        },
+      };
+    }
+
+    return { readFile, parse, plan };
+  })();
+
+  /** The groups a number is in, on the number's page. */
+  function JarvisGroupsSection({ n, onOpenGroup }) {
+    const groups = n.groups || [];
+    const on = groups.filter(g => g.mode !== 'off').length;
+    const numberAgent = (n.agents.find(a => a.id === n.agent_id) || {}).name;
+    return (
+      <section style={{ ...jvCard, overflow: 'hidden' }}>
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--bg-hover)' }}>
+          <h2 style={jvH2}>Groups</h2>
+          <div style={{ ...jvSub, marginTop: 2 }}>
+            {groups.length ? `${groups.length} ${groups.length === 1 ? 'group' : 'groups'} · ${on} switched on` : 'The number is not in any group yet'}
+          </div>
+        </div>
+        {groups.length === 0 && (
+          <div style={{ padding: '16px 20px', fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+            Add the number to a WhatsApp group from any phone. The group shows up here switched off, and you decide how it takes part.
+          </div>
+        )}
+        {groups.map(g => {
+          const mode = jvGroupMode(g.mode);
+          return (
+            <button key={g.jid} onClick={() => onOpenGroup(g.jid)} style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '13px 20px', background: 'transparent',
+              borderBottom: '1px solid var(--bg-hover)', color: 'var(--text)', textAlign: 'start', opacity: g.mode === 'off' ? 0.7 : 1,
+            }}>
+              <span style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text-2)' }}>{Icons.users || '👥'}</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span dir="auto" style={{ display: 'block', fontSize: 13.5, fontWeight: 700, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.name || 'Unnamed group'}</span>
+                <span dir="auto" style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2, textAlign: 'left' }}>
+                  {g.agent_name || numberAgent || 'No AI Chatbot'}{g.learned ? ' · learned the group' : ''}{g.actions_today ? ` · ${g.actions_today} today` : ''}
+                </span>
+              </span>
+              <Chip tone={mode.chip}>{mode.title}</Chip>
+              <span style={{ color: 'var(--text-muted)', display: 'flex', transform: 'rotate(180deg)' }}>{Icons.back}</span>
+            </button>
+          );
+        })}
+      </section>
+    );
+  }
+
+  /** Settings every group of the number shares: the name it answers to, quiet hours, limits. */
+  function JarvisGroupSettingsCard({ n, onSave, saving }) {
+    const toDraft = (s) => ({ ...s, triggerWords: (s.triggerWords || []).join(', ') });
+    const [draft, setDraft] = useState(() => toDraft(n.groupSettings));
+    const dirty = JSON.stringify(draft) !== JSON.stringify(toDraft(n.groupSettings));
+    useEffect(() => { if (!dirty) setDraft(toDraft(n.groupSettings)); }, [JSON.stringify(n.groupSettings)]);
+    const set = (k, v) => setDraft(d => ({ ...d, [k]: v }));
+    const num = (k, label, hint) => (
+      <div className="field-group" style={{ marginBottom: 0, flex: '1 1 120px' }}>
+        <label className="field-label" htmlFor={`jvg-${k}`}>{label}</label>
+        <input id={`jvg-${k}`} type="number" min="0" value={draft[k]} onChange={e => set(k, e.target.value === '' ? '' : Number(e.target.value))} style={{ fontFamily: MONO }} />
+        {hint && <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{hint}</div>}
+      </div>
+    );
+    return (
+      <section style={{ ...jvCard, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div>
+          <h2 style={jvH2}>In groups</h2>
+          <div style={jvSub}>For every group this number is in.</div>
+        </div>
+        <div className="field-group" style={{ marginBottom: 0 }}>
+          <label className="field-label" htmlFor="jvg-name">Name it answers to</label>
+          <input id="jvg-name" dir="auto" value={draft.callName} onChange={e => set('callName', e.target.value)} placeholder={n.state.me?.name || 'Its WhatsApp profile name'} />
+        </div>
+        <div className="field-group" style={{ marginBottom: 0 }}>
+          <label className="field-label" htmlFor="jvg-words">Other words that call it</label>
+          <input id="jvg-words" dir="auto" value={draft.triggerWords} onChange={e => set('triggerWords', e.target.value)} placeholder="ג׳ארוויס, jarvis" />
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Separated by commas. Tagging it or replying to its message always counts.</div>
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div className="field-group" style={{ marginBottom: 0, flex: '1 1 90px' }}>
+            <label className="field-label" htmlFor="jvg-qf">Quiet from</label>
+            <input id="jvg-qf" dir="ltr" value={draft.quietFrom} onChange={e => set('quietFrom', e.target.value)} placeholder="23:30" style={{ fontFamily: MONO }} />
+          </div>
+          <div className="field-group" style={{ marginBottom: 0, flex: '1 1 90px' }}>
+            <label className="field-label" htmlFor="jvg-qt">Quiet until</label>
+            <input id="jvg-qt" dir="ltr" value={draft.quietTo} onChange={e => set('quietTo', e.target.value)} placeholder="07:00" style={{ fontFamily: MONO }} />
+          </div>
+          <div className="field-group" style={{ marginBottom: 0, flex: '1 1 140px' }}>
+            <label className="field-label" htmlFor="jvg-tz">Time zone</label>
+            <select id="jvg-tz" value={draft.timezone} onChange={e => set('timezone', e.target.value)}>
+              {[...new Set([draft.timezone, ...JV_ZONES])].map(z => <option key={z} value={z}>{z}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: -4 }}>In quiet hours it only answers when addressed.</div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {num('maxActionsPerHour', 'Actions an hour', 'per group')}
+          {num('unsolicitedPerHour', 'Unprompted an hour', '“decides by itself”')}
+          {num('quietGap', 'Messages between', 'by others, before it speaks unprompted again')}
+        </div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <Btn size="sm" onClick={() => setDraft(toDraft(n.groupSettings))} disabled={!dirty || saving}>Discard</Btn>
+          <Btn size="sm" variant="primary" disabled={!dirty || saving}
+            onClick={() => onSave({ ...draft, triggerWords: draft.triggerWords.split(',').map(w => w.trim()).filter(Boolean) })}>Save</Btn>
+        </div>
+      </section>
+    );
+  }
+
+  /** What the number learned about a group from a chat export, and the import itself. */
+  function JarvisGroupKnowledge({ numberId, jid, group, onChanged }) {
+    const [job, setJob] = useState(null);          // { phase: 'plan'|'digest'|'build'|'error', ... }
+    const [editor, setEditor] = useState(null);    // { profile, samples } while editing
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const fileRef = React.useRef(null);
+    const base = `/api/admin/jarvis/group-knowledge?numberId=${encodeURIComponent(numberId)}&jid=${encodeURIComponent(jid)}`;
+    const k = group.knowledge;
+    const building = (job && (job.phase === 'digest' || job.phase === 'build')) || k?.job?.status === 'building';
+
+    async function pick(file) {
+      setError(null);
+      try {
+        const raw = await ChatExport.readFile(file);
+        const messages = ChatExport.parse(raw);
+        if (messages.length < 20) throw new Error('This does not look like a WhatsApp chat export: fewer than 20 messages were found.');
+        setJob({ phase: 'plan', plan: ChatExport.plan(messages), fileName: file.name });
+      } catch (e) { setError(e.message); }
+    }
+
+    async function run() {
+      const { parts, recent, samples, stats } = job.plan;
+      setJob(j => ({ ...j, phase: 'digest', done: 0, total: parts.length }));
+      window.onbeforeunload = () => true;
+      try {
+        const notes = new Array(parts.length);
+        let next = 0;
+        const worker = async () => {
+          for (let i; (i = next++) < parts.length; ) {
+            const p = parts[i];
+            for (let attempt = 1; ; attempt++) {
+              try {
+                const res = await jarvisApi(base, { method: 'POST', body: { step: 'digest', parts: parts.length, ...p } });
+                notes[i] = { part: p.part, from: p.from, to: p.to, notes: res.notes };
+                break;
+              } catch (e) {
+                if (attempt >= 3) throw e;
+                await new Promise(r => setTimeout(r, 3000 * attempt));
+              }
+            }
+            setJob(j => ({ ...j, done: (j.done || 0) + 1 }));
+          }
+        };
+        await Promise.all([worker(), worker(), worker()]);
+        setJob(j => ({ ...j, phase: 'build' }));
+        await jarvisApi(base, { method: 'POST', body: { step: 'build', notes, recent, samples, stats } });
+        window.onbeforeunload = null; // the server finishes on its own from here
+        for (;;) {
+          await new Promise(r => setTimeout(r, 5000));
+          const { knowledge } = await jarvisApi(base);
+          if (knowledge?.job?.status === 'error') throw new Error(knowledge.job.error);
+          if (knowledge && !knowledge.job) break;
+        }
+        setJob(null);
+        onChanged();
+      } catch (e) {
+        setJob(j => ({ ...j, phase: 'error', error: e.message }));
+      } finally {
+        window.onbeforeunload = null;
+      }
+    }
+
+    async function openEditor() {
+      setBusy(true); setError(null);
+      try {
+        const { knowledge } = await jarvisApi(base);
+        setEditor({ profile: knowledge?.profile || '', samples: knowledge?.samples || '' });
+      } catch (e) { setError(e.message); }
+      finally { setBusy(false); }
+    }
+    async function saveEditor() {
+      setBusy(true); setError(null);
+      try { await jarvisApi(base, { method: 'PUT', body: editor }); setEditor(null); onChanged(); }
+      catch (e) { setError(e.message); }
+      finally { setBusy(false); }
+    }
+    async function forget() {
+      setBusy(true); setError(null);
+      try { await jarvisApi(base, { method: 'DELETE' }); setEditor(null); onChanged(); }
+      catch (e) { setError(e.message); }
+      finally { setBusy(false); }
+    }
+
+    const stats = k?.stats;
+    const plan = job?.phase === 'plan' ? job.plan.stats : null;
+    return (
+      <section style={{ ...jvCard, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div>
+          <h2 style={jvH2}>What it knows about the group</h2>
+          <div style={jvSub}>
+            {k?.importedAt
+              ? <>Learned from {stats?.messages ? `${Number(stats.messages).toLocaleString()} messages` : 'a chat export'}{stats?.from ? ` (${stats.from}–${stats.to})` : ''} · {jvAgo(k.importedAt)}</>
+              : 'Only what it has seen since it joined. Teach it the group’s history from a chat export: who is who, inside jokes, how people write.'}
+          </div>
+        </div>
+
+        {!job && !building && !editor && (
+          <>
+            <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6, padding: '10px 12px', borderRadius: 10, background: 'var(--bg-panel)', border: '1px solid var(--border)' }}>
+              On a phone in the group: group info › <strong>Export chat</strong> › <strong>Without media</strong>. Pick the .zip or .txt here. It is read in this browser and sent in parts; keep this page open until the parts are read.
+            </div>
+            <input ref={fileRef} type="file" accept=".zip,.txt,text/plain,application/zip" style={{ display: 'none' }}
+              onChange={e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) pick(f); }} />
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Btn size="sm" variant={k?.importedAt ? 'ghost' : 'primary'} onClick={() => fileRef.current && fileRef.current.click()}>
+                {k?.importedAt ? 'Import a newer export' : 'Import chat export'}
+              </Btn>
+              {k?.importedAt && <Btn size="sm" onClick={openEditor} disabled={busy}>View and edit</Btn>}
+            </div>
+          </>
+        )}
+
+        {plan && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12.5, color: 'var(--text-2)' }}>
+            <div dir="auto"><strong>{job.fileName}</strong></div>
+            <div>{plan.messages.toLocaleString()} messages from {plan.participants.length} people, {plan.from}–{plan.to}.</div>
+            {plan.skippedBefore && <div style={{ color: 'var(--warning)' }}>A very long history: it learns from the most recent part, after {plan.skippedBefore}.</div>}
+            <div>{job.plan.parts.length} {job.plan.parts.length === 1 ? 'part' : 'parts'} to read. Estimated cost on the owner’s Claude key: <strong dir="ltr">≈ ${plan.cost.toFixed(2)}</strong>.</div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <Btn size="sm" onClick={() => setJob(null)}>Cancel</Btn>
+              <Btn size="sm" variant="primary" onClick={run}>Learn the group</Btn>
+            </div>
+          </div>
+        )}
+
+        {building && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ fontSize: 12.5, color: 'var(--text-2)' }}>
+              {job?.phase === 'digest'
+                ? `Reading part ${Math.min((job.done || 0) + 1, job.total)} of ${job.total}… keep this page open.`
+                : 'Writing the group’s profile. This takes a few minutes; you can leave the page.'}
+            </div>
+            <div style={{ height: 6, borderRadius: 3, background: 'var(--bg-hover)', overflow: 'hidden' }}>
+              <div style={{ height: '100%', background: 'var(--primary)', transition: 'width 0.4s',
+                width: job?.phase === 'digest' ? `${Math.round(((job.done || 0) / job.total) * 90)}%` : '94%' }} />
+            </div>
+          </div>
+        )}
+
+        {editor && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div className="field-group" style={{ marginBottom: 0 }}>
+              <label className="field-label" htmlFor="jvk-profile">The group’s profile</label>
+              <textarea id="jvk-profile" dir="auto" rows={14} value={editor.profile} onChange={e => setEditor(v => ({ ...v, profile: e.target.value }))} />
+            </div>
+            <div className="field-group" style={{ marginBottom: 0 }}>
+              <label className="field-label" htmlFor="jvk-samples">Real excerpts (how they write)</label>
+              <textarea id="jvk-samples" dir="auto" rows={7} value={editor.samples} onChange={e => setEditor(v => ({ ...v, samples: e.target.value }))} />
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <Btn size="sm" danger onClick={forget} disabled={busy}>Forget it</Btn>
+              <span style={{ flex: 1 }} />
+              <Btn size="sm" onClick={() => setEditor(null)} disabled={busy}>Close</Btn>
+              <Btn size="sm" variant="primary" onClick={saveEditor} disabled={busy}>Save</Btn>
+            </div>
+          </div>
+        )}
+
+        {job?.phase === 'error' && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <JvError error={`The import failed: ${job.error}`} />
+            <Btn size="sm" onClick={() => setJob(null)}>OK</Btn>
+          </div>
+        )}
+        {k?.job?.status === 'error' && !job && <JvError error={k.job.error} />}
+        <JvError error={error} />
+      </section>
+    );
+  }
+
+  /** One WhatsApp group of a linked number: how it takes part, who speaks, and what it did. */
+  function JarvisGroupView({ numberId, jid, numberLabel, onBack }) {
+    const [g, setG] = useState(null);
+    const [error, setError] = useState(null);
+    const [saving, setSaving] = useState(false);
+    const [instr, setInstr] = useState(null);   // the instructions draft, null until loaded
+    const url = `/api/admin/jarvis/group?numberId=${encodeURIComponent(numberId)}&jid=${encodeURIComponent(jid)}`;
+
+    const load = React.useCallback(() => jarvisApi(url)
+      .then(d => { setG(d); setInstr(v => (v === null ? d.instructions || '' : v)); setError(null); })
+      .catch(err => setError(err.message)), [url]);
+    useEffect(() => {
+      load();
+      const t = setInterval(load, 10000);
+      return () => clearInterval(t);
+    }, [load]);
+
+    async function patch(body) {
+      setSaving(true); setError(null);
+      try { setG(await jarvisApi(url, { method: 'PATCH', body })); }
+      catch (err) { setError(err.message); }
+      finally { setSaving(false); }
+    }
+
+    if (!g) return <div><JvBack label={numberLabel || 'Number'} onClick={onBack} />{error ? <JvError error={error} /> : <div style={{ color: 'var(--text-2)' }}>Loading…</div>}</div>;
+
+    const mode = jvGroupMode(g.mode);
+    const instrDirty = instr !== null && instr !== (g.instructions || '');
+    const modeCard = (m) => {
+      const on = g.mode === m.id;
+      return (
+        <button key={m.id} onClick={() => !on && patch({ mode: m.id })} aria-pressed={on} style={{
+          flex: '1 1 220px', display: 'flex', gap: 12, alignItems: 'flex-start', textAlign: 'start', padding: 14,
+          borderRadius: 14, color: 'var(--text)', cursor: 'pointer',
+          border: `1.5px solid ${on ? 'var(--primary)' : 'var(--border)'}`, background: on ? 'rgba(239,159,39,0.07)' : 'var(--bg-card)',
+        }}>
+          <span style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, marginTop: 1, boxSizing: 'border-box', background: '#fff', border: on ? '5px solid var(--primary)' : '1.5px solid var(--text-muted)' }} />
+          <span>
+            <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700 }}>{m.title}</span>
+            <span style={{ display: 'block', fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.55, marginTop: 4 }}>{m.text}</span>
+          </span>
+        </button>
+      );
+    };
+    const row = (label, control, hint) => (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{label}</div>
+          {hint && <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>{hint}</div>}
+        </div>
+        {control}
+      </div>
+    );
+
+    return (
+      <div>
+        <JvBack label={g.numberLabel || numberLabel || 'Number'} onClick={onBack} />
+        <PageHeader
+          eyebrow="Group"
+          size={30}
+          title={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+            <span dir="auto">{g.name || 'Unnamed group'}</span>
+            <Chip tone={mode.chip} style={{ letterSpacing: 0 }}>{mode.title}</Chip>
+          </span>}
+          actions={saving ? <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Saving…</span> : null}
+        />
+        <JvError error={error} />
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
+          <div style={{ flex: '3 1 520px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <section style={{ ...jvCard, padding: 22, display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <h2 style={jvH2}>How it takes part</h2>
+                <div style={jvSub}>Takes effect on the next message in the group.</div>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>{JV_GROUP_MODES.map(modeCard)}</div>
+              {g.mode !== 'off' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingTop: 14, borderTop: '1px solid var(--bg-hover)' }}>
+                  {g.mode === 'smart' && row('How eager to join in',
+                    <SegTabs value={g.engagement} onChange={v => patch({ engagement: v })}
+                      items={[{ id: 'low', label: 'Rarely' }, { id: 'medium', label: 'Now and then' }, { id: 'high', label: 'Often' }]} />)}
+                  {row('Reply length',
+                    <SegTabs value={g.replyLength} onChange={v => patch({ replyLength: v })}
+                      items={[{ id: 'low', label: 'One-liners' }, { id: 'medium', label: 'Short' }, { id: 'high', label: 'Longer' }]} />)}
+                  {row('Emoji reactions', <JvToggle on={g.allowReactions} label="Emoji reactions" onChange={v => patch({ allowReactions: v })} />,
+                    'It may react to a message instead of writing.')}
+                </div>
+              )}
+            </section>
+
+            <section style={{ ...jvCard, padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <h2 style={jvH2}>Who speaks here</h2>
+              <div className="field-group" style={{ marginBottom: 0 }}>
+                <label className="field-label" htmlFor="jvg-agent">AI Chatbot</label>
+                <select id="jvg-agent" dir="auto" value={g.agentId || ''} onChange={e => patch({ agentId: e.target.value || null })}>
+                  <option value="">{g.numberAgentName ? `The number’s AI Chatbot (${g.numberAgentName})` : 'The number’s AI Chatbot (none chosen)'}</option>
+                  {g.agents.map(a => <option key={a.id} value={a.id}>{a.name || a.id}</option>)}
+                </select>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Its prompt, skills and knowledge are who it is in the group. Replies use the owner’s Claude key.</div>
+              </div>
+              <div className="field-group" style={{ marginBottom: 0 }}>
+                <label className="field-label" htmlFor="jvg-instr">Instructions for this group</label>
+                <textarea id="jvg-instr" dir="auto" rows={6} value={instr ?? ''} onChange={e => setInstr(e.target.value)}
+                  placeholder="Who you are in this group, what you talk about, where your humor stops, when to stay quiet…" />
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>They win over everything else: the AI Chatbot’s prompt, what it learned about the group, and the defaults.</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <Btn size="sm" onClick={() => setInstr(g.instructions || '')} disabled={!instrDirty || saving}>Discard</Btn>
+                <Btn size="sm" variant="primary" onClick={() => patch({ instructions: instr })} disabled={!instrDirty || saving}>Save instructions</Btn>
+              </div>
+            </section>
+
+            <JarvisGroupKnowledge numberId={numberId} jid={jid} group={g} onChanged={load} />
+          </div>
+
+          <div style={{ flex: '2 1 360px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <section style={{ ...jvCard, overflow: 'hidden' }}>
+              <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--bg-hover)' }}>
+                <h2 style={jvH2}>Activity</h2>
+                <div style={{ ...jvSub, marginTop: 2 }}>{g.counts.last_hour} in the last hour · {g.counts.today} today · kept 30 days</div>
+              </div>
+              {g.events.length === 0 && (
+                <div style={{ padding: '16px 20px', fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                  {g.mode === 'off' ? 'Nothing yet: the group is switched off.' : 'Nothing yet. What it does here, and why, shows up in this list.'}
+                </div>
+              )}
+              {g.events.map(e => {
+                const [label, tone] = JV_GROUP_ACTIONS[e.action] || [e.action, 'neutral'];
+                return (
+                  <div key={e.id} style={{ padding: '12px 20px', borderBottom: '1px solid var(--bg-hover)', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <Chip tone={tone}>{label}{e.emoji ? ` ${e.emoji}` : ''}</Chip>
+                      {e.addressed && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>addressed</span>}
+                      {e.unsolicited && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>unprompted</span>}
+                      <span style={{ marginInlineStart: 'auto', fontSize: 11.5, color: 'var(--text-muted)' }}>{jvAgo(e.at)}</span>
+                    </div>
+                    {e.trigger && <div dir="auto" style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'left' }}>↪ {e.triggerFrom ? `${e.triggerFrom}: ` : ''}{e.trigger}</div>}
+                    {e.text && <div dir="auto" style={{ fontSize: 13, color: 'var(--text)', whiteSpace: 'pre-wrap', textAlign: 'left' }}>{e.text}</div>}
+                    {e.why && <div dir="auto" style={{ fontSize: 11.5, color: 'var(--text-2)', fontStyle: 'italic', textAlign: 'left' }}>{e.why}</div>}
+                    {e.reason && <div style={{ fontSize: 11.5, color: 'var(--text-2)' }}>{e.reason}</div>}
+                    {e.message && <div style={{ fontSize: 11.5, color: 'var(--danger)' }}>{e.message}</div>}
+                    {e.action === 'knowledge' && e.messages && <div style={{ fontSize: 11.5, color: 'var(--text-2)' }}>Read {Number(e.messages).toLocaleString()} messages</div>}
+                  </div>
+                );
+              })}
+            </section>
+          </div>
+        </div>
       </div>
     );
   }
@@ -13764,6 +14409,8 @@ npm run migrate            # run it`}</Block>
   const CREDIT_SOURCES = {
     agents:      ['AI Chatbots (widget, WhatsApp)', 'AI Chatbots (וידג׳ט, וואטסאפ)'],
     jarvis:      ['Jarvis', 'Jarvis'],
+    groups:      ['WhatsApp groups', 'קבוצות וואטסאפ'],
+    'group-learning': ['Learning groups from chat exports', 'לימוד קבוצות מייצוא צ׳אט'],
     knowledge:   ['Knowledge processing', 'עיבוד ידע'],
     builder:     ['Building agents', 'בניית סוכנים'],
     'test-chat': ['Test chat', 'צ׳אט בדיקה'],

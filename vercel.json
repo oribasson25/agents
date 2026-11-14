@@ -43,6 +43,9 @@
     },
     "api/wa/cron.js": {
       "maxDuration": 60
+    },
+    "api/admin/jarvis/group-knowledge.js": {
+      "maxDuration": 800
     }
   },
   "headers": [

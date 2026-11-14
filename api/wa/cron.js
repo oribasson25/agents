@@ -1,5 +1,6 @@
 import { sql } from '../_db.js';
 import { kickWorker, workerAuthorized } from '../_waControl.js';
+import { pruneGroups } from '../_waGroups.js';
 
 /**
  * Every minute: make sure each linked number has a worker session holding its
@@ -21,6 +22,8 @@ export default async function handler(req, res) {
 
   // Only the last few days matter for spotting a redelivered message.
   await sql`delete from wa_seen where created_at < now() - interval '3 days'`.catch(() => {});
+  // Group messages and the activity log are kept for 30 days; once an hour is enough.
+  if (new Date().getUTCMinutes() === 0) await pruneGroups().catch(() => {});
 
   return res.json({ kicked });
 }

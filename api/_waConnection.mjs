@@ -20,23 +20,28 @@ const logger = pino({ level: process.env.WA_LOG_LEVEL || 'info' });
 /**
  * One linked-device connection to WhatsApp for one number (like WhatsApp Web).
  *
- * Ported from the Grois group bot, narrowed to what a number in 8Legs does:
- * one-to-one chats. Groups, status updates and channels are ignored.
+ * Ported from the Grois group bot: one-to-one chats, and the groups the number
+ * is a member of. Status updates and channels are ignored.
  *
- * Emits 'state' when the connection state changes and 'message' for every
- * parsed one-to-one message. `fatal` is set when the session must end (another
+ * Emits 'state' when the connection state changes, 'message' for every parsed
+ * message (`isGroup` tells which kind), and 'groups' with { jid, name } of
+ * groups the number is in. `fatal` is set when the session must end (another
  * connection replaced this one).
  */
 export class WhatsApp extends EventEmitter {
   sock = null;
   state = { status: 'starting', qr: null, me: null, error: null };
   fatal = null;
+  names = new Map();      // user id (no device / server) -> display name seen in a group
+  groupCache = new Map(); // group jid -> metadata, which Baileys reuses when sending to a group
   #auth = null;
   #stopping = false;
 
-  constructor({ numberId }) {
+  /** @param {{ numberId: string, selfName?: () => string }} opts  selfName: how the number is shown when someone tags it */
+  constructor({ numberId, selfName = () => null }) {
     super();
     this.numberId = numberId;
+    this.selfName = selfName;
     this.log = logger.child({ module: 'wa', numberId });
   }
 
@@ -61,6 +66,7 @@ export class WhatsApp extends EventEmitter {
       browser: ['8Legs', 'Chrome', '1.0'],
       markOnlineOnConnect: false, // keep the phone's own notifications working
       syncFullHistory: false,
+      cachedGroupMetadata: async (jid) => this.groupCache.get(jid),
     });
     this.sock = sock;
     this.#setState({ status: 'connecting', qr: null, error: null });
@@ -80,6 +86,7 @@ export class WhatsApp extends EventEmitter {
         };
         this.#setState({ status: 'open', qr: null, me, error: null });
         this.log.info({ me }, 'connected');
+        this.refreshGroups().catch((err) => this.log.warn({ err: err.message }, 'could not list groups'));
       }
       if (connection === 'close') {
         const code = lastDisconnect?.error?.output?.statusCode;
@@ -103,6 +110,13 @@ export class WhatsApp extends EventEmitter {
         }, 2000);
       }
     });
+
+    sock.ev.on('groups.upsert', (groups) => {
+      for (const g of groups) this.groupCache.set(g.id, g);
+      this.emit('groups', groups.map((g) => ({ jid: g.id, name: g.subject || null })));
+    });
+    sock.ev.on('groups.update', (updates) => updates.forEach((u) => u.id && this.refreshGroup(u.id)));
+    sock.ev.on('group-participants.update', (ev) => ev?.id && this.refreshGroup(ev.id));
 
     sock.ev.on('messages.upsert', ({ messages, type }) => {
       for (const raw of messages) {
@@ -137,14 +151,56 @@ export class WhatsApp extends EventEmitter {
     return !!this.sock?.authState?.creds?.me;
   }
 
-  /** Sends text, split to WhatsApp's length limit. Returns the id of the last message sent. */
-  async sendText(jid, text) {
+  /**
+   * Sends text, split to WhatsApp's length limit. `quotedRow` (a stored group
+   * message) makes the first part a reply to it. Returns the id of the last
+   * message sent.
+   */
+  async sendText(jid, text, quotedRow = null) {
     let id = null;
+    let quoted = quotedRow ? toWAMessage(jid, quotedRow) : null;
     for (const chunk of splitMessage(text)) {
-      const sent = await this.sock.sendMessage(jid, { text: chunk });
+      const sent = await this.sock.sendMessage(jid, { text: chunk }, quoted ? { quoted } : undefined);
       id = sent?.key?.id || id;
+      quoted = null;
     }
     return id;
+  }
+
+  /** Reacts to a stored group message with one emoji. */
+  async react(jid, row, emoji) {
+    await this.sock.sendMessage(jid, { react: { text: emoji, key: toWAMessage(jid, row).key } });
+  }
+
+  /** Every group the number is in, with names; also emitted as 'groups'. */
+  async refreshGroups() {
+    const all = await this.sock.groupFetchAllParticipating();
+    for (const g of Object.values(all)) this.groupCache.set(g.id, g);
+    const groups = Object.values(all).map((g) => ({ jid: g.id, name: g.subject || null }));
+    this.emit('groups', groups);
+    return groups;
+  }
+
+  async refreshGroup(jid) {
+    try {
+      const meta = await this.sock.groupMetadata(jid);
+      this.groupCache.set(jid, meta);
+      this.emit('groups', [{ jid, name: meta.subject || null }]);
+    } catch (err) {
+      this.log.debug({ jid, err: err.message }, 'group metadata failed');
+    }
+  }
+
+  /** Whether a jid is this number, by phone or by LID. */
+  isMe(jid) {
+    if (!jid || !this.state.me) return false;
+    const user = userOf(jid);
+    return user === userOf(this.state.me.id) || (!!this.state.me.lid && user === userOf(this.state.me.lid));
+  }
+
+  nameOf(jid) {
+    if (!jid || this.isMe(jid)) return null;
+    return this.names.get(userOf(jid)) || null;
   }
 
   async setTyping(jid, on) {
@@ -173,12 +229,18 @@ export class WhatsApp extends EventEmitter {
     this.emit('state', this.state);
   }
 
-  /** The sender's phone number, digits only, even when WhatsApp addresses them by a LID. */
+  /**
+   * The sender's phone number, digits only, even when WhatsApp addresses them
+   * by a LID. In a group the sender is the participant, not the chat.
+   */
   async #phoneOf(key) {
-    for (const jid of [key.remoteJid, key.remoteJidAlt, key.senderPn]) {
+    const candidates = isJidGroup(key.remoteJid)
+      ? [key.participant, key.participantAlt, key.participantPn]
+      : [key.remoteJid, key.remoteJidAlt, key.senderPn];
+    for (const jid of candidates) {
       if (jid && isPnUser(jid)) return userOf(jid);
     }
-    const lid = [key.remoteJid, key.remoteJidAlt].find((j) => j && isLidUser(j));
+    const lid = candidates.find((j) => j && isLidUser(j));
     if (lid) {
       try {
         const pn = await this.sock.signalRepository?.lidMapping?.getPNForLID(lid);
@@ -194,7 +256,6 @@ export class WhatsApp extends EventEmitter {
     const key = raw.key;
     const chatJid = key?.remoteJid;
     if (!chatJid || chatJid === 'status@broadcast' || chatJid.endsWith('@newsletter') || chatJid.endsWith('@broadcast')) return null;
-    if (isJidGroup(chatJid)) return null;
 
     const content = normalizeMessageContent(raw.message);
     if (!content) return null;
@@ -203,7 +264,7 @@ export class WhatsApp extends EventEmitter {
     const { text, kind } = describe(type, body);
     if (text == null) return null;
 
-    return {
+    const base = {
       chatJid,
       waId: key.id,
       fromMe: !!key.fromMe,
@@ -214,7 +275,54 @@ export class WhatsApp extends EventEmitter {
       raw,
       ts: Number(raw.messageTimestamp || 0) * 1000 || Date.now(),
     };
+    if (!isJidGroup(chatJid)) return { ...base, isGroup: false };
+
+    // Groups: who wrote it, who it tags, and whether it answers this number.
+    const senderJid = key.fromMe ? this.state.me?.id || null : key.participant || null;
+    if (raw.pushName && !key.fromMe) {
+      for (const jid of [key.participant, key.participantAlt, key.participantPn]) {
+        if (jid) this.names.set(userOf(jid), raw.pushName);
+      }
+    }
+    const ctx = body?.contextInfo || body?.message?.documentMessage?.contextInfo || null;
+    const quoted = ctx?.quotedMessage ? normalizeMessageContent(ctx.quotedMessage) : null;
+    const quotedType = quoted ? getContentType(quoted) : null;
+    const mentioned = (ctx?.mentionedJid || []).filter(Boolean);
+    return {
+      ...base,
+      isGroup: true,
+      senderJid,
+      senderName: key.fromMe ? null : raw.pushName || this.nameOf(senderJid),
+      text: this.#readableMentions(text, mentioned),
+      quotedWaId: ctx?.stanzaId || null,
+      quotedText: quotedType ? describe(quotedType, quoted[quotedType]).text : null,
+      mentionsMe: mentioned.some((j) => this.isMe(j)),
+      repliesToMe: !!ctx?.participant && this.isMe(ctx.participant),
+    };
   }
+
+  /** "@972501234567" / "@123456789012345" → "@Name", so the model sees who was tagged. */
+  #readableMentions(text, mentioned) {
+    let out = text;
+    for (const jid of mentioned) {
+      const name = this.isMe(jid) ? this.selfName() : this.nameOf(jid);
+      if (name) out = out.replaceAll(`@${userOf(jid)}`, `@${name}`);
+    }
+    return out;
+  }
+}
+
+/** A stored group message in the shape Baileys needs to quote or react to it. */
+function toWAMessage(chatJid, row) {
+  return {
+    key: {
+      remoteJid: chatJid,
+      id: row.wa_id,
+      fromMe: !!row.from_me,
+      ...(isJidGroup(chatJid) && row.sender_jid && !row.from_me && { participant: row.sender_jid }),
+    },
+    message: { conversation: row.text },
+  };
 }
 
 const userOf = (jid) => jid.split('@')[0].split(':')[0];
@@ -258,6 +366,10 @@ function describe(type, body) {
       return { text: `[location${body.name ? ': ' + body.name : ''}]`, kind: 'location' };
     case 'contactMessage':
       return { text: `[contact: ${body.displayName || ''}]`, kind: 'contact' };
+    case 'pollCreationMessage':
+    case 'pollCreationMessageV2':
+    case 'pollCreationMessageV3':
+      return { text: `[poll: ${body.name} | ${(body.options || []).map((o) => o.optionName).join(' / ')}]`, kind: 'poll' };
     default:
       return { text: null, kind: null }; // reactions, protocol messages, edits
   }

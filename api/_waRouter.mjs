@@ -5,6 +5,7 @@ import { branchForSession, loadForConversation } from './_branches.js';
 import { logError } from './_errorLog.js';
 import { getNumber } from './_waControl.js';
 import { runJarvisTurn, capabilityOn, recordAssistantMessage } from './_jarvis.js';
+import { createGroupRouter } from './_waGroupRouter.mjs';
 
 // Messages older than this (delivered after the number was offline) never trigger a turn.
 const STALE_MS = 10 * 60 * 1000;
@@ -45,7 +46,11 @@ export function createRouter(wa, numberId, { baseUrl }) {
     return number;
   }
 
+  // Groups have their own rules: modes, limits, a decision per turn (see _waGroupRouter.mjs).
+  const groups = createGroupRouter(wa, numberId);
+
   wa.on('message', (m) => {
+    if (m.isGroup) return void groups.handle(m);
     handle(m).catch((err) => {
       console.error(`[wa ${numberId}] could not handle a message:`, err.message);
     });
@@ -271,6 +276,7 @@ export function createRouter(wa, numberId, { baseUrl }) {
   /** End of session: run debounced turns now and wait up to `timeoutMs` for running ones. */
   async function drain(timeoutMs) {
     draining = true;
+    const groupsDone = groups.drain(timeoutMs);
     for (const [jid, p] of pending) {
       clearTimeout(p.timer);
       pending.delete(jid);
@@ -278,6 +284,7 @@ export function createRouter(wa, numberId, { baseUrl }) {
     }
     const deadline = Date.now() + timeoutMs;
     while ((inflight.size || rerun.size) && Date.now() < deadline) await Promise.race([...inflight, sleep(500)]);
+    await groupsDone;
   }
 
   return { drain, sendDueReminders };
