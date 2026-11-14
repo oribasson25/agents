@@ -275,9 +275,9 @@ Left sidebar (width: 240px, bg: #13151c):
 ## MODEL LISTS
 
 Claude:
-- claude-opus-4-5
-- claude-sonnet-4-5
-- claude-haiku-4-5
+- claude-opus-5-5
+- claude-sonnet-5-5 (default)
+- claude-haiku-5-5
 
 OpenAI:
 - gpt-4o

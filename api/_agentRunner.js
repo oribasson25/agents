@@ -6,6 +6,7 @@ import { logError } from './_errorLog.js';
 import { TABLE_TOOLS, runAgentTableTool } from './_tables.js';
 import { internalSecret } from './_auth.js';
 import { recordUsage } from './_usage.js';
+import { DEFAULT_CLAUDE_MODEL, currentClaudeModel, claudeRequestShape, claudeText } from './_claudeModels.js';
 
 /* This runs server-side with no logged-in user, so it proves it is the
    platform to the tool runner and the scraper with the internal secret
@@ -272,7 +273,7 @@ export async function runAgentTurn({ agent, agentId, messages, baseUrl }) {
   const systemPrompt = buildSystemPrompt(agent, ragChunks);
   const apiKey     = (agent.apiConfig && agent.apiConfig.apiKey)     || '';
   const provider   = (agent.apiConfig && agent.apiConfig.provider)   || 'claude';
-  const model      = (agent.apiConfig && agent.apiConfig.model)      || 'claude-sonnet-4-5';
+  const model      = (agent.apiConfig && agent.apiConfig.model)      || DEFAULT_CLAUDE_MODEL;
   const ollamaHost = ((agent.apiConfig && agent.apiConfig.ollamaHost) || 'http://localhost:11434').replace(/\/$/, '');
   const dlp        = agent.dlp || {};
   const safeMessages = dlpMessages(messages, dlp);
@@ -294,9 +295,10 @@ export async function runAgentTurn({ agent, agentId, messages, baseUrl }) {
 
   if (provider === 'claude') {
     let msgs = [...safeMessages];
+    const claudeModel = currentClaudeModel(model);
 
     for (let round = 0; round < 10; round++) {
-      const body = { model, max_tokens: 1024, system: systemPrompt, messages: msgs };
+      const body = { model: claudeModel, ...claudeRequestShape(claudeModel, 1024), system: systemPrompt, messages: msgs };
       const claudeTools = buildClaudeTools(agent);
       if (claudeTools.length > 0) body.tools = claudeTools;
 
@@ -307,10 +309,16 @@ export async function runAgentTurn({ agent, agentId, messages, baseUrl }) {
       });
       const d = await llmRes.json();
       if (!llmRes.ok) throw new Error(d.error?.message || JSON.stringify(d));
-      await recordUsage({ agentId, model: d.model || model, usage: d.usage, source: 'agents' });
+      await recordUsage({ agentId, model: d.model || claudeModel, usage: d.usage, source: 'agents' });
 
+      // A declined request can carry the start of a reply; none of it goes out.
+      // The callers turn an empty reply into their own apology.
+      if (d.stop_reason === 'refusal') {
+        await logError({ agentId, source: 'provider', message: `Claude declined to answer (${d.stop_details?.category || 'no category given'})`, context: { model: d.model || claudeModel } });
+        return { text: '', safeMessages, ended };
+      }
       if (d.stop_reason !== 'tool_use') {
-        return { text: d.content.find(c => c.type === 'text')?.text || '', safeMessages, ended };
+        return { text: claudeText(d), safeMessages, ended };
       }
 
       const toolUses = d.content.filter(c => c.type === 'tool_use');

@@ -144,7 +144,7 @@ def run(**kwargs):
 `,
     },
   ],
-  apiConfig: { provider: 'claude', apiKey: '', model: 'claude-sonnet-4-5' },
+  apiConfig: { provider: 'claude', apiKey: '', model: 'claude-sonnet-5-5' },
   createdAt: new Date().toISOString(),
 };
 

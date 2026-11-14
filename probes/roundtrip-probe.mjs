@@ -26,7 +26,7 @@ const minimal = {
   id: '11111111-1111-4111-8111-111111111111',
   name: 'New Agent', avatar: '🤖', openingMessage: 'Hello!', basePrompt: '',
   skills: [], tools: [],
-  apiConfig: { provider: 'claude', apiKey: 'sk-ant-secret', model: 'claude-sonnet-4-5', ollamaHost: '' },
+  apiConfig: { provider: 'claude', apiKey: 'sk-ant-secret', model: 'claude-sonnet-5-5', ollamaHost: '' },
   dlp: { creditCard: false, israeliId: false },
   scrapeUrls: [], emailEnabled: false,
   whatsapp: { enabled: false, phoneNumberId: '', accessToken: '', appSecret: '', verifyToken: '' },

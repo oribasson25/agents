@@ -76,7 +76,7 @@ if (ide && !ide.includes('Create token')) { console.log('✗ the local-IDE panel
 
 const settings = render('SettingsPanel (with the new section)', React.createElement(probe.SettingsPanel, {
   theme: 'dark', onToggleTheme() {}, user: { email: 'a@b.c' }, onLogout() {},
-  settings: { provider: 'claude', apiKey: '', model: 'claude-sonnet-4-5' }, onSaveSettings: async () => {},
+  settings: { provider: 'claude', apiKey: '', model: 'claude-sonnet-5-5' }, onSaveSettings: async () => {},
 }));
 if (settings && !settings.includes('Personal access tokens')) {
   console.log('✗ SettingsPanel does not include the tokens section'); failed++;

@@ -11,7 +11,7 @@ const AGENT = {
   tools: [{ id: 't1', name: 'fetch_quote', description: 'quote', parameters: [],
             packages: 'requests', envVars: [{ key: 'QUOTE_KEY', value: 'SECRET-VALUE' }],
             code: 'def run(**k):\n    pass\n' }],
-  apiConfig: { provider: 'claude', apiKey: 'SECRET-KEY', model: 'claude-sonnet-4-5' },
+  apiConfig: { provider: 'claude', apiKey: 'SECRET-KEY', model: 'claude-sonnet-5-5' },
   dlp: { creditCard: false, israeliId: false }, scrapeUrls: [], emailEnabled: false,
   whatsapp: { enabled: true, phoneNumberId: '99999', accessToken: 'SECRET-WA',
               appSecret: 'SECRET-APP', verifyToken: 'SECRET-VERIFY' },
