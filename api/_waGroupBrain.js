@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { searchDocuments } from './_knowledge.js';
 import { recordUsage } from './_usage.js';
+import { claudeRequestShape, currentClaudeModel } from './_claudeModels.js';
 
 /*
  * What the number does about the latest messages in a group: reply, react with
@@ -194,13 +195,16 @@ export async function decideGroup({ apiConfig, agent, agentId, ownerId, group, s
 
   const allowReactions = group.allow_reactions !== false;
   const client = new Anthropic({ apiKey: apiConfig.apiKey });
+  const model = currentClaudeModel(apiConfig.model);
+  // Claude 5 models think by default; this keeps it light and leaves room for the decision.
+  const shape = claudeRequestShape(model, 4000);
   const request = {
-    model: apiConfig.model,
-    max_tokens: 4000,
+    model,
+    max_tokens: shape.max_tokens,
     // Cached on its own: with a learned profile it is most of the prompt, and it rarely changes.
     system: [{ type: 'text', text: buildSystem({ name, agent, group, allowReactions, replyLength: group.reply_length }), cache_control: { type: 'ephemeral' } }],
     messages: [{ role: 'user', content }],
-    output_config: { format: { type: 'json_schema', schema: DECISION_SCHEMA } },
+    output_config: { ...shape.output_config, format: { type: 'json_schema', schema: DECISION_SCHEMA } },
   };
 
   let response;
@@ -211,11 +215,12 @@ export async function decideGroup({ apiConfig, agent, agentId, ownerId, group, s
     // A model without structured outputs: ask for the same JSON in words instead.
     if (!(err instanceof Anthropic.BadRequestError) || !/output_config|format|json_schema|structured/i.test(err.message)) throw err;
     structured = false;
-    const { output_config: _drop, ...plain } = request;
+    const { output_config: { format: _drop, ...rest }, ...plain } = request;
+    if (Object.keys(rest).length) plain.output_config = rest;
     plain.messages = [{ role: 'user', content: [...content, { type: 'text', text: `Answer with only a JSON object with the keys action, text, emoji, quote and why, as described.` }] }];
     response = await client.messages.create(plain);
   }
-  await recordUsage({ userId: ownerId, model: response.model || apiConfig.model, usage: response.usage, source: 'groups' });
+  await recordUsage({ userId: ownerId, model: response.model || model, usage: response.usage, source: 'groups' });
 
   const meta = {
     model: response.model,
