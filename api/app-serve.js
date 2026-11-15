@@ -102,12 +102,16 @@ export function injectSdk(html, boot) {
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.statusCode = 405; return res.end(); }
 
-  /* The rewrite passes the parts as query; a direct mount passes the URL. */
+  /* The rewrite hands over everything after /a/ as `p`; a direct mount passes
+     the URL itself. One capture rather than slug + path, because a pattern
+     with a separate path segment does not match the folder form (/a/slug/),
+     which is the address every app is opened at. */
   const url = new URL(req.url || '/', 'http://x');
   const q = req.query || {};
-  const parsed = parseAppPath(url.pathname) || (q.slug
-    ? parseAppPath(`/a/${q.slug}/${Array.isArray(q.path) ? q.path.join('/') : (q.path || '')}`)
-    : null);
+  const rest = Array.isArray(q.p) ? q.p.join('/') : q.p;
+  const parsed = parseAppPath(url.pathname) || (rest !== undefined ? parseAppPath(`/a/${rest}`) : null);
+  /* What the browser asked for, to redirect relative to: not this function's own URL. */
+  const asked = parseAppPath(url.pathname) ? url.pathname : `/a/${rest}`;
   if (!parsed) return page(res, 404, 'No such app', 'Check the address.');
 
   let found;
@@ -125,7 +129,7 @@ export default async function handler(req, res) {
      page would resolve one level up. Send the browser to the folder form. */
   if (parsed.path === null) {
     res.statusCode = 302;
-    res.setHeader('Location', `${url.pathname}/`);
+    res.setHeader('Location', `${asked}/`);
     return res.end();
   }
 

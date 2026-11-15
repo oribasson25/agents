@@ -132,12 +132,8 @@
       "destination": "/api/wa/cron.js"
     },
     {
-      "source": "/a/:slug",
-      "destination": "/api/app-serve?slug=:slug"
-    },
-    {
-      "source": "/a/:slug/:path*",
-      "destination": "/api/app-serve?slug=:slug&path=:path*"
+      "source": "/a/:rest(.*)",
+      "destination": "/api/app-serve?p=:rest"
     },
     {
       "source": "/privacy",

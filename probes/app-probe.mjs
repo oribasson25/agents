@@ -302,8 +302,11 @@ check('its other files are served with their type', js.statusCode === 200 && /te
 check('a folder address without the slash is sent to the folder', (await get(`/a/leads-desk/~${tok}`)).headers.location === `/a/leads-desk/~${tok}/`);
 check('a missing file -> 404', (await get(`/a/leads-desk/~${tok}/nope.js`)).statusCode === 404);
 check('no such app -> 404', (await get('/a/nothing-here/')).statusCode === 404);
-check('the rewrite form (slug and path as query) works too',
-      (await call(serve, 'GET', { slug: 'leads-desk', path: `~${tok}/app.js` }, null, '', { url: '/api/app-serve' })).statusCode === 200);
+const viaRewrite = (p) => call(serve, 'GET', { p }, null, '', { url: `/api/app-serve?p=${encodeURIComponent(p)}` });
+check('the rewrite form (the path as a query) serves a file', (await viaRewrite(`leads-desk/~${tok}/app.js`)).statusCode === 200);
+check('and the folder form, which is how an app is opened', (await viaRewrite(`leads-desk/~${tok}/`)).body.includes('edited locally'));
+check('and redirects the bare form to the address the browser asked for',
+      (await viaRewrite(`leads-desk/~${tok}`)).headers.location === `/a/leads-desk/~${tok}/`);
 
 const open = await call(appHandler, 'PUT', { id: APP }, { access: 'link' }, session);
 check('sharing by link is a setting, not a version', open.payload.access === 'link' && open.payload.versionNumber === null && open.payload.url === '/a/leads-desk/');
