@@ -73,20 +73,54 @@ export async function ensureRepo({ agent, appUrl, webhookSecret, what = 'agent' 
     });
   }
 
+  /* The hook is what lets a `git push` reach the platform. Failing to add one
+     must not cost the repository its content, so it is reported and retried
+     on a later pull rather than thrown. */
   let webhookId = null;
-  if (appUrl && webhookSecret) {
-    const hooks = await gh(`/repos/${owner}/${name}/hooks`).catch(() => []);
-    const url = `${appUrl.replace(/\/+$/, '')}/api/github/webhook`;
-    const existing = (hooks || []).find(h => h.config?.url === url);
-    webhookId = existing
-      ? existing.id
-      : (await gh(`/repos/${owner}/${name}/hooks`, {
-          method: 'POST',
-          body: { name: 'web', active: true, events: ['push'],
-                  config: { url, content_type: 'json', secret: webhookSecret, insecure_ssl: '0' } },
-        })).id;
+  let hookProblem = null;
+  if (!appUrl || !webhookSecret) {
+    hookProblem = 'GITHUB_WEBHOOK_SECRET is not set, so no webhook was added and a git push will not reach the platform';
+  } else {
+    try {
+      const hooks = await gh(`/repos/${owner}/${name}/hooks`).catch(() => []);
+      const url = `${appUrl.replace(/\/+$/, '')}/api/github/webhook`;
+      const existing = (hooks || []).find(h => h.config?.url === url);
+      webhookId = existing
+        ? existing.id
+        : (await gh(`/repos/${owner}/${name}/hooks`, {
+            method: 'POST',
+            body: { name: 'web', active: true, events: ['push'],
+                    config: { url, content_type: 'json', secret: webhookSecret, insecure_ssl: '0' } },
+          })).id;
+    } catch (e) {
+      hookProblem = `could not add the webhook (${e.status || ''} ${e.message})`.trim();
+    }
   }
-  return { owner, repo: name, webhookId, htmlUrl: repo.html_url, created: !repo.pushed_at };
+  return { owner, repo: name, webhookId, hookProblem, htmlUrl: repo.html_url, created: !repo.pushed_at };
+}
+
+/**
+ * Gives an empty repository its first commit.
+ *
+ * GitHub's Git Data API — blobs, trees, commits, the calls pushTree makes —
+ * answers 409 "Git Repository is empty" on a repository with no commit at all,
+ * which is what ensureRepo creates. The Contents API does work there, so one
+ * README goes in through it first. Every repository made before this existed
+ * was left empty for exactly this reason, and is put right on its next pull.
+ */
+export async function ensureNotEmpty({ owner, repo, name }) {
+  try {
+    await gh(`/repos/${owner}/${repo}/commits?per_page=1`);
+    return false;
+  } catch (e) {
+    if (e.status !== 409) throw e;
+  }
+  const readme = `# ${name || repo}\n\nKept in step with 8Legs: a push here that validates goes live.\n`;
+  await gh(`/repos/${owner}/${repo}/contents/README.md`, {
+    method: 'PUT',
+    body: { message: 'Start the repository', content: Buffer.from(readme, 'utf8').toString('base64') },
+  });
+  return true;
 }
 
 /**
@@ -219,6 +253,7 @@ export async function ensureLinkedRepo({ kind, subject, files, appUrl }) {
         const fixed = await ensureRepo({ agent: subject, appUrl, what: kind,
                                          webhookSecret: process.env.GITHUB_WEBHOOK_SECRET });
         if (fixed.webhookId) await store.setHook(subject.id, fixed.webhookId);
+        if (fixed.hookProblem) await report(kind, subject.id, fixed.hookProblem, fixed);
       }
       return { owner: existing.owner, repo: existing.repo,
                cloneUrl: `https://github.com/${existing.owner}/${existing.repo}.git` };
@@ -226,6 +261,8 @@ export async function ensureLinkedRepo({ kind, subject, files, appUrl }) {
 
     const made = await ensureRepo({ agent: subject, appUrl, what: kind,
                                     webhookSecret: process.env.GITHUB_WEBHOOK_SECRET });
+    if (made.hookProblem) await report(kind, subject.id, made.hookProblem, made);
+    await ensureNotEmpty({ owner: made.owner, repo: made.repo, name: subject.name });
     const { sha } = await pushTree({
       owner: made.owner, repo: made.repo, branch: 'main', files,
       message: `Initial import of ${subject.name || subject.id}`,
@@ -235,8 +272,19 @@ export async function ensureLinkedRepo({ kind, subject, files, appUrl }) {
              cloneUrl: `https://github.com/${made.owner}/${made.repo}.git` };
   } catch (err) {
     console.error('[github] could not prepare the repository:', err.message);
+    await report(kind, subject.id, `could not prepare the repository: ${err.status || ''} ${err.message}`.trim());
     return null;
   }
+}
+
+/* Into error_log as well as the console: a pull that quietly comes back
+   without a repository is otherwise impossible to explain afterwards. */
+async function report(kind, id, message, extra = {}) {
+  try {
+    const { logError } = await import('./_errorLog.js');
+    await logError({ agentId: kind === 'agent' ? id : null, source: 'github', message,
+                     context: { kind, id, owner: extra.owner, repo: extra.repo } });
+  } catch { /* reporting must never break a pull */ }
 }
 
 export const ensureAgentRepo = ({ agent, files, appUrl }) =>

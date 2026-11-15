@@ -178,7 +178,7 @@ globalThis.__db = (text, p) => {
 };
 
 /* GitHub: repository, tree, blobs, refs, statuses. */
-let treeFiles = {}, statuses = [], commits = 0;
+let treeFiles = {}, statuses = [], commits = 0, readmeIn = false;
 globalThis.fetch = async (url, opts = {}) => {
   const u = String(url);
   const ok = (body, status = 200) => ({ ok: status < 400, status, text: async () => JSON.stringify(body) });
@@ -190,6 +190,9 @@ globalThis.fetch = async (url, opts = {}) => {
   }
   if (/\/statuses\//.test(u)) { statuses.push(JSON.parse(opts.body)); return ok({}); }
   if (/\/hooks$/.test(u)) return opts.method === 'POST' ? ok({ id: 77 }) : ok([]);
+  /* A new repository is empty until its first commit; the README goes in first. */
+  if (/\/commits\?per_page=1$/.test(u)) return readmeIn ? ok([{ sha: 'readme' }]) : { ok: false, status: 409, text: async () => '{"message":"Git Repository is empty."}' };
+  if (/\/contents\/README\.md$/.test(u)) { readmeIn = true; return ok({ commit: { sha: 'readme' } }); }
   if (/\/orgs\/[^/]+\/repos$/.test(u)) return ok({ html_url: 'https://github.com/x/y', pushed_at: null });
   if (/\/git\/blobs$/.test(u)) return ok({ sha: 'b' });
   if (/\/git\/trees$/.test(u)) return ok({ sha: 't' });

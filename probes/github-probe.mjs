@@ -194,5 +194,45 @@ check('an unlinked repository is refused', r.statusCode === 404);
   globalThis.fetch = prevFetch;
 }
 
+/* ── a brand-new repository is empty, and the Git Data API refuses those ── */
+{
+  const calls = [];
+  let empty = true;
+  let inserted = null;
+  const prevDb = globalThis.__db, prevFetch = globalThis.fetch;
+  globalThis.__db = (text, p) => {
+    const t = text.replace(/\s+/g, ' ').trim();
+    if (t.startsWith('select owner, repo, webhook_id from agent_repos')) return [];
+    if (t.startsWith('insert into agent_repos')) { inserted = p; return []; }
+    return prevDb(text, p);
+  };
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    const method = opts.method || 'GET';
+    calls.push(`${method} ${u.replace('https://api.github.com', '')}`);
+    const ok = (b) => ({ ok: true, status: 200, text: async () => JSON.stringify(b) });
+    const emptyRepo = { ok: false, status: 409, text: async () => JSON.stringify({ message: 'Git Repository is empty.' }) };
+    if (/\/repos\/[^/]+\/[^/?]+$/.test(u)) return ok({ html_url: 'https://github.com/x/y', pushed_at: null });
+    if (/\/commits\?per_page=1$/.test(u)) return empty ? emptyRepo : ok([{ sha: 'readme' }]);
+    if (/\/contents\/README\.md$/.test(u) && method === 'PUT') { empty = false; return ok({ commit: { sha: 'readme' } }); }
+    if (/\/git\//.test(u) && empty) return emptyRepo;
+    if (/\/git\/blobs$/.test(u)) return ok({ sha: 'b' });
+    if (/\/git\/trees$/.test(u)) return ok({ sha: 't' });
+    if (/\/git\/commits$/.test(u)) return ok({ sha: 'first-real-commit' });
+    if (/\/git\/ref\/heads\/main$/.test(u)) return ok({ object: { sha: 'readme' } });
+    if (/\/git\/refs\/heads\/main$/.test(u)) return ok({});
+    return ok([]);
+  };
+  const link = await GH.ensureAgentRepo({ agent: AGENT, files: { 'prompt.md': 'x' }, appUrl: 'https://www.8legs.world' });
+  const firstGit = calls.findIndex(c => c.includes('/git/'));
+  const readme = calls.findIndex(c => c.startsWith('PUT') && c.includes('/contents/README.md'));
+  check('an empty new repository gets a first commit before anything else is written',
+        readme > -1 && readme < firstGit, calls.join('\n    '));
+  check('and then the agent goes in on top of it, and the link is kept',
+        link?.cloneUrl && inserted && inserted.includes('first-real-commit'), JSON.stringify({ link, inserted }));
+  globalThis.__db = prevDb;
+  globalThis.fetch = prevFetch;
+}
+
 console.log(`\n${failed ? `${failed} FAILURE(S)` : 'all green'}`);
 process.exit(failed ? 1 : 0);
