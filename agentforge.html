@@ -5773,7 +5773,7 @@ function markSvgString(color, size = 30) {
     const sections = [
       { id: 'intro',        label: 'What 8Legs.ai is' },
       { id: 'home',         label: 'Home — the chat' },
-      { id: 'access',       label: 'Accounts & invitations' },
+      { id: 'access',       label: 'Accounts' },
       { id: 'autopilot',    label: 'Autopilot' },
       { id: 'agents',       label: 'AI Chatbots' },
       { id: 'config',       label: 'Configuration' },
@@ -5896,31 +5896,16 @@ function markSvgString(color, size = 30) {
       /* ─────────────── ACCESS ─────────────── */
       access: (
         <div dir="ltr">
-          <H2>Accounts and invitations</H2>
-          <P>There is no way to create an account from the login screen. Sign-up is by invitation: an administrator mints a code, hands it over, and that code is the only door in.</P>
-
-          <H3>Being let in</H3>
+          <H2>Accounts</H2>
+          <P>There is no way to create an account from the login screen, and no invitation codes. Accounts are made by admins: the platform admin creates an organization together with its first admin, and an organization&rsquo;s admin adds its people under <strong>Team</strong>. See <strong>Organizations &amp; permissions</strong>.</P>
           <UL>
-            <li>Under the Sign in button there is one line — <strong>Been given an invitation code?</strong></li>
-            <li>It opens a screen with one field. The code is checked against the server before a single account field is shown, so a code that will not work costs two seconds, not a filled-in form</li>
-            <li>A code that passes opens the account form: username, password, phone</li>
-            <li>Case, spaces and misplaced dashes are all ignored. <Code>7qf4 2mkd8rtv</Code> is the same code as <Code>7QF4-2MKD-8RTV</Code></li>
+            <li>A new account gets a <strong>temporary password</strong>, shown once to the admin who made it</li>
+            <li>The first sign-in with it asks for a new password before anything else</li>
+            <li>A forgotten password is reset by an admin, which gives a new temporary one</li>
           </UL>
-
-          <H3>Minting one — Admin → Invitations</H3>
-          <UL>
-            <li><strong>Generate code</strong> mints one and shows it in full, once, with a Copy beside it</li>
-            <li>It works exactly once, and expires by itself after 14 days if nobody uses it</li>
-            <li><strong>Revoke</strong> closes an open code without erasing the record of it</li>
-            <li>The list keeps every code ever minted, with what became of it and who spent it</li>
-          </UL>
-          <Warn>A code is stored the way a password is — only its hash. The moment it is minted is the only time it can be read, and the list shows a prefix because there is nothing else to show. Lose one and mint another.</Warn>
-
-          <H3>One code, one account</H3>
-          <P>The check the login screen makes is a courtesy; the server is the gate. Registration claims the code in a single statement that only succeeds on a code nobody has spent, so a code handed to two people lets exactly one of them in, however fast they both click. If the account then fails to be created — a username taken in those seconds — the code is handed back rather than burned.</P>
 
           <H3>Signing in</H3>
-          <P>Sign-in holds a token in <Code>sessionStorage</Code>, so closing the browser signs you out. Every AI Chatbot belongs to the user who made it, and an ordinary user sees only their own.</P>
+          <P>Sign-in holds a token in <Code>sessionStorage</Code>, so closing the browser signs you out. Every AI Chatbot belongs to an organization, and a person sees what their organization&rsquo;s admin gave them.</P>
 
           <H3>The language of the interface</H3>
           <P>The first thing a new account sees is one screen: <Code>English</Code> or <Code>עברית</Code>. It is written in both, because nobody can read the one they have not picked yet. The answer is stored on the account, so it follows you to any browser and any machine, and it drives the whole interface and every assistant. It can be changed later under <strong>Settings → Interface language</strong>.</P>
@@ -6669,8 +6654,8 @@ await leads.remove(rowId);`}</Block>
           <H2>Admin</H2>
           <P>A tab that appears for administrators only.</P>
 
-          <H3>Invitations</H3>
-          <P>The panel at the top of the screen. It is the only way an account gets made — there is no sign-up on the login screen. See the Accounts and invitations section for the whole of it.</P>
+          <H3>Organizations</H3>
+          <P>The first tab. It is the only way an organization gets made — there is no sign-up on the login screen. Each one is created with its first admin, who adds the rest of its people. See <strong>Organizations &amp; permissions</strong>.</P>
 
           <H3>Starter AI Chatbots</H3>
           <P>Which of your chatbots are copied into every new account at registration, exactly as they were when you marked them. The panel shows, per template, whether it is still there and what it carries.</P>
@@ -6725,10 +6710,10 @@ npm run migrate            # run it`}</Block>
 
           <H3>What is kept apart between users</H3>
           <UL>
-            <li>A chatbot belongs to a user, and every call to the server checks ownership before it returns or changes anything</li>
+            <li>A chatbot belongs to an organization, and every call to the server checks what the person may do to it before it returns or changes anything</li>
             <li>A Gmail connection is per chatbot, and reachable only by that chatbot&rsquo;s owner</li>
             <li>A WhatsApp number is exclusive to one chatbot, and routing is decided by proof of the app secret — not by whoever entered the number last</li>
-            <li>An account is created only by an invitation code, which works once and is stored as a hash</li>
+            <li>An account is created only by an admin, with a temporary password that has to be replaced at first sign-in</li>
           </UL>
 
           <H3>What to know about secrets</H3>
@@ -6736,7 +6721,7 @@ npm run migrate            # run it`}</Block>
             <li>API keys, WhatsApp tokens and tools&rsquo; secrets are stored in the database</li>
             <li>Secret values are exposed to your tool&rsquo;s code at runtime — anyone who can edit the tool can read them</li>
             <li>The assistant is given the names of secrets only, never the values</li>
-            <li>Passwords and invitation codes are stored hashed, and cannot be read back by anyone, including an administrator</li>
+            <li>Passwords are stored hashed, and cannot be read back by anyone, including an administrator</li>
           </UL>
 
           <H3>What is exposed to the public</H3>
@@ -12713,12 +12698,7 @@ npm run migrate            # run it`}</Block>
 
             {mode === 'login' && (
               <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)', fontSize: 12.5, color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.7 }}>
-                Been given an invitation code?
-                <br />
-                <button onClick={() => goto('code')}
-                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--text-2)', fontWeight: 650, fontSize: 12.5, borderBottom: '1px solid var(--border)' }}>
-                  Use it to create an account
-                </button>
+                {L('No account? Your organization\'s admin creates one for you.', 'אין לך משתמש? אדמין הארגון שלך יוצר אותו.')}
               </div>
             )}
           </div>
@@ -13581,8 +13561,6 @@ npm run migrate            # run it`}</Block>
               items={[{ id: 'orgs', label: 'Organizations' }, { id: 'users', label: 'Users' }, { id: 'history', label: 'Chat history' }]} />
           }
         />
-
-        <InvitationsPanel />
 
         <StarterAgentsPanel />
 

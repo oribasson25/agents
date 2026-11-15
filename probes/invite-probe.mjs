@@ -214,6 +214,11 @@ ok(states.includes('used') && states.includes('revoked') && states.includes('exp
 const html = fs.readFileSync(`${ROOT}/agentforge.html`, 'utf8');
 const gate = html.slice(html.indexOf('function LoginGate'), html.indexOf('ADMIN: INVITATIONS'));
 ok(!/\['login', 'register'\]\.map/.test(gate), 'the sign-in / register toggle is gone');
+/* Since organizations, accounts are made by admins: the way in by code is no
+   longer offered, and Admin no longer mints codes. The flow below stays in the
+   code, unreachable, and is still checked so it does not rot. */
+ok(!gate.includes('Been given an invitation code?'), 'the login screen no longer offers a way in by code');
+ok(!/<InvitationsPanel \/>/.test(html), 'and Admin no longer shows the invitations panel');
 ok(gate.includes("inviteCode: accepted"), 'registration carries the code that opened it');
 ok(/mode === 'code'/.test(gate), 'and there is a screen to type one into');
 ok(gate.includes('/api/auth/invite-check'), 'which asks the server before showing a form');
