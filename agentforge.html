@@ -12272,23 +12272,21 @@ npm run migrate            # run it`}</Block>
   }
 
   function Sidebar({ activeNav, onNav, user, onLogout, settings, recents, activeSessionId, onPickRecent, onNewChat, language }) {
+    /* An organization's admin runs its people and its own Jarvis; the
+       platform admin also has Admin, where every organization is. */
+    const orgAdmin = isOrgAdminNow();
+    const platformAdmin = !!(user && user.isAdmin);
     const items = [
       { id: 'home',         label: 'Home',          icon: Icons.home },
-      { id: 'agents',       label: 'AI Chatbots', icon: Icons.agents },
-      { id: 'tables',       label: 'Tables',        icon: Icons.rows },
+      { id: 'agents',       label: 'AI Chatbots',   icon: Icons.agents },
+      ...(orgAdmin ? [{ id: 'jarvis', label: 'Jarvis', icon: Icons.jarvis, badge: 'NEW' }] : []),
       { id: 'apps',         label: 'Apps',          icon: Icons.apps },
       { id: 'interactions', label: 'Interactions',  icon: Icons.interactions },
-      { id: 'docs',         label: 'Documentation', icon: Icons.docs },
+      { id: 'tables',       label: 'Tables',        icon: Icons.rows },
+      ...(orgAdmin ? [{ id: 'team', label: 'Team', icon: Icons.users }] : []),
+      ...(platformAdmin ? [{ id: 'admin', label: 'Admin', icon: Icons.admin }] : []),
       { id: 'settings',     label: 'Settings',      icon: Icons.settings },
-      /* An organization's admin runs its people and its own Jarvis; the
-         platform admin also has Admin, where every organization is. */
-      ...(isOrgAdminNow() ? [
-        { id: 'team', label: 'Team', icon: Icons.users },
-        { id: 'jarvis', label: 'Jarvis', icon: Icons.jarvis, badge: 'NEW' },
-      ] : []),
-      ...(user && user.isAdmin ? [
-        { id: 'admin', label: 'Admin', icon: Icons.admin },
-      ] : []),
+      { id: 'docs',         label: 'Documentation', icon: Icons.docs },
     ];
     const en = (language || uiLang()) !== 'he';
 
