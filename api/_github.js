@@ -53,7 +53,7 @@ export function repoName(agent) {
 }
 
 /** Makes the repository if it is not there yet. Safe to call twice. */
-export async function ensureRepo({ agent, appUrl, webhookSecret }) {
+export async function ensureRepo({ agent, appUrl, webhookSecret, what = 'agent' }) {
   const name = repoName(agent);
   const owner = ORG();
   let repo;
@@ -67,7 +67,7 @@ export async function ensureRepo({ agent, appUrl, webhookSecret }) {
         name,
         private: true,
         auto_init: false,
-        description: `8Legs agent: ${agent.name || agent.id}`,
+        description: `8Legs ${what}: ${agent.name || agent.id}`,
         has_issues: false, has_projects: false, has_wiki: false,
       },
     });
@@ -166,45 +166,71 @@ export function verifyWebhook(rawBody, signature, secret) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+/*
+ * Where each kind of thing keeps its repository link. Agents and apps share
+ * every step of the git flow; the only difference is which table remembers it.
+ */
+function repoStore(kind, sql) {
+  if (kind === 'app') return {
+    get: (id) => sql`select owner, repo, webhook_id from app_repos where app_id = ${id}`,
+    setHook: (id, hook) => sql`update app_repos set webhook_id = ${hook} where app_id = ${id}`,
+    insert: (id, m, sha) => sql`
+      insert into app_repos (app_id, owner, repo, webhook_id, last_push_sha)
+      values (${id}, ${m.owner}, ${m.repo}, ${m.webhookId}, ${sha})
+      on conflict (app_id) do nothing
+    `,
+    setSha: (id, sha) => sql`update app_repos set last_push_sha = ${sha} where app_id = ${id}`,
+  };
+  return {
+    get: (id) => sql`select owner, repo, webhook_id from agent_repos where agent_id = ${id}`,
+    setHook: (id, hook) => sql`update agent_repos set webhook_id = ${hook} where agent_id = ${id}`,
+    insert: (id, m, sha) => sql`
+      insert into agent_repos (agent_id, owner, repo, webhook_id, last_push_sha)
+      values (${id}, ${m.owner}, ${m.repo}, ${m.webhookId}, ${sha})
+      on conflict (agent_id) do nothing
+    `,
+    setSha: (id, sha) => sql`update agent_repos set last_push_sha = ${sha} where agent_id = ${id}`,
+  };
+}
+
 /**
- * The repository for an agent, made on demand.
+ * The repository for an agent or an app, made on demand.
  *
- * Called from a pull, not from agent creation: every sign-up is handed starter
+ * Called from a pull, not from creation: every sign-up is handed starter
  * agents and most are never opened in an editor, so creating a repository up
- * front would leave hundreds nobody ever clones. It also keeps agent creation
- * free of any dependency on GitHub being up.
+ * front would leave hundreds nobody ever clones. It also keeps creation free
+ * of any dependency on GitHub being up.
+ *
+ * `subject` is `{ id, name }`; the name only shapes the repository's name.
  *
  * Never throws. A pull has to work whether or not the mirror does.
  */
-export async function ensureAgentRepo({ agent, files, appUrl }) {
+export async function ensureLinkedRepo({ kind, subject, files, appUrl }) {
   if (!githubConfigured()) return null;
   const { sql } = await import('./_db.js');
+  const store = repoStore(kind, sql);
   try {
-    const [existing] = await sql`select owner, repo, webhook_id from agent_repos where agent_id = ${agent.id}`;
+    const [existing] = await store.get(subject.id);
     if (existing) {
       /* A repository made before GITHUB_WEBHOOK_SECRET was configured has no
          hook, and without one a `git push` reaches nothing. Returning early
          would leave it that way for good, so a later pull installs it. */
       if (!existing.webhook_id && process.env.GITHUB_WEBHOOK_SECRET && appUrl) {
-        const fixed = await ensureRepo({ agent, appUrl, webhookSecret: process.env.GITHUB_WEBHOOK_SECRET });
-        if (fixed.webhookId) {
-          await sql`update agent_repos set webhook_id = ${fixed.webhookId} where agent_id = ${agent.id}`;
-        }
+        const fixed = await ensureRepo({ agent: subject, appUrl, what: kind,
+                                         webhookSecret: process.env.GITHUB_WEBHOOK_SECRET });
+        if (fixed.webhookId) await store.setHook(subject.id, fixed.webhookId);
       }
       return { owner: existing.owner, repo: existing.repo,
                cloneUrl: `https://github.com/${existing.owner}/${existing.repo}.git` };
     }
 
-    const made = await ensureRepo({ agent, appUrl, webhookSecret: process.env.GITHUB_WEBHOOK_SECRET });
+    const made = await ensureRepo({ agent: subject, appUrl, what: kind,
+                                    webhookSecret: process.env.GITHUB_WEBHOOK_SECRET });
     const { sha } = await pushTree({
       owner: made.owner, repo: made.repo, branch: 'main', files,
-      message: `Initial import of ${agent.name || agent.id}`,
+      message: `Initial import of ${subject.name || subject.id}`,
     });
-    await sql`
-      insert into agent_repos (agent_id, owner, repo, webhook_id, last_push_sha)
-      values (${agent.id}, ${made.owner}, ${made.repo}, ${made.webhookId}, ${sha})
-      on conflict (agent_id) do nothing
-    `;
+    await store.insert(subject.id, made, sha);
     return { owner: made.owner, repo: made.repo,
              cloneUrl: `https://github.com/${made.owner}/${made.repo}.git` };
   } catch (err) {
@@ -213,23 +239,30 @@ export async function ensureAgentRepo({ agent, files, appUrl }) {
   }
 }
 
+export const ensureAgentRepo = ({ agent, files, appUrl }) =>
+  ensureLinkedRepo({ kind: 'agent', subject: agent, files, appUrl });
+
 /**
  * Mirrors a change the platform made back to git.
  *
  * The resulting commit sha is remembered so the webhook can tell this push
  * apart from someone else's and not apply it back over itself.
  */
-export async function mirrorToGit({ agentId, branch, files, message }) {
+export async function mirrorLinked({ kind, id, branch, files, message }) {
   if (!githubConfigured()) return null;
   const { sql } = await import('./_db.js');
+  const store = repoStore(kind, sql);
   try {
-    const [link] = await sql`select owner, repo from agent_repos where agent_id = ${agentId}`;
-    if (!link) return null;   /* nobody has pulled this agent yet */
+    const [link] = await store.get(id);
+    if (!link) return null;   /* nobody has pulled this yet */
     const { sha } = await pushTree({ owner: link.owner, repo: link.repo, branch, files, message });
-    await sql`update agent_repos set last_push_sha = ${sha} where agent_id = ${agentId}`;
+    await store.setSha(id, sha);
     return { sha };
   } catch (err) {
     console.error('[github] could not mirror the change:', err.message);
     return null;
   }
 }
+
+export const mirrorToGit = ({ agentId, branch, files, message }) =>
+  mirrorLinked({ kind: 'agent', id: agentId, branch, files, message });

@@ -46,6 +46,12 @@
     },
     "api/admin/jarvis/group-knowledge.js": {
       "maxDuration": 800
+    },
+    "api/apps/[id]/files.js": {
+      "maxDuration": 60
+    },
+    "api/app-run.js": {
+      "maxDuration": 90
     }
   },
   "headers": [
@@ -124,6 +130,14 @@
     {
       "source": "/api/wa/cron",
       "destination": "/api/wa/cron.js"
+    },
+    {
+      "source": "/a/:slug",
+      "destination": "/api/app-serve?slug=:slug"
+    },
+    {
+      "source": "/a/:slug/:path*",
+      "destination": "/api/app-serve?slug=:slug&path=:path*"
     },
     {
       "source": "/privacy",

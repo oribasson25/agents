@@ -11,6 +11,7 @@ blank screen, and a bug in `_agentFiles.js` deletes fields from a live agent.
 | `branches-probe.mjs` | drafts, merges, traffic splits, conversation stickiness |
 | `cli-probe.mjs` | the real CLI binary against a stand-in platform |
 | `github-probe.mjs` | git as a real remote, and every push it must refuse |
+| `app-probe.mjs` | an app survives files and back; pull, push, git, versions, serving and its runtime |
 | `check-jsx.mjs` | agentforge.html compiles |
 | `render-probe.mjs` | its new components actually render |
 

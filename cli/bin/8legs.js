@@ -59,11 +59,40 @@ function ask(question, { hidden = false } = {}) {
   });
 }
 
-/** The agent folder for commands that need one. */
+/** The agent or app folder for commands that need one. */
 function requireRoot() {
   const root = findRoot();
-  if (!root) die('Not inside an agent folder. Run `8legs pull <agent>` first.');
+  if (!root) die('Not inside an agent or app folder. Run `8legs pull <agent>` or `8legs pull --app <app>` first.');
   return { root, lock: readLock(root) };
+}
+
+/**
+ * What a folder is a checkout of.
+ *
+ * An agent and an app are pulled, compared and pushed the same way; only the
+ * address on the platform and the checks before a push differ. Everything
+ * below asks this instead of knowing which one it has.
+ */
+function thing(lock) {
+  const isApp = lock.kind === 'app';
+  const id = isApp ? lock.appId : lock.agentId;
+  return {
+    isApp, id,
+    noun: isApp ? 'app' : 'agent',
+    files: (branch) => `/api/${isApp ? 'apps' : 'agents'}/${id}/files` +
+      (!isApp && branch ? `?branch=${encodeURIComponent(branch)}` : ''),
+    lock: (extra) => ({ ...(isApp ? { kind: 'app', appId: id } : { agentId: id }), ...extra }),
+    validate: isApp ? validateAppTree : validateTree,
+    page: `#${isApp ? 'app' : 'agent'}/${id}`,
+  };
+}
+
+/** Branch commands are an agent's: an app is served from main and has versions. */
+function agentOnly(lock, command) {
+  if (lock.kind === 'app') {
+    die(`Apps have no branches, so \`8legs ${command}\` does not apply here.\n` +
+        '  Every push is kept as a version: `8legs versions`, and `8legs rollback <n>` to go back.');
+  }
 }
 
 /* ─────────────────── commands ─────────────────── */
@@ -114,24 +143,59 @@ commands.list = async () => {
   console.log(C.dim(`\n  8legs pull ${agents[0].id}`));
 };
 
-commands.pull = async () => {
-  const wanted = args[1];
-  const existing = !wanted ? requireRoot() : null;
-  let agentId = existing ? existing.lock.agentId : wanted;
+commands.apps = async () => {
+  const apps = await api('/api/apps');
+  if (!apps.length) return console.log('No apps yet. Create one in the platform, under Apps.');
+  const width = Math.max(...apps.map(a => (a.slug || '').length));
+  for (const a of apps) {
+    console.log(`  ${(a.slug || '').padEnd(width)}  ${a.name || ''}  ${C.dim(a.access === 'link' ? 'anyone with the link' : 'private')}`);
+  }
+  console.log(C.dim(`\n  8legs pull --app ${apps[0].slug}`));
+};
 
-  if (wanted && !/^[0-9a-f-]{36}$/i.test(wanted)) {
-    const agents = await api('/api/agents');
+/** An app by slug, id or name. Null when there is none; dies when ambiguous. */
+async function findApp(wanted) {
+  const apps = await api('/api/apps');
+  const w = wanted.toLowerCase();
+  const exact = apps.filter(a => a.id === wanted || (a.slug || '').toLowerCase() === w);
+  const matches = exact.length ? exact : apps.filter(a => (a.name || '').toLowerCase() === w);
+  if (matches.length > 1) die(`More than one app is called "${wanted}". Use its slug:\n` +
+    matches.map(a => `  ${a.slug}`).join('\n'));
+  return matches[0] || null;
+}
+
+commands.pull = async () => {
+  let wanted = args[1];
+  /* `--app <name>` and `app:<name>` both say "the app, not the agent". */
+  let asApp = false;
+  if (typeof flags.app === 'string') { wanted = flags.app; asApp = true; }
+  else if (flags.app) asApp = true;
+  if (wanted && wanted.startsWith('app:')) { wanted = wanted.slice(4); asApp = true; }
+
+  const existing = !wanted ? requireRoot() : null;
+  let target = existing ? thing(existing.lock) : null;
+
+  if (wanted && !asApp && /^[0-9a-f-]{36}$/i.test(wanted)) {
+    target = thing({ agentId: wanted });
+  } else if (wanted) {
+    const agents = asApp ? [] : await api('/api/agents');
     const matches = agents.filter(a => (a.name || '').toLowerCase() === wanted.toLowerCase());
-    if (!matches.length) die(`No agent called "${wanted}". Try \`8legs list\`.`);
     if (matches.length > 1) die(`More than one agent is called "${wanted}". Use its id:\n` +
       matches.map(a => `  ${a.id}`).join('\n'));
-    agentId = matches[0].id;
+    if (matches.length) target = thing({ agentId: matches[0].id });
+    else {
+      /* No agent by that name: an app's slug is the next thing it could be. */
+      const app = await findApp(wanted);
+      if (!app) die(asApp ? `No app called "${wanted}". Try \`8legs apps\`.`
+                          : `No agent or app called "${wanted}". Try \`8legs list\` or \`8legs apps\`.`);
+      target = thing({ kind: 'app', appId: app.id });
+    }
   }
 
   const branch = flags.branch || (existing ? existing.lock.branch : null);
-  const pulled = await api(`/api/agents/${agentId}/files${branch ? `?branch=${encodeURIComponent(branch)}` : ''}`);
+  const pulled = await api(target.files(branch));
   const root = existing ? existing.root
-    : path.resolve(flags.dir || slug(pulled.files) || `agent-${agentId.slice(0, 8)}`);
+    : path.resolve(flags.dir || slug(pulled) || `${target.noun}-${target.id.slice(0, 8)}`);
 
   if (existing) {
     const local = changes(root, existing.lock);
@@ -140,16 +204,22 @@ commands.pull = async () => {
       die(`You have local changes that a pull would overwrite:\n` +
           dirty.map(p => `  ${p}`).join('\n') + `\n\nPush them first, or pull with --force.`);
     }
+    /* A file the platform no longer has would otherwise linger and be read
+       as a local addition. Only files this checkout itself wrote are removed. */
+    for (const rel of Object.keys(existing.lock.files || {})) {
+      if (!(rel in pulled.files)) { try { fs.unlinkSync(path.join(root, rel)); } catch {} }
+    }
   } else if (fs.existsSync(root) && fs.readdirSync(root).length) {
     die(`${root} already exists and is not empty. Use --dir to choose another folder.`);
   }
 
   writeTree(root, pulled.files);
-  writeLock(root, { agentId, branch: pulled.branch, version: pulled.version,
-                    host: session().host, files: pulled.files });
+  writeLock(root, target.lock({ branch: pulled.branch, version: pulled.version,
+                                host: session().host, files: pulled.files }));
   const count = Object.keys(pulled.files).length;
   console.log(C.green('✓ ') + `Pulled ${count} files into ${C.bold(path.relative(process.cwd(), root) || '.')}`);
   console.log(C.dim(`  ${pulled.branch} · ${pulled.version}`));
+  if (target.isApp) console.log(C.dim(`  live at ${session().host}/a/${pulled.slug}/  (open it with \`8legs open\`)`));
   if (pulled.git) {
     console.log(C.dim(`  git  ${pulled.git.cloneUrl}`));
     if (!fs.existsSync(path.join(root, '.git'))) {
@@ -159,19 +229,20 @@ commands.pull = async () => {
 };
 
 /** The agent's own folder name, taken from the config it just sent. */
-function slug(files) {
-  try { return JSON.parse(files['config.json']).profile.name || null; } catch { return null; }
+function slug(pulled) {
+  if (pulled.slug) return pulled.slug;
+  try { return JSON.parse(pulled.files['config.json']).profile.name || null; } catch { return null; }
 }
 
 commands.status = async () => {
   const { root, lock } = requireRoot();
   const { added, modified, deleted } = changes(root, lock);
-  console.log(`${C.bold(lock.branch || 'main')}  ${C.dim(lock.agentId)}`);
+  const it = thing(lock);
+  console.log(`${C.bold(lock.branch || 'main')}  ${C.dim(`${it.noun} ${it.id}`)}`);
 
-  const remote = await api(
-    `/api/agents/${lock.agentId}/files?branch=${encodeURIComponent(lock.branch || 'main')}`).catch(() => null);
+  const remote = await api(it.files(lock.branch || 'main')).catch(() => null);
   if (remote && remote.version !== lock.version) {
-    console.log(C.yellow('  ! ') + 'The agent changed on the platform since you pulled.');
+    console.log(C.yellow('  ! ') + `The ${it.noun} changed on the platform since you pulled.`);
     console.log(C.dim('    Run `8legs pull` to take those changes first.'));
   }
 
@@ -183,8 +254,7 @@ commands.status = async () => {
 
 commands.diff = async () => {
   const { root, lock } = requireRoot();
-  const pulled = await api(
-    `/api/agents/${lock.agentId}/files?branch=${encodeURIComponent(lock.branch || 'main')}`);
+  const pulled = await api(thing(lock).files(lock.branch || 'main'));
   const { added, modified, deleted, files } = changes(root, lock);
   const only = args[1];
 
@@ -233,8 +303,9 @@ function lineDiff(a, b) {
 commands.validate = async () => {
   const { root, lock } = requireRoot();
   const { files } = changes(root, lock);
-  const problems = validateTree(files);
-  if (!problems.length) return console.log(C.green('✓ ') + 'The agent folder looks valid.');
+  const it = thing(lock);
+  const problems = it.validate(files);
+  if (!problems.length) return console.log(C.green('✓ ') + `The ${it.noun} folder looks valid.`);
   for (const p of problems) console.log(C.red('  ✗ ') + p);
   process.exit(1);
 };
@@ -270,12 +341,45 @@ export function validateTree(files) {
   return problems;
 }
 
+/** The same, for an app folder. */
+export function validateAppTree(files) {
+  const problems = [];
+  let config = null;
+  if (files['app.json'] === undefined) problems.push('app.json is missing');
+  else {
+    try { config = JSON.parse(files['app.json']); } catch (e) { problems.push(`app.json: ${e.message}`); }
+  }
+  if (config) {
+    if (!config.id) problems.push('app.json: id is required');
+    const entry = config.entry || 'index.html';
+    if (files[entry] === undefined) problems.push(`${entry} is missing (app.json names it as the entry)`);
+    for (const key of ['agents', 'tables']) {
+      const links = config[key];
+      if (links === undefined) continue;
+      if (!links || typeof links !== 'object' || Array.isArray(links)) {
+        problems.push(`app.json: ${key} must be an object of name → id`);
+        continue;
+      }
+      for (const [alias, target] of Object.entries(links)) {
+        if (!/^[A-Za-z0-9_-]{1,40}$/.test(alias)) problems.push(`app.json: ${key}.${alias} — use letters, digits, - and _ for the name`);
+        if (!(typeof target === 'string' ? target : target && target.id)) problems.push(`app.json: ${key}.${alias} needs an id`);
+      }
+    }
+  }
+  /* The platform carries text. A binary file read as text would arrive broken. */
+  for (const [p, content] of Object.entries(files)) {
+    if (content.includes('\u0000')) problems.push(`${p} looks like a binary file; apps carry text files only`);
+  }
+  return problems;
+}
+
 commands.push = async () => {
   const { root, lock } = requireRoot();
   const { added, modified, deleted, files } = changes(root, lock);
   if (!added.length && !modified.length && !deleted.length) return console.log('Nothing to push.');
 
-  const problems = validateTree(files);
+  const it = thing(lock);
+  const problems = it.validate(files);
   if (problems.length) {
     console.log(C.red('Refusing to push — the folder is not valid:'));
     for (const p of problems) console.log(C.red('  ✗ ') + p);
@@ -284,11 +388,11 @@ commands.push = async () => {
 
   let result;
   try {
-    result = await api(`/api/agents/${lock.agentId}/files?branch=${encodeURIComponent(lock.branch || 'main')}`,
+    result = await api(it.files(lock.branch || 'main'),
                        { method: 'PUT', body: { baseVersion: lock.version, files } });
   } catch (e) {
     if (e instanceof ApiError && e.status === 409) {
-      die('The agent changed on the platform since you pulled.\n' +
+      die(`The ${it.noun} changed on the platform since you pulled.\n` +
           '  Run `8legs pull` to take those changes, redo your edit, and push again.');
     }
     if (e instanceof ApiError && e.status === 422) {
@@ -299,11 +403,15 @@ commands.push = async () => {
     throw e;
   }
 
-  writeLock(root, { agentId: lock.agentId, branch: result.branch, version: result.version,
-                    host: lock.host, files });
+  writeLock(root, it.lock({ branch: result.branch, version: result.version, host: lock.host, files }));
   const n = added.length + modified.length + deleted.length;
   console.log(C.green('✓ ') + `Pushed ${n} change(s) to ${C.bold(result.branch)}`);
   console.log(C.dim(`  ${result.version}`));
+  if (it.isApp) {
+    console.log(C.dim(result.versionNumber
+      ? `  live now, as version ${result.versionNumber}`
+      : '  nothing the platform stores changed, so no new version'));
+  }
 };
 
 /**
@@ -316,7 +424,8 @@ commands.push = async () => {
 commands.git = async () => {
   const { root, lock } = requireRoot();
   const { execFileSync } = await import('child_process');
-  const pulled = await api(`/api/agents/${lock.agentId}/files`);
+  const it = thing(lock);
+  const pulled = await api(it.files());
   if (!pulled.git) {
     die('This platform has no GitHub organisation configured, so there is no repository to connect to.');
   }
@@ -330,12 +439,13 @@ commands.git = async () => {
     die(`git said: ${(e.stderr || e.message).toString().trim()}`);
   }
   console.log(C.green('✓ ') + `origin → ${pulled.git.cloneUrl}`);
-  console.log(C.dim('  A `git push` to this remote is applied to the agent, the same as `8legs push`.'));
+  console.log(C.dim(`  A \`git push\` to this remote is applied to the ${it.noun}, the same as \`8legs push\`.`));
   console.log(C.dim('  A commit that does not validate is marked failed on GitHub and is not made live.'));
 };
 
 commands.branches = async () => {
   const { lock } = requireRoot();
+  agentOnly(lock, 'branches');
   const { branches } = await api(`/api/agents/${lock.agentId}/branches`);
   const width = Math.max(...branches.map(b => b.name.length));
   for (const b of branches) {
@@ -348,6 +458,7 @@ commands.branches = async () => {
 
 commands.branch = async () => {
   const { root, lock } = requireRoot();
+  agentOnly(lock, 'branch');
   const name = args[1];
   if (!name) die('Give the branch a name: `8legs branch warmer-tone`');
 
@@ -363,6 +474,7 @@ commands.branch = async () => {
 
 commands.checkout = async () => {
   const { root, lock } = requireRoot();
+  agentOnly(lock, 'checkout');
   const name = args[1];
   if (!name) die('Which branch? Try `8legs branches`.');
   const local = changes(root, lock);
@@ -396,6 +508,7 @@ async function checkout(root, lock, name) {
 
 commands.merge = async () => {
   const { lock } = requireRoot();
+  agentOnly(lock, 'merge');
   const name = args[1] || lock.branch;
   if (!name || name === 'main') die('Name the branch to merge into main.');
   const merged = await api(`/api/agents/${lock.agentId}/branches`,
@@ -406,6 +519,7 @@ commands.merge = async () => {
 
 commands.traffic = async () => {
   const { lock } = requireRoot();
+  agentOnly(lock, 'traffic');
   if (flags.stop) {
     const stopped = await api(`/api/agents/${lock.agentId}/branches`,
                               { method: 'PUT', body: { action: 'stop' } });
@@ -423,9 +537,52 @@ commands.traffic = async () => {
   console.log(C.green('✓ ') + `${set.branch} takes ${set.traffic_weight}% of conversations, main takes ${set.main}%.`);
 };
 
+/* ─────────────────── an app's versions ─────────────────── */
+
+function appOnly(lock, command) {
+  if (lock.kind !== 'app') die(`\`8legs ${command}\` is for an app folder. An agent has branches: \`8legs branches\`.`);
+}
+
+commands.versions = async () => {
+  const { lock } = requireRoot();
+  appOnly(lock, 'versions');
+  const { versions } = await api(`/api/apps/${lock.appId}/versions`);
+  for (const v of versions) {
+    const from = v.source === 'git' ? `git ${String(v.commit_sha || '').slice(0, 7)}` : v.source;
+    console.log(`  ${String(v.number).padStart(3)}  ${C.dim(String(v.created_at).slice(0, 16).replace('T', ' '))}  ${from.padEnd(11)}` +
+                `${v.message || ''}${v.active ? C.cyan('  ← live') : ''}`);
+  }
+};
+
+commands.rollback = async () => {
+  const { root, lock } = requireRoot();
+  appOnly(lock, 'rollback');
+  const number = args[1];
+  if (!number) die('Which version? `8legs versions` lists them, then `8legs rollback 3`.');
+  const local = changes(root, lock);
+  if ([...local.added, ...local.modified, ...local.deleted].length && !flags.force) {
+    die('You have local changes that going back would overwrite. Push them first, or use --force.');
+  }
+  let done;
+  try {
+    done = await api(`/api/apps/${lock.appId}/versions`, { method: 'POST', body: { versionId: String(number) } });
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) die(`No version ${number}. Try \`8legs versions\`.`);
+    throw e;
+  }
+  console.log(C.green('✓ ') + `Version ${done.versionNumber} is live again.`);
+  /* The folder follows, so the next edit starts from what is being served. */
+  const pulled = await api(thing(lock).files());
+  for (const rel of Object.keys(lock.files || {})) {
+    if (!(rel in pulled.files)) { try { fs.unlinkSync(path.join(root, rel)); } catch {} }
+  }
+  writeTree(root, pulled.files);
+  writeLock(root, thing(lock).lock({ branch: pulled.branch, version: pulled.version, host: lock.host, files: pulled.files }));
+};
+
 commands.open = async () => {
   const { lock } = requireRoot();
-  const url = `${lock.host || DEFAULT_HOST}/#agent/${lock.agentId}`;
+  const url = `${lock.host || DEFAULT_HOST}/${thing(lock).page}`;
   const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
   const { spawn } = await import('child_process');
   spawn(opener, [url], { stdio: 'ignore', detached: true }).unref();
@@ -435,21 +592,26 @@ commands.open = async () => {
 /* ─────────────────── dispatch ─────────────────── */
 
 const HELP = `
-${C.bold('8legs')} — edit an agent in your own editor, then push it
+${C.bold('8legs')} — edit an agent or an app in your own editor, then push it
 
   ${C.bold('8legs login')}              store a personal access token
   ${C.bold('8legs logout')}             forget it
   ${C.bold('8legs whoami')}             which installation you are logged in to
   ${C.bold('8legs list')}               your agents, with their ids
+  ${C.bold('8legs apps')}               your apps, with their slugs
 
   ${C.bold('8legs pull <agent>')}       download an agent into a folder
+  ${C.bold('8legs pull --app <app>')}   download an app into a folder
   ${C.bold('8legs pull')}               refresh the folder you are in
   ${C.bold('8legs status')}             what changed, here and on the platform
   ${C.bold('8legs diff [file]')}        the changes themselves
   ${C.bold('8legs validate')}           check the folder before pushing
   ${C.bold('8legs push')}               send the changes
-  ${C.bold('8legs open')}               open this agent in the browser
-  ${C.bold('8legs git')}                point this folder's git remote at the agent
+  ${C.bold('8legs open')}               open this agent or app in the browser
+  ${C.bold('8legs git')}                point this folder's git remote at its repository
+
+  ${C.bold('8legs versions')}           an app's versions, and which one is live
+  ${C.bold('8legs rollback <n>')}       make an earlier version live again
 
   ${C.bold('8legs branches')}           the branches, and their share of conversations
   ${C.bold('8legs branch <name>')}      open one and switch to it

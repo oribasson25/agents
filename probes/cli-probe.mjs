@@ -158,6 +158,55 @@ check('a merged branch is gone from the list', !run(['branches']).out.includes('
 const missing = run(['checkout', 'no-such-branch'], ROOT, true);
 check('an unknown branch is a clear message', !missing.ok && missing.out.includes('No branch called'), missing.out);
 
+/* ── apps: the same folder flow, for an app ───────────────────────────── */
+const liveApp = async () => (await fetch(`${HOST}/__app`, { headers: { Authorization: `Bearer ${TOKEN}` } })).json();
+CWD = WORK;
+check('apps lists the app by its slug', run(['apps']).out.includes('leads-desk'));
+const appPull = run(['pull', '--app', 'leads-desk']);
+check('pull --app writes the app folder', appPull.ok && /Pulled \d+ files/.test(appPull.out), appPull.out);
+const APPROOT = path.join(WORK, 'leads-desk');
+CWD = APPROOT;
+check('the app tree is on disk',
+      ['app.json', 'index.html', 'app.js', 'style.css', 'AGENTS.md'].every(f => fs.existsSync(path.join(APPROOT, f))));
+check('the lock says it is an app',
+      JSON.parse(fs.readFileSync(path.join(APPROOT, '.8legs/lock.json'), 'utf8')).kind === 'app');
+check('a name with no agent behind it finds the app', run(['pull', 'leads-desk', '--dir', 'again'], WORK).ok);
+check('status is clean right after pulling an app', run(['status']).out.includes('nothing changed locally'));
+
+const indexPath = path.join(APPROOT, 'index.html');
+fs.writeFileSync(indexPath, fs.readFileSync(indexPath, 'utf8').replace('Loading…', 'Edited in my editor'));
+fs.mkdirSync(path.join(APPROOT, 'pages'));
+fs.writeFileSync(path.join(APPROOT, 'pages/about.html'), '<h1>About</h1>\n');
+const appStatus = run(['status']);
+check('status sees an edit and a new file', appStatus.out.includes('M index.html') && appStatus.out.includes('A pages/about.html'), appStatus.out);
+check('validate accepts the app folder', run(['validate']).out.includes('looks valid'));
+const appPush = run(['push']);
+check('push makes the app live as a new version', appPush.ok && appPush.out.includes('version 2'), appPush.out);
+const afterPush = await liveApp();
+check('the platform has the edit and the new file',
+      afterPush.files['index.html'].includes('Edited in my editor') && afterPush.files['pages/about.html'] === '<h1>About</h1>\n');
+check('status is clean after the push', run(['status']).out.includes('nothing changed locally'));
+
+/* A broken folder must not leave the machine. */
+const appJson = path.join(APPROOT, 'app.json');
+const goodJson = fs.readFileSync(appJson, 'utf8');
+fs.unlinkSync(indexPath);
+const noEntry = run(['push'], APPROOT, true);
+check('push refuses an app with no entry page', !noEntry.ok && noEntry.out.includes('index.html is missing'), noEntry.out);
+check('and the live app still has it', !!(await liveApp()).files['index.html']);
+run(['pull', '--force']);
+check('pull --force restores the folder', fs.existsSync(indexPath) && fs.readFileSync(appJson, 'utf8') === goodJson);
+
+/* Versions and going back. */
+const listed = run(['versions']);
+check('versions shows which one is live', /2 .*← live/.test(listed.out) && listed.out.includes('Created'), listed.out);
+const rolled = run(['rollback', '1']);
+check('rollback makes the earlier version live', rolled.ok && (await liveApp()).files['index.html'].includes('Loading…'), rolled.out);
+check('and the folder follows it',
+      fs.readFileSync(indexPath, 'utf8').includes('Loading…') && !fs.existsSync(path.join(APPROOT, 'pages/about.html')));
+const noBranch = run(['branch', 'x'], APPROOT, true);
+check('branch commands explain that apps have versions instead', !noBranch.ok && noBranch.out.includes('8legs versions'), noBranch.out);
+
 console.log(`\n${failed ? `${failed} FAILURE(S)` : 'all green'}`);
 proc.kill();
 process.exit(failed ? 1 : 0);

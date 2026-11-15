@@ -381,6 +381,7 @@
     users: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
     jarvis: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 6.5l1 2.3 2.3 1-2.3 1L12 13l-1-2.2-2.3-1 2.3-1z"/></svg>,
     alert: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
+    apps: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>,
   };
 
   /* The mono face the redesign leans on: branch names, model ids, eyebrow
@@ -4954,7 +4955,7 @@ function markSvgString(color, size = 30) {
    * Everything needed to work on this agent from an editor, in the order you
    * need it: install the CLI, log in with a token minted here, pull the agent.
    */
-  function LocalIdePanel({ agentId, onClose }) {
+  function LocalIdePanel({ agentId, appSlug, onClose }) {
     useEffect(() => {
       function onKey(e) { if (e.key === 'Escape') onClose(); }
       document.addEventListener('keydown', onKey);
@@ -4989,7 +4990,9 @@ function markSvgString(color, size = 30) {
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 800, fontSize: 17 }}>Build on local IDE</div>
               <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.6 }}>
-                {L('This AI Chatbot is files. Pull it into a folder, edit it in your own editor, and push it back.', 'ה-AI Chatbot הזה הוא קבצים. משוך אותו לתיקייה, ערוך בעורך שלך, ודחוף בחזרה.')}
+                {appSlug
+                  ? L('This app is files. Pull it into a folder, edit it in your own editor, and push it back — the push is live at once and kept as a version.', 'האפליקציה הזו היא קבצים. משוך אותה לתיקייה, ערוך בעורך שלך, ודחוף בחזרה — ה-push עולה מיד לאוויר ונשמר כגרסה.')
+                  : L('This AI Chatbot is files. Pull it into a folder, edit it in your own editor, and push it back.', 'ה-AI Chatbot הזה הוא קבצים. משוך אותו לתיקייה, ערוך בעורך שלך, ודחוף בחזרה.')}
               </div>
             </div>
             <IconBtn onClick={onClose} title={L('Close', 'סגור')}>✕</IconBtn>
@@ -5010,8 +5013,10 @@ function markSvgString(color, size = 30) {
             </div>
 
             <div>
-              {step(3, L('Pull the AI Chatbot', 'משיכת ה-AI Chatbot'), L('You get a folder with the prompt, the skills and the tools. 8legs push sends them back.', 'נוצרת תיקייה עם הפרומפט, הסקילים והכלים. 8legs push מחזיר אותם.'))}
-              <CopyableCommand command={`npx @8legs/cli pull ${agentId}`} />
+              {appSlug
+                ? step(3, L('Pull the app', 'משיכת האפליקציה'), L('You get a folder with app.json and the app\u2019s files. 8legs push sends them back; 8legs git connects the folder to its GitHub repository, where a git push does the same.', 'נוצרת תיקייה עם app.json וקבצי האפליקציה. 8legs push מחזיר אותם; 8legs git מחבר את התיקייה לריפו שלה ב-GitHub, ושם git push עושה אותו דבר.'))
+                : step(3, L('Pull the AI Chatbot', 'משיכת ה-AI Chatbot'), L('You get a folder with the prompt, the skills and the tools. 8legs push sends them back.', 'נוצרת תיקייה עם הפרומפט, הסקילים והכלים. 8legs push מחזיר אותם.'))}
+              <CopyableCommand command={appSlug ? `npx @8legs/cli pull --app ${appSlug}` : `npx @8legs/cli pull ${agentId}`} />
             </div>
           </div>
         </div>
@@ -5743,6 +5748,7 @@ function markSvgString(color, size = 30) {
       { id: 'knowledge',    label: 'Knowledge (RAG)' },
       { id: 'tables',       label: 'Tables' },
       { id: 'test',         label: 'Testing & manual tests' },
+      { id: 'apps',         label: 'Apps' },
       { id: 'cli',          label: '⌨ Editing from an IDE (CLI)' },
       { id: 'widget',       label: 'Embedding on a site' },
       { id: 'whatsapp',     label: 'WhatsApp channel' },
@@ -6382,6 +6388,10 @@ npx @8legs/cli <command>   # without installing anything`}</Block>
                 ['merge [name]', 'applies the branch to main — that is, makes it live'],
                 ['traffic <name> <%>', 'sends a share of real conversations to a branch'],
                 ['traffic --stop', 'everything goes back to main'],
+                ['apps', 'your apps, with the slug of each'],
+                ['pull --app <app>', 'downloads an app into a folder. By slug, id or name'],
+                ['versions', 'in an app folder: its versions, and which one is live'],
+                ['rollback <n>', 'in an app folder: makes an earlier version live again'],
               ].map(([cmd, what]) => (
                 <tr key={cmd} style={{ borderBottom: '1px solid var(--border)' }}>
                   <td dir="ltr" style={{ padding: '7px 14px 7px 0', fontFamily: 'monospace', color: 'var(--teal)',
@@ -6442,6 +6452,63 @@ git add -A && git commit -m "…" && git push`}</Block>
           </UL>
 
           <Tip>An edit in the interface goes into a <strong>draft</strong>, not into the live chatbot — the bar at the top of the editor is what publishes it. In the CLI that draft is a branch called <Code>draft</Code>.</Tip>
+
+          <H3>Apps work the same way</H3>
+          <P>An app is pulled, edited and pushed with the same commands, and has a GitHub repo of its own. See <strong>Apps</strong> in this documentation for what its folder holds.</P>
+          <Block>{`8legs apps
+8legs pull --app leads-desk
+# edit, then
+8legs push                 # live at once, and kept as a version
+8legs versions
+8legs rollback 3           # make version 3 live again`}</Block>
+        </div>
+      ),
+
+      /* ─────────────── APPS ─────────────── */
+      apps: (
+        <div dir="ltr">
+          <H2>Apps</H2>
+          <P>An app is a small web interface of your own that the platform hosts: a dashboard over a table, a custom chat with one of your chatbots, an internal tool. It is a folder of web files — an HTML page, scripts, styles — served as they are at <Code>/a/&lt;slug&gt;/</Code>.</P>
+
+          <H3>Making one</H3>
+          <P>On the <strong>Apps</strong> tab press <strong>New app</strong> and name it. The name gives the app its address, which does not change afterwards. It starts with a working starter page, and it starts private.</P>
+
+          <H3>Editing it</H3>
+          <UL>
+            <li><strong>In the platform</strong> — the Files tab edits any file; <strong>Save &amp; publish</strong> makes the edit live.</li>
+            <li><strong>In your own editor</strong> — <strong>Build on local IDE</strong> gives the command: <Code>8legs pull --app &lt;slug&gt;</Code>, edit, <Code>8legs push</Code>.</li>
+            <li><strong>With git</strong> — <Code>8legs git</Code> points the folder at the app&rsquo;s GitHub repo. A <Code>git push</Code> to <Code>main</Code> that validates goes live; one that does not is marked ✗ on GitHub and the live app does not move. Other git branches are kept in git and not served.</li>
+          </UL>
+          <P>There is no build step. If you use a bundler, commit what it produces. Files are text — HTML, JS, CSS, JSON, SVG — up to 300 files and 2 MB in all.</P>
+
+          <H3>What the folder holds</H3>
+          <Block>{`app.json        id, name, description, entry page, linked chatbots and tables
+index.html      the page that opens (app.json's "entry" can name another)
+…               any other file, referenced by relative path
+AGENTS.md       how to edit this app — for Claude Code
+.8legs/lock.json  id and version`}</Block>
+
+          <H3>Reaching chatbots and tables</H3>
+          <P>An app can use only what it links. Link a chatbot or a table on the app&rsquo;s <strong>AI Chatbots &amp; Tables</strong> tab (or in <Code>app.json</Code>), under a name your code will use. Every page then has a global <Code>legs</Code>:</P>
+          <Block>{`const chat = legs.agent('support').chat();
+const reply = await chat.send('hello');          // keeps the conversation
+
+const leads = legs.table('leads');
+const { rows, total, columns } = await leads.rows({ q: '', limit: 100 });
+await leads.add({ name: 'Dana' });
+await leads.update(rowId, { status: 'won' });
+await leads.remove(rowId);`}</Block>
+          <P>A table can be linked <strong>read-only</strong>, and then the app can list its rows and nothing else.</P>
+
+          <H3>Versions</H3>
+          <P>Every save and every push is kept as a version, and exactly one is live. The <strong>Versions</strong> tab makes an earlier one live again at once; nothing is deleted by going back.</P>
+
+          <H3>Who can open it</H3>
+          <UL>
+            <li><strong>Private</strong> (the default) — only you, signed in. The address alone opens nothing.</li>
+            <li><strong>Anyone with the link</strong> — no sign-in. Whoever opens it can use the chatbots and tables the app links, so link a table read-only unless visitors are meant to write to it.</li>
+          </UL>
+          <Warn>An app&rsquo;s page runs sandboxed, apart from the platform: it has no cookies or localStorage, and reaches your account only through <Code>legs</Code>.</Warn>
         </div>
       ),
 
@@ -7036,6 +7103,535 @@ npm run migrate            # run it`}</Block>
               onChanged && onChanged();
             }} />
         )}
+      </div>
+    );
+  }
+
+  /* ─────────────────── APPS ─────────────────── */
+  async function appsCall(path, opts, what) {
+    const r = await apiFetch(path, opts);
+    if (r.status === 204) return null;
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `Could not ${what} (${r.status})`);
+    return d;
+  }
+  const apiListApps = () => appsCall('/api/apps', {}, 'load the apps');
+  const apiCreateApp = (spec) => appsCall('/api/apps', { method: 'POST', body: JSON.stringify(spec) }, 'create the app');
+  const apiGetApp = (id) => appsCall(`/api/apps/${id}`, {}, 'load the app');
+  const apiSaveApp = (id, patch) => appsCall(`/api/apps/${id}`, { method: 'PUT', body: JSON.stringify(patch) }, 'save the app');
+  const apiDeleteApp = (id) => appsCall(`/api/apps/${id}`, { method: 'DELETE' }, 'delete the app');
+  const apiAppVersions = (id) => appsCall(`/api/apps/${id}/versions`, {}, 'load the versions');
+  const apiActivateAppVersion = (id, versionId) =>
+    appsCall(`/api/apps/${id}/versions`, { method: 'POST', body: JSON.stringify({ versionId }) }, 'switch version');
+
+  /* The parts of an app the screen edits, in one comparable shape. */
+  const APP_EDITABLE = ['name', 'description', 'entry', 'agents', 'tables', 'files'];
+  function appDraft(app) {
+    return Object.fromEntries(APP_EDITABLE.map(k => [k, app[k] === undefined ? (k === 'files' || k === 'agents' || k === 'tables' ? {} : '') : app[k]]));
+  }
+
+  function AccessChip({ access }) {
+    return access === 'link'
+      ? <Chip tone="live">{L('Anyone with the link', 'כל מי שיש לו קישור')}</Chip>
+      : <Chip tone="neutral">{L('Private', 'פרטי')}</Chip>;
+  }
+
+  /**
+   * Apps: small web interfaces the account hosts on the platform. The list,
+   * and behind each card the workspace where one is previewed, edited, linked
+   * to AI Chatbots and Tables, shared, and rolled back.
+   */
+  function AppsView({ agents }) {
+    const [apps, setApps] = useState(null);
+    const [openId, setOpenId] = useState(() => {
+      const m = String(window.location.hash || '').match(/^#app\/(.+)$/);
+      return m ? m[1] : null;
+    });
+    const [creating, setCreating] = useState(false);
+    const [error, setError] = useState('');
+
+    const load = useCallback(() => (
+      apiListApps()
+        .then(list => { setApps(list || []); setError(''); })
+        .catch(err => { setApps([]); setError(err.message); })
+    ), []);
+    useEffect(() => { load(); }, [load]);
+
+    if (openId) {
+      return <AppWorkspace appId={openId} agents={agents}
+                onBack={() => {
+                  /* A link straight to an app should not reopen it on the next reload. */
+                  if (/^#app\//.test(window.location.hash || '')) {
+                    try { window.history.replaceState(null, '', window.location.pathname); } catch {}
+                  }
+                  setOpenId(null); load();
+                }} />;
+    }
+
+    return (
+      <div style={{ position: 'relative' }}>
+        <PageHeader
+          eyebrow={L('Your own interfaces', 'ממשקים משלך')}
+          title="Apps"
+          subtitle={L('Small web apps the platform hosts for you. They can talk to your AI Chatbots and read and write your Tables.',
+                      'אפליקציות ווב קטנות שהפלטפורמה מארחת עבורך. הן יכולות לדבר עם ה-AI Chatbots שלך ולקרוא ולכתוב בטבלאות שלך.')}
+          actions={<Btn variant="primary" icon={Icons.plus} onClick={() => setCreating(true)}>{L('New app', 'אפליקציה חדשה')}</Btn>}
+        />
+
+        {error && <div style={{ color: 'var(--danger)', fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
+
+        {apps === null ? (
+          <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{L('Loading…', 'טוען…')}</div>
+        ) : apps.length === 0 ? (
+          <EmptyState icon={Icons.apps} title={L('No apps yet', 'אין עדיין אפליקציות')}
+            subtitle={L('An app is a page of your own — a dashboard over a Table, a custom chat with an AI Chatbot, an internal tool. Create one, then edit it here or in your own editor.',
+                        'אפליקציה היא דף משלך — דשבורד על טבלה, צ׳אט מותאם עם AI Chatbot, כלי פנימי. צור אחת, וערוך אותה כאן או בעורך שלך.')} />
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))', gap: 16 }}>
+            {apps.map(a => (
+              <div key={a.id} onClick={() => setOpenId(a.id)} style={{
+                background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)',
+                padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12, cursor: 'pointer',
+              }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(239,159,39,0.35)'; e.currentTarget.style.boxShadow = 'var(--shadow)'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = 'none'; }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                  <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: 'var(--primary-dim)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {Icons.apps}
+                  </div>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div dir="auto" style={{ fontWeight: 700, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</div>
+                    <div dir="ltr" style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2, textAlign: 'start' }}>/a/{a.slug}/</div>
+                  </div>
+                  <AccessChip access={a.access} />
+                </div>
+                {a.description && (
+                  <div dir="auto" style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6 }}>{a.description}</div>
+                )}
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 11, fontSize: 11.5, color: 'var(--text-muted)', display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                  <span>{a.fileCount} {L('files', 'קבצים')}</span>
+                  <span>{a.versions} {L('versions', 'גרסאות')}</span>
+                  <span>{Object.keys(a.agents || {}).length} AI Chatbots</span>
+                  <span>{Object.keys(a.tables || {}).length} Tables</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {creating && (
+          <NewAppDialog
+            onCancel={() => setCreating(false)}
+            onCreate={async spec => {
+              const made = await apiCreateApp(spec);
+              setCreating(false);
+              setOpenId(made.id);
+            }} />
+        )}
+      </div>
+    );
+  }
+
+  function NewAppDialog({ onCancel, onCreate }) {
+    const [name, setName] = useState('');
+    const [description, setDescription] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState('');
+
+    async function create() {
+      if (!name.trim() || busy) return;
+      setBusy(true); setError('');
+      try { await onCreate({ name: name.trim(), description: description.trim() }); }
+      catch (err) { setError(err.message); setBusy(false); }
+    }
+
+    return (
+      <div onClick={onCancel} style={{
+        position: 'fixed', inset: 0, background: 'rgba(13,15,20,0.45)', zIndex: 300,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 30,
+      }}>
+        <div className="fade-in" onClick={e => e.stopPropagation()} dir={uiDir()} style={{
+          width: 'min(520px, 100%)', background: 'var(--bg-card)', border: '1px solid var(--border)',
+          borderRadius: 'var(--r-xl)', boxShadow: 'var(--shadow-lg)',
+        }}>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', fontWeight: 800, fontSize: 16 }}>
+            {L('New app', 'אפליקציה חדשה')}
+          </div>
+          <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label className="field-label">{L('Name', 'שם')}</label>
+              <input value={name} onChange={e => setName(e.target.value)} dir="auto" autoFocus
+                onKeyDown={e => { if (e.key === 'Enter') create(); }}
+                placeholder={L('e.g. Leads desk', 'למשל לוח לידים')} />
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.6 }}>
+                {L('The name also gives the app its address, which does not change afterwards.',
+                   'מהשם נגזרת גם הכתובת של האפליקציה, והיא לא משתנה אחר כך.')}
+              </div>
+            </div>
+            <div>
+              <label className="field-label">{L('What it is for', 'למה היא משמשת')}</label>
+              <input value={description} onChange={e => setDescription(e.target.value)} dir="auto"
+                placeholder={L('optional', 'לא חובה')} />
+            </div>
+            {error && <div style={{ color: 'var(--danger)', fontSize: 12.5 }}>{error}</div>}
+          </div>
+          <div style={{
+            padding: '14px 20px', borderTop: '1px solid var(--border)', background: 'var(--bg-panel)',
+            display: 'flex', justifyContent: 'flex-end', gap: 10, borderRadius: '0 0 var(--r-xl) var(--r-xl)',
+          }}>
+            <Btn onClick={onCancel}>{L('Cancel', 'ביטול')}</Btn>
+            <Btn variant="primary" disabled={!name.trim() || busy} onClick={create}>
+              {busy ? L('Creating…', 'יוצר…') : L('Create app', 'צור אפליקציה')}
+            </Btn>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /** One app: preview, files, what it may reach, versions, sharing. */
+  function AppWorkspace({ appId, agents, onBack }) {
+    const [app, setApp] = useState(null);
+    const [draft, setDraft] = useState(null);
+    const [tab, setTab] = useState('preview');
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState('');
+    const [ide, setIde] = useState(false);
+    const [confirmDelete, setConfirmDelete] = useState(false);
+    /* Bumped to reload the preview after anything that changes what is live. */
+    const [shown, setShown] = useState(0);
+
+    const take = useCallback((loaded) => { setApp(loaded); setDraft(appDraft(loaded)); setShown(n => n + 1); }, []);
+    useEffect(() => {
+      apiGetApp(appId).then(take).catch(err => setError(err.message));
+    }, [appId, take]);
+
+    if (!app || !draft) {
+      return (
+        <div>
+          <Btn size="sm" onClick={onBack}>{L('← Apps', 'Apps →')}</Btn>
+          <div style={{ color: error ? 'var(--danger)' : 'var(--text-muted)', fontSize: 13, marginTop: 16 }}>
+            {error || L('Loading…', 'טוען…')}
+          </div>
+        </div>
+      );
+    }
+
+    const dirty = JSON.stringify(draft) !== JSON.stringify(appDraft(app));
+    const absoluteUrl = window.location.origin + app.url;
+    const publicUrl = `${window.location.origin}/a/${app.slug}/`;
+
+    async function save(patch) {
+      setBusy(true); setError('');
+      try { take(await apiSaveApp(app.id, patch)); return true; }
+      catch (err) { setError(err.message); return false; }
+      finally { setBusy(false); }
+    }
+
+    const tabs = [
+      { id: 'preview',  label: L('Preview', 'תצוגה') },
+      { id: 'files',    label: L('Files', 'קבצים') },
+      { id: 'links',    label: L('AI Chatbots & Tables', 'AI Chatbots וטבלאות') },
+      { id: 'versions', label: L('Versions', 'גרסאות') },
+      { id: 'share',    label: L('Sharing & settings', 'שיתוף והגדרות') },
+    ];
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+          <Btn size="sm" onClick={onBack}>{L('← Apps', 'Apps →')}</Btn>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div dir="auto" style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.03em' }}>{app.name}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+              <span dir="ltr" style={{ fontFamily: MONO, fontSize: 12, color: 'var(--text-muted)' }}>/a/{app.slug}/</span>
+              <AccessChip access={app.access} />
+            </div>
+          </div>
+          <Btn icon={Icons.terminal} onClick={() => setIde(true)}
+               title={L('Pull this app into a folder, edit it in your own editor, and push it back',
+                        'למשוך את האפליקציה לתיקייה, לערוך בעורך שלך, ולדחוף בחזרה')}>
+            Build on local IDE
+          </Btn>
+          <Btn onClick={() => window.open(absoluteUrl, '_blank', 'noopener')}>{L('Open in a tab', 'פתח בלשונית')}</Btn>
+          <Btn variant="primary" disabled={!dirty || busy} onClick={() => save(draft)}>
+            {busy ? L('Saving…', 'שומר…') : dirty ? L('Save & publish', 'שמור ופרסם') : L('Saved', 'נשמר')}
+          </Btn>
+        </div>
+
+        <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 16, flexWrap: 'wrap' }}>
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)} style={{
+              padding: '9px 14px', fontSize: 13, fontWeight: 600, background: 'transparent', cursor: 'pointer',
+              color: tab === t.id ? 'var(--text)' : 'var(--text-muted)',
+              borderBottom: `2px solid ${tab === t.id ? 'var(--primary)' : 'transparent'}`, marginBottom: -1,
+            }}>{t.label}</button>
+          ))}
+        </div>
+
+        {error && <div style={{ color: 'var(--danger)', fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
+        {dirty && tab === 'preview' && (
+          <div style={{ fontSize: 12, color: 'var(--warning)', marginBottom: 10 }}>
+            {L('The preview shows what is live. Save & publish to see your edits.', 'התצוגה מראה את מה שבאוויר. שמור ופרסם כדי לראות את השינויים.')}
+          </div>
+        )}
+
+        {tab === 'preview' && (
+          /* Sandboxed the same way the server sandboxes the page itself: the
+             app shares nothing with the platform it is shown inside. */
+          <iframe key={shown} title={app.name} src={app.url}
+            sandbox="allow-scripts allow-forms allow-modals allow-popups allow-downloads"
+            style={{ flex: 1, minHeight: 480, width: '100%', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', background: '#fff' }} />
+        )}
+        {tab === 'files' && <AppFilesTab draft={draft} onChange={setDraft} />}
+        {tab === 'links' && <AppLinksTab draft={draft} onChange={setDraft} agents={agents} />}
+        {tab === 'versions' && <AppVersionsTab app={app} dirty={dirty} onActivated={() => apiGetApp(app.id).then(take)} />}
+        {tab === 'share' && (
+          <div style={{ maxWidth: 720, display: 'flex', flexDirection: 'column', gap: 22 }}>
+            <div>
+              <label className="field-label">{L('Name', 'שם')}</label>
+              <input value={draft.name} dir="auto" onChange={e => setDraft({ ...draft, name: e.target.value })} />
+            </div>
+            <div>
+              <label className="field-label">{L('What it is for', 'למה היא משמשת')}</label>
+              <input value={draft.description} dir="auto" onChange={e => setDraft({ ...draft, description: e.target.value })} />
+            </div>
+
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{L('Who can open it', 'מי יכול לפתוח אותה')}</div>
+              {[
+                { id: 'private', title: L('Private', 'פרטי'),
+                  note: L('Only you, signed in to 8legs. The address does not open for anyone else.', 'רק אתה, מחובר ל-8legs. הכתובת לא נפתחת לאף אחד אחר.') },
+                { id: 'link', title: L('Anyone with the link', 'כל מי שיש לו קישור'),
+                  note: L('No sign-in. Whoever opens it can use the AI Chatbots and Tables this app links — including writing to a Table that is not marked read-only.',
+                          'בלי התחברות. מי שפותח יכול להשתמש ב-AI Chatbots ובטבלאות שהאפליקציה מקשרת — כולל כתיבה לטבלה שלא סומנה לקריאה בלבד.') },
+              ].map(o => (
+                <label key={o.id} style={{
+                  display: 'flex', gap: 10, alignItems: 'flex-start', padding: '12px 14px', marginTop: 8, cursor: 'pointer',
+                  background: 'var(--bg-card)', borderRadius: 'var(--r-md)',
+                  border: `1px solid ${app.access === o.id ? 'rgba(239,159,39,0.45)' : 'var(--border)'}`,
+                }}>
+                  <input type="radio" name="app-access" checked={app.access === o.id} disabled={busy}
+                    onChange={() => save({ access: o.id })} style={{ width: 'auto', marginTop: 3 }} />
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13.5 }}>{o.title}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.6 }}>{o.note}</div>
+                  </div>
+                </label>
+              ))}
+              {app.access === 'link' && (
+                <div style={{ marginTop: 12 }}><CopyableCommand command={publicUrl} note={L('The link to send.', 'הקישור לשליחה.')} /></div>
+              )}
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 18 }}>
+              <Btn danger onClick={() => setConfirmDelete(true)}>{L('Delete this app', 'מחק את האפליקציה')}</Btn>
+            </div>
+          </div>
+        )}
+
+        {ide && <LocalIdePanel appSlug={app.slug} onClose={() => setIde(false)} />}
+        {confirmDelete && (
+          <ConfirmDialog
+            title={L(`Delete "${app.name}"?`, `למחוק את "${app.name}"?`)}
+            body={L('The app, its address and all of its versions are removed. This cannot be undone.',
+                    'האפליקציה, הכתובת שלה וכל הגרסאות שלה נמחקות. אי אפשר לבטל.')}
+            busy={busy}
+            onCancel={() => setConfirmDelete(false)}
+            onConfirm={async () => {
+              setBusy(true);
+              try { await apiDeleteApp(app.id); onBack(); }
+              catch (err) { setError(err.message); setBusy(false); setConfirmDelete(false); }
+            }} />
+        )}
+      </div>
+    );
+  }
+
+  /** The app's own files: a list, and the one being edited. */
+  function AppFilesTab({ draft, onChange }) {
+    const paths = Object.keys(draft.files).sort();
+    const [current, setCurrent] = useState(draft.entry && draft.files[draft.entry] !== undefined ? draft.entry : paths[0]);
+    const [adding, setAdding] = useState('');
+    const active = draft.files[current] !== undefined ? current : paths[0];
+
+    function addFile() {
+      const path = adding.trim().replace(/^\/+/, '');
+      if (!path || draft.files[path] !== undefined) return;
+      onChange({ ...draft, files: { ...draft.files, [path]: '' } });
+      setCurrent(path); setAdding('');
+    }
+    function removeFile(path) {
+      const { [path]: _gone, ...rest } = draft.files;
+      onChange({ ...draft, files: rest });
+    }
+
+    return (
+      <div style={{ display: 'flex', gap: 14, flex: 1, minHeight: 460, flexWrap: 'wrap' }}>
+        <div style={{ width: 230, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {paths.map(p => (
+            <div key={p} onClick={() => setCurrent(p)} dir="ltr" style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 'var(--r-sm)', cursor: 'pointer',
+              fontFamily: MONO, fontSize: 12, background: p === active ? 'var(--bg-hover)' : 'transparent',
+              color: p === active ? 'var(--text)' : 'var(--text-2)',
+            }}>
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p}</span>
+              {p === draft.entry
+                ? <span title={L('The page that opens first', 'הדף שנפתח ראשון')} style={{ color: 'var(--primary)', fontSize: 10 }}>entry</span>
+                : <button title={L('Delete file', 'מחק קובץ')} onClick={e => { e.stopPropagation(); removeFile(p); }}
+                    style={{ background: 'transparent', color: 'var(--text-muted)', fontSize: 12, padding: '0 2px' }}>✕</button>}
+            </div>
+          ))}
+          <div dir="ltr" style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+            <input value={adding} onChange={e => setAdding(e.target.value)} placeholder="pages/about.html"
+              onKeyDown={e => { if (e.key === 'Enter') addFile(); }}
+              style={{ fontFamily: MONO, fontSize: 12, minWidth: 0 }} />
+            <Btn size="sm" onClick={addFile} disabled={!adding.trim()}>{Icons.plus}</Btn>
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.6 }}>
+            {L('Files are served as they are — no build step. For anything bigger than a quick edit, use Build on local IDE.',
+               'הקבצים מוגשים כמו שהם — בלי build. לכל דבר מעבר לעריכה קצרה, השתמש ב-Build on local IDE.')}
+          </div>
+        </div>
+        {active !== undefined && (
+          <textarea dir="ltr" spellCheck={false} value={draft.files[active]}
+            onChange={e => onChange({ ...draft, files: { ...draft.files, [active]: e.target.value } })}
+            style={{
+              flex: '1 1 420px', minHeight: 460, resize: 'vertical', fontFamily: MONO, fontSize: 12.5, lineHeight: 1.6,
+              background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)',
+              padding: 14, color: 'var(--text)', whiteSpace: 'pre', overflow: 'auto', tabSize: 2,
+            }} />
+        )}
+      </div>
+    );
+  }
+
+  /** Which AI Chatbots and Tables the app may reach, and by what name. */
+  function AppLinksTab({ draft, onChange, agents }) {
+    const [tables, setTables] = useState(null);
+    useEffect(() => { apiListTables().then(d => setTables(d.tables || [])).catch(() => setTables([])); }, []);
+
+    const idOf = (t) => (typeof t === 'string' ? t : (t && t.id) || '');
+    const nameFrom = (label) => String(label || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30);
+
+    /* A link list is edited as rows so a name can be retyped without the row
+       jumping around; it is written back as the object app.json holds. */
+    function section(kind, title, note, options, sample) {
+      const links = Object.entries(draft[kind] || {});
+      const write = (rows) => onChange({ ...draft, [kind]: Object.fromEntries(rows) });
+      const free = options.filter(o => !links.some(([, t]) => idOf(t) === o.id));
+      return (
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{title}</div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.65, marginBottom: 10 }}>{note}</div>
+          {links.map(([alias, target], i) => {
+            const option = options.find(o => o.id === idOf(target));
+            return (
+              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
+                <input dir="ltr" value={alias} title={L('The name your code uses', 'השם שהקוד שלך משתמש בו')}
+                  onChange={e => write(links.map((row, n) => (n === i ? [e.target.value.replace(/[^A-Za-z0-9_-]/g, ''), row[1]] : row)))}
+                  style={{ width: 170, fontFamily: MONO, fontSize: 12.5 }} />
+                <span style={{ color: 'var(--text-muted)' }}>→</span>
+                <span dir="auto" style={{ flex: '1 1 160px', fontSize: 13, fontWeight: 600 }}>
+                  {option ? option.name : <span style={{ color: 'var(--danger)' }}>{L('no longer exists', 'כבר לא קיים')}</span>}
+                </span>
+                {kind === 'tables' && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-2)', cursor: 'pointer' }}>
+                    <input type="checkbox" style={{ width: 'auto' }} checked={!!(target && typeof target === 'object' && target.readonly)}
+                      onChange={e => write(links.map((row, n) => (n === i
+                        ? [row[0], e.target.checked ? { id: idOf(row[1]), readonly: true } : idOf(row[1])] : row)))} />
+                    {L('read-only', 'קריאה בלבד')}
+                  </label>
+                )}
+                <IconBtn danger title={L('Unlink', 'הסר קישור')} onClick={() => write(links.filter((_, n) => n !== i))}>✕</IconBtn>
+              </div>
+            );
+          })}
+          {free.length > 0 ? (
+            <select value="" style={{ width: 280, marginTop: 4 }} onChange={e => {
+              const picked = options.find(o => o.id === e.target.value);
+              if (!picked) return;
+              let alias = nameFrom(picked.name) || kind.slice(0, -1);
+              for (let n = 2; links.some(([a]) => a === alias); n++) alias = `${nameFrom(picked.name) || kind.slice(0, -1)}_${n}`;
+              write([...links, [alias, picked.id]]);
+            }}>
+              <option value="">{L('+ Link one…', '+ קשר…')}</option>
+              {free.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          ) : links.length === 0 && (
+            <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{L('Nothing to link yet.', 'אין עדיין מה לקשר.')}</div>
+          )}
+          {links.length > 0 && (
+            <div dir="ltr" style={{ marginTop: 10, fontFamily: MONO, fontSize: 12, color: 'var(--teal)', background: 'var(--bg-hover)', borderRadius: 'var(--r-sm)', padding: '8px 10px', overflowX: 'auto', whiteSpace: 'nowrap' }}>
+              {sample(links[0][0])}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ maxWidth: 760, display: 'flex', flexDirection: 'column', gap: 28 }}>
+        {section('agents', 'AI Chatbots',
+          L('The app can hold a conversation with the ones you link, the same way the website widget does.',
+            'האפליקציה יכולה לנהל שיחה עם אלה שתקשר, כמו הווידג׳ט באתר.'),
+          (agents || []).map(a => ({ id: a.id, name: a.name || '(unnamed)' })),
+          alias => `await legs.agent('${alias}').chat().send('hello')`)}
+        {tables === null
+          ? <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{L('Loading…', 'טוען…')}</div>
+          : section('tables', 'Tables',
+              L('The app can read the rows of the ones you link, and add, change and delete them unless you mark the link read-only.',
+                'האפליקציה יכולה לקרוא את השורות של אלה שתקשר, ולהוסיף, לשנות ולמחוק אותן אלא אם סימנת קריאה בלבד.'),
+              tables.map(t => ({ id: t.id, name: t.name })),
+              alias => `const { rows } = await legs.table('${alias}').rows()`)}
+      </div>
+    );
+  }
+
+  /** Every change that was ever live, and the way back to any of them. */
+  function AppVersionsTab({ app, dirty, onActivated }) {
+    const [versions, setVersions] = useState(null);
+    const [busy, setBusy] = useState(null);
+    const [error, setError] = useState('');
+    const load = useCallback(() => (
+      apiAppVersions(app.id).then(d => setVersions(d.versions || [])).catch(err => { setVersions([]); setError(err.message); })
+    ), [app.id]);
+    useEffect(() => { load(); }, [load, app.version]);
+
+    async function activate(v) {
+      setBusy(v.id); setError('');
+      try { await apiActivateAppVersion(app.id, v.id); await onActivated(); await load(); }
+      catch (err) { setError(err.message); }
+      finally { setBusy(null); }
+    }
+    const SOURCE = { ui: L('Platform', 'פלטפורמה'), cli: 'CLI', git: 'git' };
+
+    return (
+      <div style={{ maxWidth: 820 }}>
+        <div style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.65, marginBottom: 14 }}>
+          {L('Every save and every push is kept. Making an earlier version live changes what people see at once and deletes nothing.',
+             'כל שמירה וכל push נשמרים. הפיכת גרסה קודמת לחיה משנה מיד את מה שרואים, ולא מוחקת דבר.')}
+        </div>
+        {error && <div style={{ color: 'var(--danger)', fontSize: 12.5, marginBottom: 10 }}>{error}</div>}
+        {versions === null ? (
+          <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{L('Loading…', 'טוען…')}</div>
+        ) : versions.map(v => (
+          <div key={v.id} style={{
+            display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', marginBottom: 8, flexWrap: 'wrap',
+            background: 'var(--bg-card)', borderRadius: 'var(--r-md)',
+            border: `1px solid ${v.active ? 'rgba(239,159,39,0.45)' : 'var(--border)'}`,
+          }}>
+            <span style={{ fontFamily: MONO, fontWeight: 700, fontSize: 13, width: 44 }}>v{v.number}</span>
+            <Chip tone="neutral" mono>{SOURCE[v.source] || v.source}</Chip>
+            <span dir="auto" style={{ flex: '1 1 160px', fontSize: 12.5, color: 'var(--text-2)' }}>{v.message}</span>
+            <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{new Date(v.created_at).toLocaleString()}</span>
+            {v.active
+              ? <Chip tone="live">{L('Live', 'באוויר')}</Chip>
+              : <Btn size="sm" disabled={!!busy || dirty} onClick={() => activate(v)}
+                  title={dirty ? L('Save or discard your edits first', 'שמור או בטל את העריכות קודם') : ''}>
+                  {busy === v.id ? L('Switching…', 'מחליף…') : L('Make live', 'הפוך לחיה')}
+                </Btn>}
+          </div>
+        ))}
       </div>
     );
   }
@@ -11603,6 +12199,7 @@ npm run migrate            # run it`}</Block>
       { id: 'home',         label: 'Home',          icon: Icons.home },
       { id: 'agents',       label: 'AI Chatbots', icon: Icons.agents },
       { id: 'tables',       label: 'Tables',        icon: Icons.rows },
+      { id: 'apps',         label: 'Apps',          icon: Icons.apps },
       { id: 'interactions', label: 'Interactions',  icon: Icons.interactions },
       { id: 'docs',         label: 'Documentation', icon: Icons.docs },
       { id: 'settings',     label: 'Settings',      icon: Icons.settings },
@@ -15057,6 +15654,7 @@ npm run migrate            # run it`}</Block>
           <RuntimeCard settings={accountApi()} onOpenSettings={() => onOpen('settings')} />
         </div>
         <Row icon={Icons.rows} label="Tables" hint={L('Shared rows your AI Chatbots read and write', 'שורות משותפות שה-AI Chatbots קוראים וכותבים')} onClick={() => onOpen('tables')} />
+        <Row icon={Icons.apps} label="Apps" hint={L('Your own interfaces, hosted here', 'ממשקים משלך, מתארחים כאן')} onClick={() => onOpen('apps')} />
         <Row icon={Icons.docs} label="Documentation" hint={L('How every part of this works', 'איך כל חלק במערכת עובד')} onClick={() => onOpen('docs')} />
         {user.isAdmin && <Row icon={Icons.jarvis} label="Jarvis" hint={L('WhatsApp numbers and private assistants', 'מספרי וואטסאפ ועוזרים אישיים')} onClick={() => onOpen('jarvis')} />}
         {user.isAdmin && <Row icon={Icons.admin} label="Admin" hint={L('Users and the template AI Chatbots', 'משתמשים וAI Chatbots של התבנית')} onClick={() => onOpen('admin')} />}
@@ -15507,6 +16105,15 @@ npm run migrate            # run it`}</Block>
           </div>
         </div>
       );
+    } else if (nav === 'apps') {
+      screen = (
+        <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <MobileTopBar title="Apps" onBack={() => go('home')} />
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px 16px 24px', display: 'flex', flexDirection: 'column' }}>
+            <AppsView agents={state.agents} />
+          </div>
+        </div>
+      );
     } else if (nav === 'docs') {
       screen = (
         <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -15603,7 +16210,7 @@ npm run migrate            # run it`}</Block>
       chatLive: false,
       chatInitialSessionId: null,
     });
-    const [nav, setNav] = useState('home');
+    const [nav, setNav] = useState(() => (/^#app\//.test(window.location.hash || '') ? 'apps' : 'home'));
     const [loading, setLoading] = useState(true);
     const [adminSelectedUser, setAdminSelectedUser] = useState(null);
 
@@ -15976,6 +16583,7 @@ npm run migrate            # run it`}</Block>
       home: ['Workspace', 'Home'],
       agents: ['Workspace', 'AI Chatbots'],
       tables: ['Workspace', 'Tables'],
+      apps: ['Workspace', 'Apps'],
       assistant: ['Workspace', 'Assistant'],
       interactions: ['Workspace', 'Interactions'],
       docs: ['Workspace', 'Documentation'],
@@ -16038,6 +16646,8 @@ npm run migrate            # run it`}</Block>
             />
           ) : nav === 'tables' ? (
             <TablesView agents={state.agents} onChanged={hydrate} />
+          ) : nav === 'apps' ? (
+            <AppsView agents={state.agents} />
           ) : nav === 'docs' ? (
             <DocsView onReplayTour={which => setTour(which)} />
           ) : nav === 'jarvis' && user.isAdmin ? (

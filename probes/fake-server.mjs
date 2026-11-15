@@ -1,6 +1,16 @@
 /** A stand-in platform: the real converter, an agent in memory, one token. */
 import http from 'http';
 import { agentToFiles, filesToAgent, agentVersion } from '../api/_agentFiles.js';
+import { appToFiles, filesToApp, appVersion, starterFiles } from '../api/_appFiles.js';
+
+/* One app, with the versions a push leaves behind. */
+let app = {
+  id: '5f1c2d3e-0000-4000-8000-0000000000aa', slug: 'leads-desk', name: 'Leads desk', description: '',
+  entry: 'index.html', agents: {}, tables: {}, access: 'private',
+  files: starterFiles('Leads desk'), createdAt: '2026-11-15T00:00:00.000Z',
+};
+const appVersions = [{ number: 1, data: structuredClone(app), source: 'ui', message: 'Created' }];
+let liveVersion = 1;
 
 const TOKEN = '8legs_pat_TESTTOKEN';
 let agent = {
@@ -35,6 +45,43 @@ const server = http.createServer(async (req, res) => {
     return send(200, { ok: true });
   }
   if (url.pathname === '/__agent') return send(200, agent);
+
+  /* ── apps ── */
+  const readBody = async () => JSON.parse(await new Promise(r => { let b = ''; req.on('data', c => b += c); req.on('end', () => r(b || '{}')); }));
+  if (url.pathname === '/__app') return send(200, app);
+  if (url.pathname === '/api/apps') {
+    const { files, ...rest } = app;
+    return send(200, [rest]);
+  }
+  const af = url.pathname.match(/^\/api\/apps\/([^/]+)\/(files|versions)$/);
+  if (af) {
+    if (af[1] !== app.id && af[1] !== app.slug) return send(404, { error: 'App not found' });
+    if (af[2] === 'files' && req.method === 'GET') {
+      return send(200, { appId: app.id, slug: app.slug, branch: 'main', version: appVersion(app), files: appToFiles(app), git: null });
+    }
+    if (af[2] === 'files' && req.method === 'PUT') {
+      const body = await readBody();
+      if (body.baseVersion && body.baseVersion !== appVersion(app)) return send(409, { error: 'The app changed since you pulled it' });
+      const { app: next, errors } = filesToApp(body.files, app);
+      if (errors.length) return send(422, { error: 'Invalid app files', errors });
+      const changed = appVersion(next) !== appVersion(app);
+      app = next;
+      if (changed) { appVersions.push({ number: appVersions.length + 1, data: structuredClone(app), source: 'cli', message: 'Pushed from the CLI' }); liveVersion = appVersions.length; }
+      return send(200, { appId: app.id, version: appVersion(app), branch: 'main', versionNumber: changed ? liveVersion : null });
+    }
+    if (af[2] === 'versions' && req.method === 'GET') {
+      return send(200, { versions: [...appVersions].reverse().map(v => ({
+        id: `v${v.number}`, number: v.number, source: v.source, message: v.message,
+        created_at: '2026-11-15T10:00:00.000Z', active: v.number === liveVersion })) });
+    }
+    if (af[2] === 'versions' && req.method === 'POST') {
+      const body = await readBody();
+      const v = appVersions.find(x => String(x.number) === String(body.versionId));
+      if (!v) return send(404, { error: 'No such version' });
+      app = structuredClone(v.data); liveVersion = v.number;
+      return send(200, { version: appVersion(app), versionNumber: v.number });
+    }
+  }
 
   const br = url.pathname.match(/^\/api\/agents\/([^/]+)\/branches$/);
   if (br) {

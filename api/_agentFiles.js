@@ -80,7 +80,7 @@ function uniqueSlugs(items) {
 }
 
 /** Keys not in `mapped`, so nothing added to the platform later is lost here. */
-function extrasOf(obj, mapped) {
+export function extrasOf(obj, mapped) {
   const extras = {};
   for (const [k, v] of Object.entries(obj || {})) if (!mapped.has(k)) extras[k] = v;
   return Object.keys(extras).length ? extras : undefined;
@@ -95,7 +95,7 @@ function samePackages(list, str) {
 }
 
 /** JSON with sorted keys, so a version hash tracks content and not key order. */
-function stableStringify(value) {
+export function stableStringify(value) {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
   const keys = Object.keys(value).filter(k => value[k] !== undefined).sort();
@@ -107,10 +107,10 @@ export function agentVersion(agent) {
   return `sha256:${crypto.createHash('sha256').update(stableStringify(agent)).digest('hex').slice(0, 32)}`;
 }
 
-const json = (obj) => JSON.stringify(obj, null, 2) + '\n';
+export const json = (obj) => JSON.stringify(obj, null, 2) + '\n';
 
 /** Drops undefined values so they never reach a file as `null`. */
-function compact(obj) {
+export function compact(obj) {
   const out = {};
   for (const [k, v] of Object.entries(obj)) if (v !== undefined) out[k] = v;
   return out;
@@ -225,7 +225,7 @@ export function agentToFiles(agent) {
 
 /* ─────────────────── files → agent ─────────────────── */
 
-function parseJson(files, path, errors) {
+export function parseJson(files, path, errors) {
   const raw = files[path];
   if (raw === undefined) { errors.push(`${path} is missing`); return null; }
   try { return JSON.parse(raw); }

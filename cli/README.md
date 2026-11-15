@@ -18,6 +18,18 @@ and per tool. Edit them, then:
 8legs push
 ```
 
+## Apps
+
+An app — a small web interface the platform hosts — is edited the same way:
+
+```bash
+8legs apps                   # your apps, with their slugs
+8legs pull --app leads-desk  # app.json plus the app's own files
+8legs push                   # live at once, and kept as a version
+8legs versions
+8legs rollback 3             # make version 3 live again
+```
+
 ## What is not in the folder
 
 Secrets never land on disk. The account's API key, the WhatsApp tokens and each

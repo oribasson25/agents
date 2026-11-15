@@ -15,7 +15,7 @@ const src = fs.readFileSync(new URL('../agentforge.html', import.meta.url).pathn
 const body = src.match(/<script type="text\/babel"[^>]*>([\s\S]*?)<\/script>/)[1];
 
 /* Hand the probe the components it wants to render. */
-const exposed = ['TokensSection', 'TokenMinter', 'LocalIdePanel', 'SettingsPanel', 'AgentEditor', 'BranchBar', 'MergePanel', 'MobileDraftBar', 'MobileAgentEditor', 'CopyableCommand', 'DocsView', 'HomeChatView', 'AgentBuildCard', 'Sidebar', 'splitOptions', 'HOME_COPY', 'homeSystemExtra', 'greeting', 'L', 'Eyebrow', 'sessionTitle', 'reducer', 'AvatarDisplay', 'avatarColor', 'AVATAR_COLORS', 'markSvgString'];
+const exposed = ['TokensSection', 'TokenMinter', 'LocalIdePanel', 'SettingsPanel', 'AgentEditor', 'BranchBar', 'MergePanel', 'MobileDraftBar', 'MobileAgentEditor', 'CopyableCommand', 'DocsView', 'HomeChatView', 'AgentBuildCard', 'Sidebar', 'splitOptions', 'HOME_COPY', 'homeSystemExtra', 'greeting', 'L', 'Eyebrow', 'sessionTitle', 'reducer', 'AvatarDisplay', 'avatarColor', 'AVATAR_COLORS', 'markSvgString', 'AppsView', 'AppWorkspace', 'AppFilesTab', 'AppLinksTab', 'NewAppDialog'];
 const code = babel.transform(
   body + `\n;globalThis.__probe = { ${exposed.map(n => `${n}: typeof ${n} !== 'undefined' ? ${n} : null`).join(', ')} };`,
   { presets: ['react'] }).code;
@@ -250,6 +250,33 @@ if (parsed.options.length !== 3 || parsed.body.includes('::options::')) {
 } else console.log('✓ suggested answers are parsed out of the reply');
 if (probe.splitOptions('just an answer').options.length !== 0) {
   console.log('✗ a plain answer should carry no options'); failed++;
+}
+
+/* ── Apps ── */
+const appDraftSample = {
+  name: 'Leads desk', description: '', entry: 'index.html',
+  agents: { support: 'a1' }, tables: { leads: { id: 't1', readonly: true } },
+  files: { 'index.html': '<h1>hi</h1>', 'app.js': 'console.log(1)' },
+};
+render('AppsView', React.createElement(probe.AppsView, { agents: [] }));
+const newApp = render('NewAppDialog', React.createElement(probe.NewAppDialog, { onCancel() {}, onCreate() {} }));
+if (newApp && !newApp.includes('Create app')) { console.log('✗ NewAppDialog has no create button'); failed++; }
+render('AppWorkspace (loading)', React.createElement(probe.AppWorkspace, { appId: 'x', agents: [], onBack() {} }));
+const appFiles = render('AppFilesTab', React.createElement(probe.AppFilesTab, { draft: appDraftSample, onChange() {} }));
+if (appFiles && !(appFiles.includes('app.js') && appFiles.includes('&lt;h1&gt;hi&lt;/h1&gt;'))) {
+  console.log('✗ AppFilesTab does not show the file list and the entry file'); failed++;
+}
+const appLinks = render('AppLinksTab', React.createElement(probe.AppLinksTab,
+  { draft: appDraftSample, onChange() {}, agents: [{ id: 'a1', name: 'Support bot' }] }));
+if (appLinks && !(appLinks.includes('Support bot') && appLinks.includes('legs.agent(&#x27;support&#x27;)'))) {
+  console.log('✗ AppLinksTab does not show the linked chatbot and how to call it'); failed++;
+}
+const appIde = render('LocalIdePanel for an app', React.createElement(probe.LocalIdePanel, { appSlug: 'leads-desk', onClose() {} }));
+if (appIde && !appIde.includes('npx @8legs/cli pull --app leads-desk')) {
+  console.log('✗ the local-IDE panel does not give the app pull command'); failed++;
+}
+if (!render('Sidebar with Apps', React.createElement(probe.Sidebar, { activeNav: 'apps', onNav() {}, user: { username: 'ori' }, recents: [] })).includes('Apps')) {
+  console.log('✗ the sidebar has no Apps entry'); failed++;
 }
 
 console.log(`\n${failed ? `${failed} FAILURE(S)` : 'all green'}`);

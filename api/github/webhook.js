@@ -3,6 +3,8 @@ import { verifyWebhook, readTree, setStatus } from '../_github.js';
 import { filesToAgent } from '../_agentFiles.js';
 import { loadAgent, saveAgent, createBranch, MAIN } from '../_branches.js';
 import { logError } from '../_errorLog.js';
+import { filesToApp } from '../_appFiles.js';
+import { loadApp, saveApp, linkProblems } from '../_apps.js';
 
 /* The raw body is what GitHub signed, so it has to be read before parsing. */
 export const config = { api: { bodyParser: false } };
@@ -51,7 +53,16 @@ export default async function handler(req, res) {
     from agent_repos r join agents a on a.id = r.agent_id
     where r.owner = ${owner} and r.repo = ${repo}
   `;
-  if (!link) return res.status(404).json({ error: 'That repository is not linked to an agent' });
+  if (!link) {
+    /* Apps have repositories too, and the same hook reaches this handler. */
+    const [appLink] = await sql`
+      select r.app_id, r.last_push_sha, a.user_id
+      from app_repos r join apps a on a.id = r.app_id
+      where r.owner = ${owner} and r.repo = ${repo}
+    `;
+    if (appLink) return applyAppPush({ res, link: appLink, owner, repo, sha, branch });
+    return res.status(404).json({ error: 'That repository is not linked to an agent or an app' });
+  }
 
   /* The platform mirrors its own pushes to git. Without this they would come
      straight back in as incoming changes and overwrite what just happened. */
@@ -105,6 +116,56 @@ export default async function handler(req, res) {
   } catch (err) {
     await logError({ agentId: link.agent_id, source: 'github', message: err.message,
                      context: { owner, repo, sha, branch } });
+    return await fail(err.code === 'TRUNCATED' ? 'Too many files in that commit' : err.message);
+  }
+}
+
+/**
+ * A push to an app's repository.
+ *
+ * The same rule as for an agent: the tree either validates and becomes the
+ * live app — and a version to go back to — or nothing is written and the
+ * commit is marked failed. Only `main` is served; an app has no branches on
+ * the platform, so a push anywhere else is accepted by git and left there.
+ */
+async function applyAppPush({ res, link, owner, repo, sha, branch }) {
+  if (link.last_push_sha === sha) return res.status(200).json({ skipped: 'own push' });
+
+  const user = { userId: link.user_id, isAdmin: false };
+  const base = (process.env.APP_URL || '').trim().replace(/\/+$/, '');
+  const targetUrl = base ? `${base}/#app/${link.app_id}` : undefined;
+  const fail = async (description) => {
+    await setStatus({ owner, repo, sha, state: 'failure', description, targetUrl });
+    return res.status(200).json({ applied: false, reason: description });
+  };
+
+  try {
+    if (branch !== MAIN) {
+      await setStatus({ owner, repo, sha, state: 'success', targetUrl,
+                        description: 'Not live: only main is served. Merge into main to publish.' });
+      return res.status(200).json({ applied: false, reason: 'only main is served' });
+    }
+    await setStatus({ owner, repo, sha, state: 'pending', description: 'Checking the app…', targetUrl });
+
+    const files = await readTree({ owner, repo, sha });
+    const existing = await loadApp({ appId: link.app_id, user });
+    if (!existing) return await fail('That app no longer exists');
+
+    const { app, errors } = filesToApp(files, existing.app);
+    if (errors.length) return await fail(errors.slice(0, 3).join('; '));
+    const problems = await linkProblems(app, link.user_id);
+    if (problems.length) return await fail(problems.slice(0, 3).join('; '));
+
+    const saved = await saveApp({ appId: link.app_id, user, data: app, source: 'git',
+                                  commitSha: sha, message: `git ${sha.slice(0, 7)}` });
+    await sql`update app_repos set last_push_sha = ${sha} where app_id = ${link.app_id}`;
+
+    await setStatus({ owner, repo, sha, state: 'success', targetUrl,
+                      description: saved.versionNumber ? `Live as version ${saved.versionNumber}` : 'Live' });
+    return res.status(200).json({ applied: true, branch: MAIN, version: saved.versionNumber });
+  } catch (err) {
+    await logError({ agentId: null, source: 'github', message: err.message,
+                     context: { owner, repo, sha, branch, appId: link.app_id } });
     return await fail(err.code === 'TRUNCATED' ? 'Too many files in that commit' : err.message);
   }
 }
