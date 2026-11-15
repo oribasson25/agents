@@ -1,10 +1,12 @@
 import { sql } from './_db.js';
 import { checkAuth } from './_auth.js';
 import { recordUsage } from './_usage.js';
+import { member, isOrgAdmin } from './_access.js';
 
 /**
- * The account's Claude credit: the balance it typed in from the Console,
- * minus what 8legs has spent with the account's key since (claude_usage).
+ * The organization's Claude credit: the balance its admin typed in from the
+ * Console, minus what 8legs has spent with the organization's key since
+ * (claude_usage, summed over everyone in it).
  * A regular key cannot read the real balance from Anthropic, so anything else
  * using the same Anthropic organization is not counted.
  *
@@ -21,8 +23,16 @@ export default async function handler(req, res) {
   const user = checkAuth(req, res);
   if (!user) return;
   const userId = user.userId;
+  const me = await member(user);
+  if (!me || !me.orgId) return res.status(401).json({ error: 'unauthorized' });
+  const orgId = me.orgId;
 
-  if (req.method === 'GET') return res.json(await view(userId));
+  if (req.method === 'GET') return res.json(await view(orgId));
+
+  /* The balance is the key's, so it is the admin's to set. */
+  if ((req.method === 'PUT' || req.method === 'DELETE') && !isOrgAdmin(me)) {
+    return res.status(403).json({ error: 'Only the organization\'s admin can set the credit.', code: 'READ_ONLY' });
+  }
 
   if (req.method === 'PUT') {
     const usd = Number((req.body || {}).balanceUsd);
@@ -30,17 +40,17 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'The balance must be an amount in dollars, like 42.50.' });
     }
     await sql`
-      insert into claude_credit (user_id, balance_cents, balance_at, updated_at)
-      values (${userId}, ${Math.round(usd * 100)}, now(), now())
-      on conflict (user_id) do update set
+      insert into org_credit (org_id, balance_cents, balance_at, updated_at)
+      values (${orgId}, ${Math.round(usd * 100)}, now(), now())
+      on conflict (org_id) do update set
         balance_cents = excluded.balance_cents, balance_at = excluded.balance_at, updated_at = now()
     `;
-    return res.json(await view(userId));
+    return res.json(await view(orgId));
   }
 
   if (req.method === 'DELETE') {
-    await sql`delete from claude_credit where user_id = ${userId}`;
-    return res.json(await view(userId));
+    await sql`delete from org_credit where org_id = ${orgId}`;
+    return res.json(await view(orgId));
   }
 
   if (req.method === 'POST') {
@@ -62,8 +72,8 @@ export default async function handler(req, res) {
 
 const usd = (v) => (v === null || v === undefined ? null : Math.round(Number(v) * 10000) / 10000);
 
-async function view(userId) {
-  const [credit] = await sql`select balance_cents, balance_at from claude_credit where user_id = ${userId}`;
+async function view(orgId) {
+  const [credit] = await sql`select balance_cents, balance_at from org_credit where org_id = ${orgId}`;
   const now = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   const balanceAt = credit?.balance_at ? new Date(credit.balance_at) : null;
@@ -75,11 +85,11 @@ async function view(userId) {
            coalesce(sum(cost_usd) filter (where at >= ${from.toISOString()}), 0)       as since,
            count(*) filter (where cost_usd is null and at >= ${from.toISOString()})    as unpriced,
            min(at)                                                                     as first_at
-    from claude_usage where user_id = ${userId}
+    from claude_usage where user_id in (select id from users where org_id = ${orgId})
   `;
   const bySource = await sql`
     select source, coalesce(sum(cost_usd), 0) as usd, count(*)::int as calls
-    from claude_usage where user_id = ${userId} and at >= ${from.toISOString()}
+    from claude_usage where user_id in (select id from users where org_id = ${orgId}) and at >= ${from.toISOString()}
     group by source order by 2 desc
   `;
 

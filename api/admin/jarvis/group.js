@@ -1,5 +1,5 @@
 import { sql } from '../../_db.js';
-import { checkAdmin } from '../../_auth.js';
+import { jarvisGate, numberInScope, ownerInScope } from '../../_jarvisAccess.js';
 import { getNumber } from '../../_waControl.js';
 import { getGroup, sanitizeGroupPatch } from '../../_waGroups.js';
 import { jobState } from '../../_waGroupKnowledge.js';
@@ -14,12 +14,13 @@ import { jobState } from '../../_waGroupKnowledge.js';
  * prompted it; the group's conversation itself is not listed here.
  */
 export default async function handler(req, res) {
-  const admin = checkAdmin(req, res);
+  const admin = await jarvisGate(req, res);
   if (!admin) return;
 
   const numberId = String(req.query.numberId || '');
   const jid = String(req.query.jid || '');
-  const number = await getNumber(numberId);
+  const found = await getNumber(numberId);
+  const number = (await numberInScope(admin, found)) ? found : null;
   const group = number && (await getGroup(numberId, jid));
   if (!group) return res.status(404).json({ error: 'No such group.' });
 
@@ -30,7 +31,7 @@ export default async function handler(req, res) {
     if (error) return res.status(400).json({ error });
     if (patch.agentId) {
       // Only the owner's own AI Chatbots: their key pays for the group.
-      const [agent] = await sql`select id from agents where id = ${patch.agentId} and user_id = ${number.owner_user_id}`;
+      const [agent] = await sql`select id from agents where id = ${patch.agentId} and org_id = (select org_id from users where id = ${number.owner_user_id})`;
       if (!agent) return res.status(400).json({ error: 'That AI Chatbot does not belong to this number’s account.' });
     }
     const next = {
@@ -65,7 +66,7 @@ async function view(number, group) {
            count(*) filter (where action in ('reply', 'react') and at > now() - interval '24 hours')::int as today
     from wa_group_events where number_id = ${number.id} and jid = ${group.jid}
   `;
-  const agents = await sql`select id, data->>'name' as name from agents where user_id = ${number.owner_user_id} order by data->>'name'`;
+  const agents = await sql`select id, data->>'name' as name from agents where org_id = (select org_id from users where id = ${number.owner_user_id}) order by data->>'name'`;
   const [numberAgent] = number.agent_id ? await sql`select data->>'name' as name from agents where id = ${number.agent_id}` : [];
   return {
     numberId: number.id,

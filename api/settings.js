@@ -1,14 +1,22 @@
 import { checkAuth } from './_auth.js';
 import { getUserSettings, saveUserSettings, emptySettings, configUsable, resolveApiConfig, currentModel } from './_settings.js';
+import { member, isOrgAdmin } from './_access.js';
 
 /**
- * The account's API settings. The key is returned to the browser because that
- * is where model calls are made from in this app — the same trust model the
- * per-agent key had.
+ * The organization's model settings, and the person's own language.
+ *
+ * The key is returned to the browser of everyone in the organization, because
+ * that is where the test chat and the assistants call the model from. Only the
+ * organization's admin may change it; `canEditModel` tells the screen whether
+ * to offer that. Keeping the key out of members' browsers altogether means
+ * moving those calls to the server first.
  */
 export default async function handler(req, res) {
   const user = checkAuth(req, res);
   if (!user) return;
+
+  const me = await member(user);
+  const canEditModel = !!me && (isOrgAdmin(me) || me.isPlatformAdmin);
 
   if (req.method === 'GET') {
     const row = await getUserSettings(user.userId);
@@ -22,11 +30,12 @@ export default async function handler(req, res) {
       assistantLanguage: settings.assistant_language,
       languageChosen: !!settings.language_chosen,
       usable: configUsable(resolveApiConfig(settings, null)),
+      canEditModel,
     });
   }
 
   if (req.method === 'PUT') {
-    const saved = await saveUserSettings(user.userId, req.body || {});
+    const saved = await saveUserSettings(user.userId, req.body || {}, { canSetModel: canEditModel });
     return res.json({
       provider: saved.provider,
       apiKey: saved.api_key,
@@ -35,6 +44,7 @@ export default async function handler(req, res) {
       assistantLanguage: saved.assistant_language,
       languageChosen: !!saved.language_chosen,
       usable: configUsable(resolveApiConfig(saved, null)),
+      canEditModel,
     });
   }
 

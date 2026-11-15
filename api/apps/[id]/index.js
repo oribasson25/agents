@@ -22,7 +22,11 @@ export default async function handler(req, res) {
     const app = loaded.app;
 
     if (req.method === 'GET') {
-      return res.json({ ...app, version: loaded.version, url: appUrl(app, user) });
+      return res.json({ ...app, version: loaded.version, url: appUrl(app, user), _access: loaded.access });
+    }
+
+    if ((req.method === 'PUT' || req.method === 'DELETE') && loaded.access !== 'edit') {
+      return res.status(403).json({ error: 'You can view this app but not change it.', code: 'READ_ONLY' });
     }
 
     if (req.method === 'PUT') {
@@ -48,7 +52,7 @@ export default async function handler(req, res) {
                              message: patch.message || `Update ${app.name || app.slug}` });
       }
       return res.json({ ...saved.app, version: saved.version, versionNumber: saved.versionNumber,
-                        url: appUrl(saved.app, user) });
+                        url: appUrl(saved.app, user), _access: loaded.access });
     }
 
     if (req.method === 'DELETE') {
@@ -56,6 +60,7 @@ export default async function handler(req, res) {
       return res.status(204).end();
     }
   } catch (err) {
+    if (err.code === 'READ_ONLY') return res.status(403).json({ error: err.message, code: err.code });
     return res.status(500).json({ error: err.message });
   }
   return res.status(405).end();

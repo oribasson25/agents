@@ -22,7 +22,12 @@ const { token, hash } = createToken();
 let stored = JSON.parse(JSON.stringify(AGENT));
 let updates = 0;
 
+const { accessStub } = await import('./access-stub.mjs');
+const access = accessStub({ item: (kind, id) => (kind === 'agent' && id === AGENT.id ? { org: 'o1', user: 'u1' } : null) });
+
 globalThis.__db = (text, params) => {
+  const answered = access(text, params);
+  if (answered !== undefined) return answered;
   if (text.includes('from api_tokens t join users u')) {
     return params[0] === hash ? [{ id: 'tok1', user_id: 'u1', username: 'ori', is_admin: false }] : [];
   }

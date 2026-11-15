@@ -1,5 +1,5 @@
 import { sql } from '../../../_db.js';
-import { checkAdmin } from '../../../_auth.js';
+import { jarvisGate, numberInScope, ownerInScope } from '../../../_jarvisAccess.js';
 import { normalizePhone } from '../../../_waControl.js';
 import { CAPABILITY_DEFAULTS, PROACTIVE_DEFAULTS } from '../../../_jarvis.js';
 
@@ -19,12 +19,13 @@ const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
 export default async function handler(req, res) {
-  const admin = checkAdmin(req, res);
+  const admin = await jarvisGate(req, res);
   if (!admin) return;
 
   const id = String(req.query.id || '');
   const [person] = await sql`select * from jarvis_people where id = ${id}`;
-  if (!person) return res.status(404).json({ error: 'No such person.' });
+  const [owner] = person ? await sql`select owner_user_id from wa_numbers where id = ${person.number_id}` : [];
+  if (!person || !(await numberInScope(admin, owner))) return res.status(404).json({ error: 'No such person.' });
 
   if (req.method === 'GET') return res.json(await detail(person));
 

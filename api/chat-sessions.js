@@ -1,5 +1,14 @@
 import { sql } from './_db.js';
 import { checkAuth } from './_auth.js';
+import { member, visible, accessTo, allows, refuse } from './_access.js';
+
+/** The ids of the agents whose conversations this person may read. */
+async function readableAgentIds(user) {
+  const me = await member(user);
+  if (!me) return [];
+  const rows = await sql`select id, org_id from agents where org_id = ${me.orgId}`;
+  return (await visible(me, 'agent', rows)).map(({ row }) => row.id);
+}
 
 /**
  * Conversations for the signed-in user's agents, with the filters the
@@ -37,6 +46,8 @@ export default async function handler(req, res) {
   const allUsers     = !!user.isAdmin && req.query.scope === 'all';
 
   const toEnd = to ? `${to}T23:59:59.999Z` : null;
+  /* A conversation is readable by whoever may see the chatbot it was with. */
+  const readable = allUsers ? [] : await readableAgentIds(user);
 
   const rows = await sql`
     select
@@ -54,7 +65,7 @@ export default async function handler(req, res) {
     from chat_sessions cs
     join agents a on a.id = cs.agent_id
     left join users u on u.id = a.user_id
-    where (${allUsers}::boolean or a.user_id = ${user.userId})
+    where (${allUsers}::boolean or cs.agent_id = any(${readable}::text[]))
       and (${agentId}::text is null or cs.agent_id = ${agentId})
       and (case when ${source}::text is null then cs.source <> 'test' else cs.source = ${source} end)
       and (${q}::text is null or cs.messages::text ilike '%' || ${q} || '%')
@@ -78,7 +89,7 @@ export default async function handler(req, res) {
     select count(*)::int as total
     from chat_sessions cs
     join agents a on a.id = cs.agent_id
-    where (${allUsers}::boolean or a.user_id = ${user.userId})
+    where (${allUsers}::boolean or cs.agent_id = any(${readable}::text[]))
       and (${agentId}::text is null or cs.agent_id = ${agentId})
       and (case when ${source}::text is null then cs.source <> 'test' else cs.source = ${source} end)
       and (${q}::text is null or cs.messages::text ilike '%' || ${q} || '%')
@@ -94,7 +105,7 @@ export default async function handler(req, res) {
     select cs.source, count(*)::int as count
     from chat_sessions cs
     join agents a on a.id = cs.agent_id
-    where (${allUsers}::boolean or a.user_id = ${user.userId})
+    where (${allUsers}::boolean or cs.agent_id = any(${readable}::text[]))
       and cs.source <> 'test'
     group by cs.source
     order by cs.source
@@ -116,10 +127,9 @@ async function saveTestSession(req, res, user) {
     return res.status(400).json({ error: 'messages must be a non-empty array' });
   }
 
-  const [owned] = await sql`
-    select id from agents where id = ${agentId} and user_id = ${user.userId}
-  `;
-  if (!owned) return res.status(404).json({ error: 'Agent not found' });
+  /* Testing is reading: anyone who may see the chatbot may talk to it. */
+  const { level } = await accessTo(user, 'agent', agentId);
+  if (!allows(level, 'view')) return res.status(404).json({ error: 'Agent not found' });
 
   // Only the conversation itself is stored — no UI bookkeeping, no typing rows.
   const clean = messages
@@ -143,16 +153,15 @@ async function saveTestSession(req, res, user) {
   return res.json({ ok: true, id, stored: clean.length });
 }
 
-/** Only ever the caller's own conversation, test or otherwise. */
+/** A conversation, deleted by someone who may edit the chatbot it was with. */
 async function deleteSession(req, res, user) {
   const id = str(req.query.id);
   if (!id) return res.status(400).json({ error: 'id is required' });
-  const rows = await sql`
-    delete from chat_sessions cs
-    using agents a
-    where cs.agent_id = a.id and cs.id = ${id} and a.user_id = ${user.userId}
-    returning cs.id
-  `;
+  const [found] = await sql`select agent_id from chat_sessions where id = ${id}`;
+  if (!found) return res.status(404).json({ error: 'Not found' });
+  const { level } = await accessTo(user, 'agent', found.agent_id);
+  if (!allows(level, 'edit')) return refuse(res, level, 'this AI Chatbot');
+  const rows = await sql`delete from chat_sessions where id = ${id} returning id`;
   if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
   return res.json({ ok: true, id });
 }

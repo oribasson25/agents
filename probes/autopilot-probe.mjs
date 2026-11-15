@@ -222,8 +222,8 @@ ok(src.includes('const after = at >= 0 ? FLOW[at + 1] : FLOW.find(n => n > w.ste
    'a step that leaves the flow underneath you falls forward, not back to the fork');
 
 /* ── editing one in words, from its card ── */
-ok(src.includes("onEditWithAi: () => onBuildInChat(EDIT_AGENT_ASK(a.name)),"),
-   'every chatbot card can hand itself to the assistant');
+ok(src.includes("onEditWithAi: viewOnly(a) ? undefined : () => onBuildInChat(EDIT_AGENT_ASK(a.name)),"),
+   'every chatbot card you may edit can hand itself to the assistant');
 ok(/function AgentCard\(\{ agent, onEdit, onEditWithAi,/.test(src) && /function AgentRow\(\{ agent, onEdit, onEditWithAi,/.test(src),
    'both the card and the row take it, so the list view is not a dead end');
 ok(src.includes('EDIT_AGENT_ASK(name)') && src.includes('Read it first'),

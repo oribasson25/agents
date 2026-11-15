@@ -28,6 +28,12 @@ const both = new Function('L', `${stepsSrc}\nreturn { steps: TOUR_STEPS(), edito
 const steps = both.steps;
 const editor = both.editor;
 
+/* Switched off on 2026-11-15: the steps below are kept, and still checked, so
+   turning the tours back on is one flag — but nothing may open them now. */
+ok(/const TOURS_ON = false;/.test(src), 'the tours are switched off');
+ok((src.match(/if \(!TOURS_ON\) return;/g) || []).length === 2, 'neither tour opens by itself');
+ok(src.includes('onReplayTour={TOURS_ON ?'), 'and Documentation does not offer to replay them');
+
 ok(steps.length === 5, 'five steps in the platform tour', String(steps.length));
 ok(editor.length === 5, 'and five in the editor tour', String(editor.length));
 

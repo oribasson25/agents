@@ -2,6 +2,7 @@ import { sql } from '../../_db.js';
 import { checkAuth } from '../../_auth.js';
 import { findPhoneNumberConflict, PHONE_CONFLICT_MESSAGE } from '../../_whatsappClaim.js';
 import { loadAgent, saveAgent, getOrCreateDraft, MAIN } from '../../_branches.js';
+import { accessTo, allows, refuse } from '../../_access.js';
 
 /**
  * Reading and writing one agent.
@@ -28,8 +29,10 @@ export default async function handler(req, res) {
       if (asked) {
         const loaded = await loadAgent({ agentId: id, user, branch: asked });
         if (!loaded) return res.status(404).end();
-        return res.json({ ...loaded.agent, _branch: loaded.branch });
+        return res.json({ ...loaded.agent, _branch: loaded.branch, _access: loaded.access });
       }
+      const { level } = await accessTo(user, 'agent', id);
+      if (!allows(level, 'view')) return res.status(404).end();
       const [row] = await sql`
         select a.data,
                (select b.id from agent_branches b
@@ -37,12 +40,12 @@ export default async function handler(req, res) {
                (select b.data from agent_branches b
                  where b.agent_id = a.id and b.kind = 'draft' and b.merged_at is null) as draft
         from agents a
-        where a.id = ${id} and (a.user_id = ${user.userId} or ${!!user.isAdmin})
+        where a.id = ${id}
       `;
       if (!row) return res.status(404).end();
       return res.json(row.draft
-        ? { ...row.draft, _branch: 'draft', _draftOf: id }
-        : { ...row.data, _branch: MAIN });
+        ? { ...row.draft, _branch: 'draft', _draftOf: id, _access: level }
+        : { ...row.data, _branch: MAIN, _access: level });
     }
 
     if (req.method === 'PUT') {
@@ -72,15 +75,15 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'DELETE') {
+      const { level } = await accessTo(user, 'agent', id);
+      if (!allows(level, 'edit')) return refuse(res, level, 'this AI Chatbot');
       /* agent_branches cascades from agents, so the branches go too. */
-      await sql`
-        delete from agents
-        where id = ${id} and (user_id = ${user.userId} or ${!!user.isAdmin})
-      `;
+      await sql`delete from agents where id = ${id}`;
       return res.status(204).end();
     }
   } catch (e) {
     if (e.code === 'NO_BRANCH') return res.status(404).json({ error: e.message });
+    if (e.code === 'READ_ONLY') return res.status(403).json({ error: e.message, code: e.code });
     throw e;
   }
 

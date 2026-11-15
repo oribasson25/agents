@@ -92,7 +92,25 @@ const db = { apps: new Map(), versions: [], repos: new Map(), rows: [{ id: 'r1',
              agents: { 'agent-1': 'u1', 'agent-x': 'u2' }, tables: { 'table-1': 'u1', 'table-2': 'u1', 'table-x': 'u2' } };
 let writes = 0;
 
+/* Each user is the admin of an organization of their own: o-u1, o-u2. */
+const orgOf = (userId) => `o-${userId}`;
+const { accessStub } = await import('./access-stub.mjs');
+const access = accessStub({
+  strict: true,
+  users: { u1: { org: orgOf('u1'), role: 'admin' }, u2: { org: orgOf('u2'), role: 'admin' } },
+  item: (kind, id, slug) => {
+    if (kind === 'app') {
+      const a = [...db.apps.values()].find(x => x.id === id || x.slug === (slug ?? id));
+      return a ? { id: a.id, org: orgOf(a.user_id), user: a.user_id } : null;
+    }
+    const owner = kind === 'agent' ? db.agents[id] : db.tables[id];
+    return owner ? { org: orgOf(owner), user: owner } : null;
+  },
+});
+
 globalThis.__db = (text, p) => {
+  const answered = access(text, p);
+  if (answered !== undefined) return answered;
   const t = text.replace(/\s+/g, ' ').trim();
   if (t.includes('from api_tokens t join users u'))
     return p[0] === hash ? [{ id: 'tok1', user_id: 'u1', username: 'ori', is_admin: false }] : [];
@@ -100,20 +118,21 @@ globalThis.__db = (text, p) => {
 
   if (t.startsWith('select 1 as x from apps where slug')) return [...db.apps.values()].some(a => a.slug === p[0]) ? [{ x: 1 }] : [];
   if (t.startsWith('insert into apps')) { db.apps.set(p[0], { id: p[0], user_id: p[1], slug: p[2], data: JSON.parse(p[3]), active: null }); return []; }
-  if (t.startsWith('select data, user_id, active_version_id from apps')) {
-    const a = [...db.apps.values()].find(x => (x.id === p[0] || x.slug === p[1]) && (x.user_id === p[2] || p[3]));
-    return a ? [{ data: a.data, user_id: a.user_id, active_version_id: a.active }] : [];
-  }
-  if (t.startsWith('select data, user_id from apps where slug')) {
-    const a = [...db.apps.values()].find(x => x.slug === p[0]);
-    return a ? [{ data: a.data, user_id: a.user_id }] : [];
-  }
-  if (t.startsWith('select data, user_id from apps where id')) {
+  if (t.startsWith('select data, user_id, org_id, active_version_id from apps')) {
     const a = db.apps.get(p[0]);
-    return a ? [{ data: a.data, user_id: a.user_id }] : [];
+    return a ? [{ data: a.data, user_id: a.user_id, org_id: orgOf(a.user_id), active_version_id: a.active }] : [];
   }
-  if (t.startsWith('select data, updated_at,'))
-    return [...db.apps.values()].filter(a => a.user_id === p[0]).map(a => ({ data: a.data, updated_at: 'now', versions: 1 }));
+  if (t.startsWith('select data, user_id, org_id from apps where slug')) {
+    const a = [...db.apps.values()].find(x => x.slug === p[0]);
+    return a ? [{ data: a.data, user_id: a.user_id, org_id: orgOf(a.user_id) }] : [];
+  }
+  if (t.startsWith('select data, user_id, org_id from apps where id')) {
+    const a = db.apps.get(p[0]);
+    return a ? [{ data: a.data, user_id: a.user_id, org_id: orgOf(a.user_id) }] : [];
+  }
+  if (t.startsWith('select id, org_id, data, updated_at,'))
+    return [...db.apps.values()].filter(a => orgOf(a.user_id) === p[0])
+      .map(a => ({ id: a.id, org_id: orgOf(a.user_id), data: a.data, updated_at: 'now', versions: 1 }));
   if (t.startsWith('update apps set data') && t.includes('active_version_id =')) {
     const a = db.apps.get(p[2]); a.data = JSON.parse(p[0]); a.active = p[1]; writes++; return [];
   }
@@ -131,13 +150,13 @@ globalThis.__db = (text, p) => {
   if (t.startsWith('select id, number, data from app_versions'))
     return db.versions.filter(v => v.app_id === p[0] && (v.id === p[1] || String(v.number) === p[2]));
 
-  if (t.startsWith('select id from agents where user_id')) return p[1].filter(id => db.agents[id] === p[0]).map(id => ({ id }));
+  if (t.startsWith('select id from agents where org_id')) return p[1].filter(id => db.agents[id] === p[0]).map(id => ({ id }));
   if (t.startsWith("select id, data->>'name' as name from agents")) return db.userAgents || [];
   if (t.startsWith('select data from agents where id')) {
     const owner = db.agents[p[0]];
-    return owner && owner === p[1] && db.agentData?.[p[0]] ? [{ data: db.agentData[p[0]] }] : [];
+    return owner && orgOf(owner) === p[1] && db.agentData?.[p[0]] ? [{ data: db.agentData[p[0]] }] : [];
   }
-  if (t.startsWith('select id from data_tables where user_id')) return p[1].filter(id => db.tables[id] === p[0]).map(id => ({ id }));
+  if (t.startsWith('select id from data_tables where org_id')) return p[1].filter(id => db.tables[id] === p[0]).map(id => ({ id }));
 
   if (t.startsWith('select owner, repo, webhook_id from app_repos')) { const r = db.repos.get(p[0]); return r ? [r] : []; }
   if (t.startsWith('insert into app_repos')) { db.repos.set(p[0], { owner: p[1], repo: p[2], webhook_id: p[3], last_push_sha: p[4] }); return []; }
@@ -148,7 +167,7 @@ globalThis.__db = (text, p) => {
     return hit ? [{ app_id: hit[0], last_push_sha: hit[1].last_push_sha, user_id: db.apps.get(hit[0]).user_id }] : [];
   }
 
-  if (t.startsWith('select id, name, description, columns, created_at, updated_at from data_tables'))
+  if (t.startsWith('select id, org_id, name, description, columns, created_at, updated_at from data_tables'))
     return db.tables[p[0]] === p[1] ? [{ id: p[0], name: 'Leads', description: '', columns: [{ key: 'name', name: 'Name', type: 'text' }] }] : [];
   if (t.includes('from data_table_rows') && t.startsWith('select count')) return [{ total: db.rows.length }];
   if (t.includes('from data_table_rows')) return db.rows;

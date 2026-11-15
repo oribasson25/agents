@@ -9,6 +9,7 @@ import crypto from 'crypto';
 import { sql } from './_db.js';
 import { jwtSecret } from './_auth.js';
 import { appVersion, starterFiles, linkId } from './_appFiles.js';
+import { accessTo, allows, member, visible, ReadOnlyError } from './_access.js';
 
 const VIEW_TTL = 12 * 60 * 60;   /* a private link stays good for half a day */
 
@@ -18,40 +19,47 @@ export function slugFrom(name) {
   return base || 'app';
 }
 
-export async function listApps(userId) {
+/** The organization's apps this person may see, each with `_access`. */
+export async function listApps(user) {
+  const me = await member(user);
+  if (!me) return [];
   const rows = await sql`
-    select data, updated_at,
+    select id, org_id, data, updated_at,
            (select count(*)::int from app_versions v where v.app_id = apps.id) as versions
-    from apps where user_id = ${userId}
+    from apps where org_id = ${me.orgId}
     order by updated_at desc
   `;
-  /* The list never carries the files: an account's apps can be megabytes. */
-  return rows.map(r => {
+  /* The list never carries the files: an organization's apps can be megabytes. */
+  return (await visible(me, 'app', rows)).map(({ row: r, level }) => {
     const { files, ...rest } = r.data;
-    return { ...rest, fileCount: Object.keys(files || {}).length, versions: r.versions, updatedAt: r.updated_at };
+    return { ...rest, fileCount: Object.keys(files || {}).length, versions: r.versions,
+             updatedAt: r.updated_at, _access: level };
   });
 }
 
-/** The app the caller owns, by id or by slug. Admins may read anyone's. */
-export async function loadApp({ appId, user }) {
-  const [row] = await sql`
-    select data, user_id, active_version_id from apps
-    where (id = ${appId} or slug = ${appId}) and (user_id = ${user.userId} or ${!!user.isAdmin})
-  `;
+/**
+ * The app, by id or by slug, if the caller may see it; null when not.
+ * `need: 'edit'` from someone who may only look throws ReadOnlyError.
+ */
+export async function loadApp({ appId, user, need = 'view' }) {
+  const { level, item } = await accessTo(user, 'app', appId);
+  if (!item || !allows(level, 'view')) return null;
+  if (need === 'edit' && !allows(level, 'edit')) throw new ReadOnlyError('this app');
+  const [row] = await sql`select data, user_id, org_id, active_version_id from apps where id = ${item.id}`;
   if (!row) return null;
-  return { app: row.data, ownerId: row.user_id, activeVersionId: row.active_version_id,
-           version: appVersion(row.data) };
+  return { app: row.data, ownerId: row.user_id, orgId: row.org_id, activeVersionId: row.active_version_id,
+           version: appVersion(row.data), access: level };
 }
 
 /** The app as anyone may ask for it: by its address, with its owner. */
 export async function loadAppBySlug(slug) {
-  const [row] = await sql`select data, user_id from apps where slug = ${slug}`;
-  return row ? { app: row.data, ownerId: row.user_id } : null;
+  const [row] = await sql`select data, user_id, org_id from apps where slug = ${slug}`;
+  return row ? { app: row.data, ownerId: row.user_id, orgId: row.org_id } : null;
 }
 
 export async function loadAppById(id) {
-  const [row] = await sql`select data, user_id from apps where id = ${id}`;
-  return row ? { app: row.data, ownerId: row.user_id } : null;
+  const [row] = await sql`select data, user_id, org_id from apps where id = ${id}`;
+  return row ? { app: row.data, ownerId: row.user_id, orgId: row.org_id } : null;
 }
 
 /**
@@ -110,7 +118,7 @@ async function recordVersion({ appId, user, data, source, commitSha = null, mess
  * no edit, or a settings save that only touched `access`, is not a version.
  */
 export async function saveApp({ appId, user, data, source = 'ui', commitSha, message }) {
-  const current = await loadApp({ appId, user });
+  const current = await loadApp({ appId, user, need: 'edit' });
   if (!current) return null;
   const next = { ...data, id: current.app.id, slug: current.app.slug,
                  createdAt: current.app.createdAt, access: data.access || current.app.access || 'private' };
@@ -138,7 +146,7 @@ export async function listVersions({ appId, user }) {
 
 /** Puts an earlier version back in front of people. Nothing is deleted. */
 export async function activateVersion({ appId, user, versionId }) {
-  const current = await loadApp({ appId, user });
+  const current = await loadApp({ appId, user, need: 'edit' });
   if (!current) return null;
   const [row] = await sql`
     select id, number, data from app_versions
@@ -155,14 +163,14 @@ export async function activateVersion({ appId, user, versionId }) {
 }
 
 export async function deleteApp({ appId, user }) {
-  const current = await loadApp({ appId, user });
+  const current = await loadApp({ appId, user, need: 'edit' });
   if (!current) return null;
   await sql`delete from apps where id = ${current.app.id}`;
   return { ok: true };
 }
 
 /**
- * The AI Chatbots and Tables an app names must be its owner's.
+ * The AI Chatbots and Tables an app names must be in its organization.
  *
  * Checked when the app is saved, and again when it runs: an id in app.json is
  * only a claim, and a claim on somebody else's table must open nothing.
@@ -172,14 +180,14 @@ export async function linkProblems(app, ownerId) {
   const agentIds = Object.values(app.agents || {}).map(linkId);
   const tableIds = Object.values(app.tables || {}).map(linkId);
   if (agentIds.length) {
-    const rows = await sql`select id from agents where user_id = ${ownerId} and id = any(${agentIds})`;
+    const rows = await sql`select id from agents where org_id = (select org_id from users where id = ${ownerId}) and id = any(${agentIds})`;
     const mine = new Set(rows.map(r => r.id));
     for (const [alias, target] of Object.entries(app.agents)) {
       if (!mine.has(linkId(target))) problems.push(`app.json: agents.${alias} is not one of your AI Chatbots`);
     }
   }
   if (tableIds.length) {
-    const rows = await sql`select id from data_tables where user_id = ${ownerId} and id = any(${tableIds})`;
+    const rows = await sql`select id from data_tables where org_id = (select org_id from users where id = ${ownerId}) and id = any(${tableIds})`;
     const mine = new Set(rows.map(r => r.id));
     for (const [alias, target] of Object.entries(app.tables)) {
       if (!mine.has(linkId(target))) problems.push(`app.json: tables.${alias} is not one of your Tables`);

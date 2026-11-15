@@ -235,6 +235,18 @@
   <script type="text/babel" data-presets="react">
   const { useState, useReducer, useEffect, useRef, useCallback, createContext, useContext } = React;
 
+  /* True inside a screen the person may look at but not change. Editors that
+     are not form controls (Monaco) read it; plain inputs are disabled by the
+     <fieldset> that provides it. */
+  const ReadOnlyContext = createContext(false);
+  function ReadOnlyArea({ on, children, style }) {
+    return (
+      <ReadOnlyContext.Provider value={!!on}>
+        <fieldset disabled={!!on} style={{ border: 0, margin: 0, padding: 0, minWidth: 0, ...style }}>{children}</fieldset>
+      </ReadOnlyContext.Provider>
+    );
+  }
+
   /* ─────────────────── BG WATERMARK ─────────────────── */
   /* Every colour in the mark comes off one hue, so the same drawing can stand
      for the platform in amber and for an AI Chatbot in whatever it was given. */
@@ -505,6 +517,23 @@
 
   let ACCOUNT_API = { provider: 'claude', apiKey: '', model: DEFAULT_MODEL.claude, ollamaHost: '', assistantLanguage: 'en' };
   function accountApi() { return ACCOUNT_API; }
+
+  /* ── the person signed in, and their organization ──
+     Refreshed from /api/me on every load, so a role an admin changed shows up
+     without signing in again. A session from before organizations existed has
+     none of these fields, and behaves as it always did: as its own admin. */
+  let SESSION = null;
+  function setSession(s) { SESSION = s; }
+  function session() { return SESSION || getAuth() || {}; }
+  function isPlatformAdminNow() { return !!session().isAdmin; }
+  function isOrgAdminNow() { const s = session(); return !!s.isAdmin || s.orgRole === undefined || s.orgRole === 'admin'; }
+  function canCreateNow() { return session().canCreate !== false; }
+  const viewOnly = (item) => !!item && item._access === 'view';
+  function ViewOnlyChip() {
+    return <Chip tone="neutral" title={L('You can look at this but not change it. Your organization\'s admin decides.', 'אפשר לצפות בזה אבל לא לשנות. אדמין הארגון מחליט.')}>
+      {L('View only', 'צפייה בלבד')}
+    </Chip>;
+  }
   function setAccountApi(cfg) {
     ACCOUNT_API = { ...ACCOUNT_API, ...(cfg || {}) };
     UI_LANG = ACCOUNT_API.assistantLanguage === 'he' ? 'he' : 'en';
@@ -602,7 +631,7 @@
     /* _branch says whether this is the live agent or an unpublished draft, so
        it survives the UI-field strip that _isNew is the reason for. */
     return Array.isArray(agents)
-      ? agents.map(a => ({ ...stripUiFields(a), _branch: a._branch }))
+      ? agents.map(a => ({ ...stripUiFields(a), _branch: a._branch, _access: a._access }))
       : agents;
   }
   async function apiCreate(agent) {
@@ -1580,6 +1609,8 @@ function markSvgString(color, size = 30) {
   function MonacoPython({ value, onChange, height = 420, bare }) {
     const containerRef = useRef(null);
     const editorRef = useRef(null);
+    const readOnly = useContext(ReadOnlyContext);
+    useEffect(() => { if (editorRef.current) editorRef.current.updateOptions({ readOnly }); }, [readOnly]);
     // A minimap of forty lines of Python, on a phone, is a stripe of noise
     // taking width the code needs.
     const phone = useIsMobile();
@@ -1610,6 +1641,7 @@ function markSvgString(color, size = 30) {
           bracketPairColorization: { enabled: true },
           scrollBeyondLastLine: false,
           padding: { top: 12, bottom: 12 },
+          readOnly,
         });
         editorRef.current = editor;
         editor.onDidChangeModelContent(() => {
@@ -5411,11 +5443,13 @@ function markSvgString(color, size = 30) {
     }, [picked]);
     const saveOnBranchDebounced = useDebounce(saveOnBranch, 600);
 
+    const readOnly = viewOnly(fromApp);
     const update = useCallback((next) => {
+      if (readOnly) return;
       if (!picked) return onUpdate(next);
       setLoaded(next);
       saveOnBranchDebounced(next);
-    }, [picked, onUpdate, saveOnBranchDebounced]);
+    }, [picked, onUpdate, saveOnBranchDebounced, readOnly]);
 
     /* Testing runs against the version on screen, branch and all — otherwise
        you would be talking to main while looking at an experiment. */
@@ -5477,11 +5511,12 @@ function markSvgString(color, size = 30) {
                       </Chip>
                     : <Chip tone="neutral">Experiment</Chip>}
               <MadeOf agent={agent} style={{ marginInlineStart: 2 }} />
+              {readOnly && <ViewOnlyChip />}
             </div>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginInlineStart: 'auto', flexWrap: 'wrap' }}>
-            {mergeable && (
+            {mergeable && !readOnly && (
               <Btn icon={Icons.merge} onClick={() => setMerging(branchNow)}>Merge to main</Btn>
             )}
             <LocalIdeButton agentId={agent.id} />
@@ -5494,8 +5529,10 @@ function markSvgString(color, size = 30) {
           </div>
         </div>
 
-        <BranchBar agent={agent} branch={picked} onSwitch={switchTo}
-                   onChanged={() => { setPicked(null); onReload && onReload(); }} />
+        {!readOnly && (
+          <BranchBar agent={agent} branch={picked} onSwitch={switchTo}
+                     onChanged={() => { setPicked(null); onReload && onReload(); }} />
+        )}
         {loadError && (
           <div style={{ marginBottom: 12, fontSize: 12.5, color: 'var(--danger)' }}>{loadError}</div>
         )}
@@ -5541,7 +5578,7 @@ function markSvgString(color, size = 30) {
             </div>
           </div>
 
-          <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', paddingRight: 4 }}>
+          <ReadOnlyArea on={readOnly} style={{ flex: 1, minWidth: 0, overflowY: 'auto', paddingRight: 4 }}>
             {tab === 'configuration' && <ConfigurationTab agent={agent} onUpdate={update} />}
             {tab === 'skills' && <SkillsTab agent={agent} onUpdate={update} onRailList={setRailList} />}
             {tab === 'tools' && <ToolsTab agent={agent} onUpdate={update} onRailList={setRailList} />}
@@ -5550,7 +5587,7 @@ function markSvgString(color, size = 30) {
             {tab === 'export' && <ExportTab agent={agent} />}
             {tab === 'manual tests' && <ManualTestsTab agent={agent} onTest={testThis} />}
             {tab === 'whatsapp' && <WhatsAppTab agent={agent} onUpdate={update} />}
-          </div>
+          </ReadOnlyArea>
         </div>
       </div>
     );
@@ -5627,7 +5664,7 @@ function markSvgString(color, size = 30) {
       { icon: Icons.copy,   label: 'Duplicate', fn: onDuplicate },
       { icon: Icons.export, label: 'Export',    fn: onExport },
       { icon: Icons.trash,  label: 'Delete',    fn: onDelete, danger: true },
-    ];
+    ].filter(a => a.fn);
 
     return (
       <div
@@ -5667,11 +5704,12 @@ function markSvgString(color, size = 30) {
         {/* Actions: the two you reach for carry a label, the rest are icons. */}
         <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', borderTop: '1px solid var(--border)', paddingTop: 13 }}
              onClick={e => e.stopPropagation()}>
-          <Btn size="sm" icon={Icons.edit} onClick={onEdit}>{L('Edit', 'עריכה')}</Btn>
-          <Btn size="sm" icon={Icons.sparkle} onClick={onEditWithAi}
+          <Btn size="sm" icon={Icons.edit} onClick={onEdit}>{viewOnly(agent) ? L('Open', 'פתיחה') : L('Edit', 'עריכה')}</Btn>
+          {viewOnly(agent) && <ViewOnlyChip />}
+          {onEditWithAi && <Btn size="sm" icon={Icons.sparkle} onClick={onEditWithAi}
                title={L('Describe the change in words and the assistant makes it', 'לתאר את השינוי במילים, והאסיסטנט מבצע')}>
             {L('Edit with AI', 'עריכה עם AI')}
-          </Btn>
+          </Btn>}
           <Btn size="sm" icon={Icons.play} onClick={onTest}
                title="A real conversation through the live channel — it lands in Interactions">Test</Btn>
           <div style={{ marginInlineStart: 'auto', display: 'flex', gap: 2 }}>
@@ -5713,9 +5751,9 @@ function markSvgString(color, size = 30) {
           <IconBtn onClick={onEditWithAi} title={L('Edit with AI', 'עריכה עם AI')}>{Icons.sparkle}</IconBtn>
           <Btn size="sm" icon={Icons.play} onClick={onTest}
                title="A real conversation through the live channel — it lands in Interactions">Test</Btn>
-          <IconBtn onClick={onDuplicate} title="Duplicate">{Icons.copy}</IconBtn>
+          {onDuplicate && <IconBtn onClick={onDuplicate} title="Duplicate">{Icons.copy}</IconBtn>}
           <IconBtn onClick={onExport} title="Export">{Icons.export}</IconBtn>
-          <IconBtn onClick={onDelete} title="Delete" danger>{Icons.trash}</IconBtn>
+          {onDelete && <IconBtn onClick={onDelete} title="Delete" danger>{Icons.trash}</IconBtn>}
         </div>
       </div>
     );
@@ -5736,7 +5774,7 @@ function markSvgString(color, size = 30) {
       { id: 'intro',        label: 'What 8Legs.ai is' },
       { id: 'home',         label: 'Home — the chat' },
       { id: 'access',       label: 'Accounts & invitations' },
-      { id: 'autopilot',    label: 'Autopilot & the tours' },
+      { id: 'autopilot',    label: 'Autopilot' },
       { id: 'agents',       label: 'AI Chatbots' },
       { id: 'config',       label: 'Configuration' },
       { id: 'skills',       label: 'Skills' },
@@ -5749,6 +5787,7 @@ function markSvgString(color, size = 30) {
       { id: 'tables',       label: 'Tables' },
       { id: 'test',         label: 'Testing & manual tests' },
       { id: 'apps',         label: 'Apps' },
+      { id: 'orgs',         label: 'Organizations & permissions' },
       { id: 'cli',          label: '⌨ Editing from an IDE (CLI)' },
       { id: 'widget',       label: 'Embedding on a site' },
       { id: 'whatsapp',     label: 'WhatsApp channel' },
@@ -5894,6 +5933,7 @@ function markSvgString(color, size = 30) {
         <div dir="ltr">
           <H2>Autopilot — guided building</H2>
 
+          <Tip>The guided tours described below are switched off for now: neither opens by itself, and they cannot be replayed from here.</Tip>
           <H3>Two tours, and the order is the point</H3>
           <P><strong>Before either of them — the language question.</strong> One screen, in both languages. The answer is saved to the account and the tour begins immediately, in that language.</P>
           <P><strong>The first — the platform, broadly.</strong> It opens on first arrival: five steps over the platform itself, a spotlight on one thing at a time, with the screen changing underneath — the Home chat → AI Chatbots → Tables → Interactions → Settings. The last card offers &ldquo;Build one of my own&rdquo;, which is what opens Autopilot.</P>
@@ -6464,6 +6504,37 @@ git add -A && git commit -m "…" && git push`}</Block>
         </div>
       ),
 
+      /* ─────────────── ORGANIZATIONS ─────────────── */
+      orgs: (
+        <div dir="ltr">
+          <H2>Organizations &amp; permissions</H2>
+          <P>Everything — AI Chatbots, Tables, Apps, conversations, the model key — belongs to an <strong>organization</strong>, and every person belongs to exactly one. Several people can work on the same chatbots, each seeing and changing only what they were given.</P>
+
+          <H3>Who is who</H3>
+          <UL>
+            <li><strong>The platform admin</strong> creates organizations, each with its first admin, under <strong>Admin → Organizations</strong>, and can open the people of any of them.</li>
+            <li><strong>An organization&rsquo;s admin</strong> sees and changes everything in it, adds and removes its people under <strong>Team</strong>, sets the model key in Settings, and runs the organization&rsquo;s own <strong>Jarvis</strong> — its WhatsApp numbers and the people and groups on them, and no one else&rsquo;s.</li>
+            <li><strong>A member</strong> sees what they were given, and nothing else in the platform tells them more exists.</li>
+          </UL>
+
+          <H3>What a member reaches</H3>
+          <P>Each member has a level <strong>across the organization</strong> — no access, view or edit — for every AI Chatbot, Table and App. <strong>Item by item</strong> on the Team screen replaces it for one item, either way: &ldquo;views everything but edits the sales chatbot&rdquo;, or &ldquo;edits everything except the price list&rdquo;.</P>
+          <UL>
+            <li><strong>View</strong> — the screens open read-only, with a <em>View only</em> mark. A chatbot can still be tested, and its conversations read. <Code>8legs pull</Code> works; a push is refused.</li>
+            <li><strong>Edit</strong> — everything, including publishing, branches, knowledge and channels.</li>
+            <li>Adding new chatbots, tables and apps is for the admin and for members who can edit across the organization.</li>
+          </UL>
+          <Warn>The model key reaches every member&rsquo;s browser, because the test chat and the assistant call the model from there. A member sees it masked and cannot change it, but it is not a secret from them.</Warn>
+
+          <H3>People</H3>
+          <UL>
+            <li>A new person gets a <strong>temporary password</strong>, shown once to whoever added them. Their first sign-in asks them to replace it. Anyone can change their own password in Settings.</li>
+            <li>Removing a person never removes their work: what they were responsible for passes to the admin who removed them.</li>
+            <li>An organization always keeps at least one admin.</li>
+          </UL>
+        </div>
+      ),
+
       /* ─────────────── APPS ─────────────── */
       apps: (
         <div dir="ltr">
@@ -6828,6 +6899,7 @@ npm run migrate            # run it`}</Block>
 
   /** One table as a sheet: search, edit a cell in place, add and remove rows. */
   function TableSheet({ table, agents, onBack, onChanged }) {
+    const readOnly = viewOnly(table);
     const [rows, setRows] = useState([]);
     const [total, setTotal] = useState(0);
     const [query, setQuery] = useState('');
@@ -6906,7 +6978,9 @@ npm run migrate            # run it`}</Block>
           actions={
             <React.Fragment>
               <Btn onClick={onBack}>{L('← All tables', '← כל הטבלאות')}</Btn>
-              <Btn danger icon={Icons.trash} onClick={() => setPendingDelete(true)}>{L('Delete', 'מחק')}</Btn>
+              {readOnly
+                ? <ViewOnlyChip />
+                : <Btn danger icon={Icons.trash} onClick={() => setPendingDelete(true)}>{L('Delete', 'מחק')}</Btn>}
             </React.Fragment>
           }
         />
@@ -6953,8 +7027,8 @@ npm run migrate            # run it`}</Block>
                               dir="auto" style={{ height: 30, fontSize: 13, padding: '0 8px' }} />
                           ) : (
                             <div dir="auto" tabIndex={0}
-                              onClick={() => { setEditing({ rowId: row.id, key: c.key }); setDraft(String(row.data[c.key] ?? '')); }}
-                              style={{ minHeight: 24, display: 'flex', alignItems: 'center', padding: '2px 6px', margin: '-2px -6px', borderRadius: 6, cursor: 'text', fontFamily: c.type === 'number' || c.type === 'date' ? MONO : 'inherit' }}
+                              onClick={() => { if (readOnly) return; setEditing({ rowId: row.id, key: c.key }); setDraft(String(row.data[c.key] ?? '')); }}
+                              style={{ minHeight: 24, display: 'flex', alignItems: 'center', padding: '2px 6px', margin: '-2px -6px', borderRadius: 6, cursor: readOnly ? 'default' : 'text', fontFamily: c.type === 'number' || c.type === 'date' ? MONO : 'inherit' }}
                               onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
                               onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
                               {cellText(row.data[c.key], c.type) || <span style={{ color: 'var(--text-muted)' }}>—</span>}
@@ -6964,7 +7038,7 @@ npm run migrate            # run it`}</Block>
                       );
                     })}
                     <td style={td}>
-                      <IconBtn danger title={L('Delete row', 'מחק שורה')} onClick={() => removeRow(row.id)}>{Icons.trash}</IconBtn>
+                      {!readOnly && <IconBtn danger title={L('Delete row', 'מחק שורה')} onClick={() => removeRow(row.id)}>{Icons.trash}</IconBtn>}
                     </td>
                   </tr>
                 ))}
@@ -6977,11 +7051,13 @@ npm run migrate            # run it`}</Block>
             </table>
           </div>
 
+          {!readOnly && (
           <button onClick={addRow} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderTop: '1px solid var(--border)', color: 'var(--primary)', fontWeight: 650, fontSize: 12.5, width: '100%', background: 'transparent', flexShrink: 0 }}
             onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-panel)'}
             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
             {Icons.plus} {L('Add row', 'הוסף שורה')}
           </button>
+          )}
 
           <div style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', background: 'var(--bg-panel)', fontSize: 11.5, color: 'var(--text-muted)', display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', flexShrink: 0 }}>
             <span>
@@ -7038,7 +7114,7 @@ npm run migrate            # run it`}</Block>
           title="Tables"
           subtitle={L('Rows your AI Chatbots can read and write, shared across all of them',
                       'שורות שה-AI Chatbots שלך קוראים וכותבים, משותפות לכולם')}
-          actions={<Btn variant="primary" icon={Icons.plus} onClick={() => setCreating(true)}>{L('New table', 'טבלה חדשה')}</Btn>}
+          actions={canCreateNow() ? <Btn variant="primary" icon={Icons.plus} onClick={() => setCreating(true)}>{L('New table', 'טבלה חדשה')}</Btn> : null}
         />
 
         {error && <div style={{ color: 'var(--danger)', fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
@@ -7176,7 +7252,7 @@ npm run migrate            # run it`}</Block>
           title="Apps"
           subtitle={L('Small web apps the platform hosts for you. They can talk to your AI Chatbots and read and write your Tables.',
                       'אפליקציות ווב קטנות שהפלטפורמה מארחת עבורך. הן יכולות לדבר עם ה-AI Chatbots שלך ולקרוא ולכתוב בטבלאות שלך.')}
-          actions={<Btn variant="primary" icon={Icons.plus} onClick={() => setCreating(true)}>{L('New app', 'אפליקציה חדשה')}</Btn>}
+          actions={canCreateNow() ? <Btn variant="primary" icon={Icons.plus} onClick={() => setCreating(true)}>{L('New app', 'אפליקציה חדשה')}</Btn> : null}
         />
 
         {error && <div style={{ color: 'var(--danger)', fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
@@ -7318,7 +7394,8 @@ npm run migrate            # run it`}</Block>
       );
     }
 
-    const dirty = JSON.stringify(draft) !== JSON.stringify(appDraft(app));
+    const readOnly = viewOnly(app);
+    const dirty = !readOnly && JSON.stringify(draft) !== JSON.stringify(appDraft(app));
     const absoluteUrl = window.location.origin + app.url;
     const publicUrl = `${window.location.origin}/a/${app.slug}/`;
 
@@ -7346,6 +7423,7 @@ npm run migrate            # run it`}</Block>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
               <span dir="ltr" style={{ fontFamily: MONO, fontSize: 12, color: 'var(--text-muted)' }}>/a/{app.slug}/</span>
               <AccessChip access={app.access} />
+              {readOnly && <ViewOnlyChip />}
             </div>
           </div>
           <Btn icon={Icons.terminal} onClick={() => setIde(true)}
@@ -7354,9 +7432,11 @@ npm run migrate            # run it`}</Block>
             Build on local IDE
           </Btn>
           <Btn onClick={() => window.open(absoluteUrl, '_blank', 'noopener')}>{L('Open in a tab', 'פתח בלשונית')}</Btn>
-          <Btn variant="primary" disabled={!dirty || busy} onClick={() => save(draft)}>
-            {busy ? L('Saving…', 'שומר…') : dirty ? L('Save & publish', 'שמור ופרסם') : L('Saved', 'נשמר')}
-          </Btn>
+          {!readOnly && (
+            <Btn variant="primary" disabled={!dirty || busy} onClick={() => save(draft)}>
+              {busy ? L('Saving…', 'שומר…') : dirty ? L('Save & publish', 'שמור ופרסם') : L('Saved', 'נשמר')}
+            </Btn>
+          )}
         </div>
 
         <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 16, flexWrap: 'wrap' }}>
@@ -7383,6 +7463,7 @@ npm run migrate            # run it`}</Block>
             sandbox="allow-scripts allow-forms allow-modals allow-popups allow-downloads"
             style={{ flex: 1, minHeight: 480, width: '100%', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', background: '#fff' }} />
         )}
+        <ReadOnlyArea on={readOnly} style={{ display: tab === 'preview' ? 'none' : 'block' }}>
         {tab === 'files' && <AppFilesTab draft={draft} onChange={setDraft} />}
         {tab === 'links' && <AppLinksTab draft={draft} onChange={setDraft} agents={agents} />}
         {tab === 'versions' && <AppVersionsTab app={app} dirty={dirty} onActivated={() => apiGetApp(app.id).then(take)} />}
@@ -7424,11 +7505,14 @@ npm run migrate            # run it`}</Block>
               )}
             </div>
 
-            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 18 }}>
-              <Btn danger onClick={() => setConfirmDelete(true)}>{L('Delete this app', 'מחק את האפליקציה')}</Btn>
-            </div>
+            {!readOnly && (
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 18 }}>
+                <Btn danger onClick={() => setConfirmDelete(true)}>{L('Delete this app', 'מחק את האפליקציה')}</Btn>
+              </div>
+            )}
           </div>
         )}
+        </ReadOnlyArea>
 
         {ide && <LocalIdePanel appSlug={app.slug} onClose={() => setIde(false)} />}
         {confirmDelete && (
@@ -7730,6 +7814,10 @@ npm run migrate            # run it`}</Block>
      rather point at and the menu item it settles for when that content is not
      there, so a thin account still gets a whole tour. */
 
+  /* The guided tours are switched off (2026-11-15): neither opens by itself
+     and Documentation no longer offers to replay them. The code stays, so
+     turning them back on is this one flag. */
+  const TOURS_ON = false;
   const TOUR_KEY = 'agentforge_tour_v1';        // the platform tour
   const TOUR2_KEY = 'agentforge_tour_editor_v1';// the editor tour
   const TOUR_KNOWN_KEY = 'agentforge_tour_known_v1';
@@ -9711,13 +9799,14 @@ npm run migrate            # run it`}</Block>
       (!branch || agentBranch(a) === branch) &&
       (!channel || agentChannel(a) === channel));
 
+    /* What each card offers follows what this person may do to it. */
     const cardProps = a => ({
       key: a.id, agent: a, isNew: a._isNew,
       onEdit: () => onEdit(a.id),
-      onEditWithAi: () => onBuildInChat(EDIT_AGENT_ASK(a.name)),
+      onEditWithAi: viewOnly(a) ? undefined : () => onBuildInChat(EDIT_AGENT_ASK(a.name)),
       onTest: () => onTest(a.id),
-      onDuplicate: () => onDuplicate(a.id),
-      onDelete: () => onDelete(a.id),
+      onDuplicate: canCreateNow() ? () => onDuplicate(a.id) : undefined,
+      onDelete: viewOnly(a) ? undefined : () => onDelete(a.id),
       onExport: () => onExport(a.id),
     });
 
@@ -9744,12 +9833,14 @@ npm run migrate            # run it`}</Block>
             <React.Fragment>
               {/* The moment someone wants an agent is the moment to mention
                   that something here can build one for them. */}
-              <Btn icon={Icons.sparkle}
-                title="Let the assistant build an AI Chatbot for you"
-                onClick={() => onBuildInChat(NEW_AGENT_ASK())}>
-                Build with the assistant
-              </Btn>
-              <Btn variant="primary" icon={Icons.plus} onClick={onNew}>New AI Chatbot</Btn>
+              {canCreateNow() && (
+                <Btn icon={Icons.sparkle}
+                  title="Let the assistant build an AI Chatbot for you"
+                  onClick={() => onBuildInChat(NEW_AGENT_ASK())}>
+                  Build with the assistant
+                </Btn>
+              )}
+              {canCreateNow() && <Btn variant="primary" icon={Icons.plus} onClick={onNew}>New AI Chatbot</Btn>}
             </React.Fragment>
           }
         />
@@ -9794,7 +9885,7 @@ npm run migrate            # run it`}</Block>
           <div data-tour="agent-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(358px,1fr))', gap: 16 }}>
             {/* Searching is looking for something that exists — the tile for
                 making a new one only gets in the way then. */}
-            {!query && !branch && !channel && (
+            {!query && !branch && !channel && canCreateNow() && (
               <NewAgentTile onNew={onNew} onAssistant={() => onBuildInChat(NEW_AGENT_ASK())} />
             )}
             {shown.map(a => <AgentCard {...cardProps(a)} />)}
@@ -12204,8 +12295,13 @@ npm run migrate            # run it`}</Block>
       { id: 'interactions', label: 'Interactions',  icon: Icons.interactions },
       { id: 'docs',         label: 'Documentation', icon: Icons.docs },
       { id: 'settings',     label: 'Settings',      icon: Icons.settings },
-      ...(user && user.isAdmin ? [
+      /* An organization's admin runs its people and its own Jarvis; the
+         platform admin also has Admin, where every organization is. */
+      ...(isOrgAdminNow() ? [
+        { id: 'team', label: 'Team', icon: Icons.users },
         { id: 'jarvis', label: 'Jarvis', icon: Icons.jarvis, badge: 'NEW' },
+      ] : []),
+      ...(user && user.isAdmin ? [
         { id: 'admin', label: 'Admin', icon: Icons.admin },
       ] : []),
     ];
@@ -12219,6 +12315,11 @@ npm run migrate            # run it`}</Block>
       }}>
         <div style={{ padding: '17px 20px 0' }}>
           <BrandMark />
+          {session().orgName && (
+            <div dir="auto" title={L('Your organization', 'הארגון שלך')} style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {session().orgName}
+            </div>
+          )}
         </div>
 
         <div style={{ padding: '26px 20px 10px' }}>
@@ -12325,7 +12426,7 @@ npm run migrate            # run it`}</Block>
                   {user.username}
                 </div>
                 <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 1 }}>
-                  {user.isAdmin ? 'Administrator' : 'User'}
+                  {user.isAdmin ? 'Administrator' : user.orgRole === 'member' ? L('Member', 'חבר/ה') : L('Org admin', 'אדמין ארגון')}
                 </div>
               </div>
               <button onClick={onLogout} title="Log out"
@@ -13012,6 +13113,405 @@ npm run migrate            # run it`}</Block>
     );
   }
 
+  /* ─────────────────── ORGANIZATIONS & TEAM ─────────────────── */
+  async function orgCall(path, opts, what) {
+    const r = await apiFetch(path, opts);
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `Could not ${what} (${r.status})`);
+    return d;
+  }
+  const orgQuery = (orgId) => (orgId ? `?org=${encodeURIComponent(orgId)}` : '');
+  const apiOrgMembers = (orgId) => orgCall(`/api/org/members${orgQuery(orgId)}`, {}, 'load the people');
+  const apiAddMember = (orgId, body) => orgCall(`/api/org/members${orgQuery(orgId)}`, { method: 'POST', body: JSON.stringify(body) }, 'add the person');
+  const apiMember = (orgId, id) => orgCall(`/api/org/members/${id}${orgQuery(orgId)}`, {}, 'load their access');
+  const apiUpdateMember = (orgId, id, body) => orgCall(`/api/org/members/${id}${orgQuery(orgId)}`, { method: 'PUT', body: JSON.stringify(body) }, 'save');
+  const apiGrant = (orgId, id, body) => orgCall(`/api/org/members/${id}${orgQuery(orgId)}`, { method: 'PATCH', body: JSON.stringify(body) }, 'save');
+  const apiResetMember = (orgId, id) => orgCall(`/api/org/members/${id}${orgQuery(orgId)}`, { method: 'POST', body: JSON.stringify({ action: 'reset-password' }) }, 'reset the password');
+  const apiRemoveMember = (orgId, id) => orgCall(`/api/org/members/${id}${orgQuery(orgId)}`, { method: 'DELETE' }, 'remove the person');
+  const apiListOrgs = () => orgCall('/api/admin/orgs', {}, 'load the organizations');
+  const apiCreateOrg = (body) => orgCall('/api/admin/orgs', { method: 'POST', body: JSON.stringify(body) }, 'create the organization');
+  const apiDeleteOrg = (id, confirm) => orgCall(`/api/admin/orgs/${id}?confirm=${encodeURIComponent(confirm)}`, { method: 'DELETE' }, 'delete the organization');
+
+  const LEVEL_LABEL = () => ({ none: L('No access', 'אין גישה'), view: L('View', 'צפייה'), edit: L('Edit', 'עריכה') });
+  const KIND_LABEL = () => ({ agent: 'AI Chatbots', table: L('Tables', 'טבלאות'), app: 'Apps' });
+
+  /** A password shown the one time it can be: easy to copy, impossible to miss. */
+  function OneTimePassword({ username, password, onDone }) {
+    return (
+      <div style={{ background: 'var(--primary-dim)', border: '1px solid rgba(239,159,39,0.35)', borderRadius: 'var(--r-md)', padding: '14px 16px', marginBottom: 16 }}>
+        <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 4 }}>
+          {L(`Temporary password for ${username}`, `סיסמה זמנית ל-${username}`)}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 10, lineHeight: 1.6 }}>
+          {L('It is shown once. Send it to them; they choose their own at first sign-in.', 'היא מוצגת פעם אחת. שלח אותה אליהם; בכניסה הראשונה הם בוחרים סיסמה משלהם.')}
+        </div>
+        <CopyableCommand command={password} />
+        {onDone && <Btn size="sm" style={{ marginTop: 10 }} onClick={onDone}>{L('Done', 'סיום')}</Btn>}
+      </div>
+    );
+  }
+
+  function LevelSelect({ value, onChange, disabled, withDefault, defaultLevel, style }) {
+    const labels = LEVEL_LABEL();
+    return (
+      <select value={value || ''} disabled={disabled} onChange={e => onChange(e.target.value || null)} style={{ width: 168, fontSize: 12.5, ...style }}>
+        {withDefault && <option value="">{L('Default', 'ברירת מחדל')} ({labels[defaultLevel]})</option>}
+        {['none', 'view', 'edit'].map(l => <option key={l} value={l}>{labels[l]}</option>)}
+      </select>
+    );
+  }
+
+  /**
+   * The people of one organization and what each reaches. Its admin sees their
+   * own; the platform admin opens any from Admin → Organizations (orgId).
+   */
+  function TeamView({ orgId, onBack }) {
+    const [data, setData] = useState(null);
+    const [error, setError] = useState('');
+    const [adding, setAdding] = useState(false);
+    const [fresh, setFresh] = useState(null);          // { username, temporaryPassword }
+    const [openId, setOpenId] = useState(null);
+    const [removing, setRemoving] = useState(null);
+    const meId = session().userId;
+
+    const load = useCallback(() => apiOrgMembers(orgId).then(setData).catch(e => setError(e.message)), [orgId]);
+    useEffect(() => { load(); }, [load]);
+
+    if (openId) {
+      const m = (data?.members || []).find(x => x.id === openId);
+      return <MemberAccess orgId={orgId} member={m} onBack={() => { setOpenId(null); load(); }} />;
+    }
+
+    async function act(fn) {
+      setError('');
+      try { await fn(); await load(); } catch (e) { setError(e.message); }
+    }
+    const labels = LEVEL_LABEL();
+
+    return (
+      <div>
+        {onBack && <Btn size="sm" onClick={onBack} style={{ marginBottom: 14 }}>{L('← Organizations', 'ארגונים →')}</Btn>}
+        <PageHeader
+          eyebrow={L('Your organization', 'הארגון שלך')}
+          title={data?.org?.name || 'Team'}
+          subtitle={L('Who is in the organization, and what each of them may see and change.',
+                      'מי בארגון, ומה כל אחד מהם רשאי לראות ולשנות.')}
+          actions={<Btn variant="primary" icon={Icons.plus} onClick={() => { setAdding(true); setFresh(null); }}>{L('Add a person', 'הוספת משתמש')}</Btn>}
+        />
+        {error && <div style={{ color: 'var(--danger)', fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
+        {fresh && <OneTimePassword username={fresh.username} password={fresh.temporaryPassword} onDone={() => setFresh(null)} />}
+        {adding && (
+          <AddMemberForm onCancel={() => setAdding(false)}
+            onAdd={async (body) => { const made = await apiAddMember(orgId, body); setAdding(false); setFresh(made); await load(); }} />
+        )}
+
+        {!data ? (
+          <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{L('Loading…', 'טוען…')}</div>
+        ) : (
+          <div style={{ background: 'var(--bg-card)', borderRadius: 'var(--r-lg)', border: '1px solid var(--border)', overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+              <thead>
+                <tr>{[L('Person', 'משתמש'), L('Role', 'תפקיד'), L('Across the organization', 'בכל הארגון'), L('Last sign-in', 'כניסה אחרונה'), ''].map((h, i) => (
+                  <th key={i} style={{ padding: '14px 16px 10px', textAlign: 'start' }}><Eyebrow>{h}</Eyebrow></th>
+                ))}</tr>
+              </thead>
+              <tbody>
+                {data.members.map(m => {
+                  const admin = m.org_role === 'admin';
+                  const self = m.id === meId;
+                  return (
+                    <tr key={m.id} style={{ borderTop: '1px solid var(--border)' }}>
+                      <td style={{ padding: '12px 16px', fontWeight: 650 }}>
+                        {m.username}
+                        {self && <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}> · {L('you', 'את/ה')}</span>}
+                        {m.must_change_password && <div style={{ fontSize: 11, color: 'var(--warning)' }}>{L('Has not signed in yet', 'עוד לא נכנס/ה')}</div>}
+                      </td>
+                      <td style={{ padding: '12px 16px' }}>
+                        <select value={m.org_role} disabled={self || m.is_admin}
+                          onChange={e => act(() => apiUpdateMember(orgId, m.id, { orgRole: e.target.value }))} style={{ width: 150, fontSize: 12.5 }}>
+                          <option value="admin">{L('Admin', 'אדמין')}</option>
+                          <option value="member">{L('Member', 'חבר/ה')}</option>
+                        </select>
+                      </td>
+                      <td style={{ padding: '12px 16px' }}>
+                        {admin
+                          ? <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{L('Everything', 'הכל')}</span>
+                          : <LevelSelect value={m.org_access} onChange={v => act(() => apiUpdateMember(orgId, m.id, { orgAccess: v || 'none' }))} />}
+                        {!admin && m.grants > 0 && (
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
+                            {L(`+ ${m.grants} item-level override(s)`, `+ ${m.grants} הרשאות לפריט ספציפי`)}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
+                        {m.last_login_at ? new Date(m.last_login_at).toLocaleDateString() : '—'}
+                      </td>
+                      <td style={{ padding: '12px 16px' }}>
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                          {!admin && <Btn size="sm" onClick={() => setOpenId(m.id)}>{L('Item by item', 'לפי פריט')}</Btn>}
+                          {!self && <Btn size="sm" onClick={() => act(async () => { const r = await apiResetMember(orgId, m.id); setFresh(r); })}>{L('Reset password', 'איפוס סיסמה')}</Btn>}
+                          {!self && !m.is_admin && <Btn size="sm" danger onClick={() => setRemoving(m)}>{L('Remove', 'הסרה')}</Btn>}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 12, lineHeight: 1.7, maxWidth: 760 }}>
+          {L(`An admin sees and changes everything in the organization and manages its people. A member gets the level in "Across the organization" for every AI Chatbot, Table and App — "${labels.none}", "${labels.view}" or "${labels.edit}" — and "Item by item" overrides it for one item.`,
+             `אדמין רואה ומשנה הכל בארגון ומנהל את המשתמשים בו. חבר/ה מקבל/ת את הרמה ב"בכל הארגון" לכל AI Chatbot, טבלה ואפליקציה — "${labels.none}", "${labels.view}" או "${labels.edit}" — ו"לפי פריט" משנה אותה לפריט אחד.`)}
+        </div>
+        {removing && (
+          <ConfirmDialog
+            title={L(`Remove ${removing.username}?`, `להסיר את ${removing.username}?`)}
+            body={L('They lose access at once. What they were responsible for stays in the organization and passes to you.',
+                    'הגישה שלהם נחסמת מיד. מה שהיה באחריותם נשאר בארגון ועובר אליך.')}
+            confirmLabel={L('Remove', 'הסרה')}
+            onCancel={() => setRemoving(null)}
+            onConfirm={() => { const m = removing; setRemoving(null); act(() => apiRemoveMember(orgId, m.id)); }} />
+        )}
+      </div>
+    );
+  }
+
+  function AddMemberForm({ onAdd, onCancel, adminOnly }) {
+    const [username, setUsername] = useState('');
+    const [role, setRole] = useState(adminOnly ? 'admin' : 'member');
+    const [access, setAccess] = useState('view');
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState('');
+    async function submit() {
+      if (!username.trim() || busy) return;
+      setBusy(true); setError('');
+      try { await onAdd({ username: username.trim(), orgRole: role, orgAccess: access }); }
+      catch (e) { setError(e.message); setBusy(false); }
+    }
+    return (
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '16px 18px', marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div style={{ flex: '1 1 200px' }}>
+            <label className="field-label">{L('Username', 'שם משתמש')}</label>
+            <input value={username} autoFocus dir="ltr" onChange={e => setUsername(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') submit(); }} placeholder="dana" />
+          </div>
+          {!adminOnly && (
+            <div>
+              <label className="field-label">{L('Role', 'תפקיד')}</label>
+              <select value={role} onChange={e => setRole(e.target.value)} style={{ width: 150 }}>
+                <option value="member">{L('Member', 'חבר/ה')}</option>
+                <option value="admin">{L('Admin', 'אדמין')}</option>
+              </select>
+            </div>
+          )}
+          {role === 'member' && (
+            <div>
+              <label className="field-label">{L('Across the organization', 'בכל הארגון')}</label>
+              <LevelSelect value={access} onChange={v => setAccess(v || 'none')} />
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Btn onClick={onCancel}>{L('Cancel', 'ביטול')}</Btn>
+            <Btn variant="primary" disabled={!username.trim() || busy} onClick={submit}>{busy ? L('Adding…', 'מוסיף…') : L('Add', 'הוספה')}</Btn>
+          </div>
+        </div>
+        {error && <div style={{ color: 'var(--danger)', fontSize: 12.5, marginTop: 10 }}>{error}</div>}
+      </div>
+    );
+  }
+
+  /** One member, item by item: every AI Chatbot, Table and App in the organization. */
+  function MemberAccess({ orgId, member, onBack }) {
+    const [data, setData] = useState(null);
+    const [error, setError] = useState('');
+    const load = useCallback(() => apiMember(orgId, member.id).then(setData).catch(e => setError(e.message)), [orgId, member.id]);
+    useEffect(() => { load(); }, [load]);
+    async function set(item, level) {
+      setError('');
+      try { await apiGrant(orgId, member.id, { kind: item.kind, itemId: item.id, level }); await load(); }
+      catch (e) { setError(e.message); }
+    }
+    const kinds = KIND_LABEL();
+    return (
+      <div style={{ maxWidth: 820 }}>
+        <Btn size="sm" onClick={onBack} style={{ marginBottom: 14 }}>{L('← Team', 'צוות →')}</Btn>
+        <PageHeader eyebrow={L('Item by item', 'לפי פריט')} title={member.username}
+          subtitle={L(`Across the organization: ${LEVEL_LABEL()[data?.member?.orgAccess || member.org_access]}. Pick another level for any single item.`,
+                      `בכל הארגון: ${LEVEL_LABEL()[data?.member?.orgAccess || member.org_access]}. אפשר לבחור רמה אחרת לכל פריט בנפרד.`)} />
+        {error && <div style={{ color: 'var(--danger)', fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
+        {!data ? <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{L('Loading…', 'טוען…')}</div>
+          : ['agent', 'table', 'app'].map(kind => {
+            const items = data.items.filter(i => i.kind === kind);
+            return (
+              <div key={kind} style={{ marginBottom: 22 }}>
+                <div style={{ fontWeight: 700, fontSize: 14.5, marginBottom: 8 }}>{kinds[kind]}</div>
+                {items.length === 0
+                  ? <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{L('None in the organization yet.', 'עוד אין בארגון.')}</div>
+                  : items.map(i => (
+                    <div key={i.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 12px', marginBottom: 6,
+                                             background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
+                      <span dir="auto" style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 13 }}>{i.name || i.id}</span>
+                      {i.grant && <Chip tone="draft">{L('Override', 'שונה לפריט')}</Chip>}
+                      <LevelSelect value={i.grant} withDefault defaultLevel={data.member.orgAccess} onChange={v => set(i, v)} />
+                    </div>
+                  ))}
+              </div>
+            );
+          })}
+      </div>
+    );
+  }
+
+  /** Every organization on the platform, for the platform admin. */
+  function OrganizationsPanel() {
+    const [orgs, setOrgs] = useState(null);
+    const [error, setError] = useState('');
+    const [creating, setCreating] = useState(false);
+    const [name, setName] = useState('');
+    const [adminName, setAdminName] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [fresh, setFresh] = useState(null);
+    const [openId, setOpenId] = useState(null);
+    const [deleting, setDeleting] = useState(null);
+    const [confirm, setConfirm] = useState('');
+    const load = useCallback(() => apiListOrgs().then(d => setOrgs(d.orgs)).catch(e => setError(e.message)), []);
+    useEffect(() => { load(); }, [load]);
+
+    if (openId) return <TeamView orgId={openId} onBack={() => { setOpenId(null); load(); }} />;
+
+    async function create() {
+      if (!name.trim() || !adminName.trim() || busy) return;
+      setBusy(true); setError('');
+      try {
+        const made = await apiCreateOrg({ name: name.trim(), adminUsername: adminName.trim() });
+        setFresh(made.admin); setCreating(false); setName(''); setAdminName(''); await load();
+      } catch (e) { setError(e.message); }
+      finally { setBusy(false); }
+    }
+    const myOrg = session().orgId;
+
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+          <div style={{ fontWeight: 700, fontSize: 16, flex: 1 }}>{L('Organizations', 'ארגונים')}</div>
+          <Btn variant="primary" icon={Icons.plus} onClick={() => { setCreating(true); setFresh(null); }}>{L('New organization', 'ארגון חדש')}</Btn>
+        </div>
+        {error && <div style={{ color: 'var(--danger)', fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
+        {fresh && <OneTimePassword username={fresh.username} password={fresh.temporaryPassword} onDone={() => setFresh(null)} />}
+        {creating && (
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '16px 18px', marginBottom: 16 }}>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div style={{ flex: '1 1 220px' }}>
+                <label className="field-label">{L('Organization', 'שם הארגון')}</label>
+                <input value={name} dir="auto" autoFocus onChange={e => setName(e.target.value)} placeholder={L('e.g. Acme Insurance', 'למשל ביטוח אקמה')} />
+              </div>
+              <div style={{ flex: '1 1 200px' }}>
+                <label className="field-label">{L('Its admin\'s username', 'שם המשתמש של האדמין שלו')}</label>
+                <input value={adminName} dir="ltr" onChange={e => setAdminName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') create(); }} placeholder="acme-admin" />
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Btn onClick={() => setCreating(false)}>{L('Cancel', 'ביטול')}</Btn>
+                <Btn variant="primary" disabled={!name.trim() || !adminName.trim() || busy} onClick={create}>{busy ? L('Creating…', 'יוצר…') : L('Create', 'יצירה')}</Btn>
+              </div>
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8 }}>
+              {L('The organization starts with the starter AI Chatbots and the Chat app, like a sign-up does.', 'הארגון מתחיל עם בוטי הפתיחה ואפליקציית ה-Chat, כמו בהרשמה.')}
+            </div>
+          </div>
+        )}
+        {!orgs ? <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{L('Loading…', 'טוען…')}</div> : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 14, marginBottom: 28 }}>
+            {orgs.map(o => (
+              <div key={o.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '14px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div dir="auto" style={{ fontWeight: 700, fontSize: 15, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.name}</div>
+                  {o.id === myOrg && <Chip tone="neutral">{L('Yours', 'שלך')}</Chip>}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-2)', margin: '8px 0 12px', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  <span>{o.members} {L('people', 'משתמשים')}</span><span>{o.agents} AI Chatbots</span>
+                  <span>{o.tables} {L('tables', 'טבלאות')}</span><span>{o.apps} Apps</span>
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <Btn size="sm" onClick={() => setOpenId(o.id)}>{L('People', 'משתמשים')}</Btn>
+                  {o.id !== myOrg && <Btn size="sm" danger onClick={() => { setDeleting(o); setConfirm(''); }}>{L('Delete', 'מחיקה')}</Btn>}
+                </div>
+                {deleting && deleting.id === o.id && (
+                  <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-2)' }}>
+                    {L(`This deletes the organization and everything in it — its people, AI Chatbots, conversations, tables and apps. Type "${o.name}" to confirm.`,
+                       `זה מוחק את הארגון וכל מה שבו — משתמשים, בוטים, שיחות, טבלאות ואפליקציות. הקלד "${o.name}" לאישור.`)}
+                    <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                      <input value={confirm} dir="auto" onChange={e => setConfirm(e.target.value)} />
+                      <Btn size="sm" danger disabled={confirm !== o.name}
+                        onClick={async () => { try { await apiDeleteOrg(o.id, confirm); setDeleting(null); await load(); } catch (e) { setError(e.message); } }}>
+                        {L('Delete', 'מחיקה')}
+                      </Btn>
+                      <Btn size="sm" onClick={() => setDeleting(null)}>{L('Cancel', 'ביטול')}</Btn>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  /** Replacing a password: forced after a temporary one, offered in Settings. */
+  function ChangePasswordForm({ onDone, compact }) {
+    const [current, setCurrent] = useState('');
+    const [next, setNext] = useState('');
+    const [again, setAgain] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState('');
+    const [ok, setOk] = useState(false);
+    const mismatch = again && next !== again;
+    async function submit() {
+      if (busy || !current || next.length < 8 || next !== again) return;
+      setBusy(true); setError('');
+      try {
+        const r = await orgCall('/api/me', { method: 'POST', body: JSON.stringify({ currentPassword: current, newPassword: next }) }, 'change the password');
+        setOk(true); setCurrent(''); setNext(''); setAgain('');
+        onDone && onDone(r);
+      } catch (e) { setError(e.message); }
+      finally { setBusy(false); }
+    }
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: compact ? 360 : 'none' }}>
+        <input type="password" autoComplete="current-password" value={current} onChange={e => setCurrent(e.target.value)} placeholder={L('Current password', 'סיסמה נוכחית')} />
+        <input type="password" autoComplete="new-password" value={next} onChange={e => setNext(e.target.value)} placeholder={L('New password (8+ characters)', 'סיסמה חדשה (8 תווים לפחות)')} />
+        <input type="password" autoComplete="new-password" value={again} onChange={e => setAgain(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') submit(); }} placeholder={L('New password again', 'שוב את הסיסמה החדשה')} />
+        {mismatch && <div style={{ color: 'var(--warning)', fontSize: 12 }}>{L('The two do not match.', 'שתי הסיסמאות לא זהות.')}</div>}
+        {error && <div style={{ color: 'var(--danger)', fontSize: 12.5 }}>{error}</div>}
+        {ok && !onDone && <div style={{ color: 'var(--success)', fontSize: 12.5 }}>{L('Password changed.', 'הסיסמה הוחלפה.')}</div>}
+        <Btn variant="primary" disabled={busy || !current || next.length < 8 || next !== again} onClick={submit}>
+          {busy ? L('Saving…', 'שומר…') : L('Change password', 'החלפת סיסמה')}
+        </Btn>
+      </div>
+    );
+  }
+
+  function ChangePasswordGate({ user, onDone, onLogout }) {
+    return (
+      <div dir={uiDir()} style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-app)', padding: 24 }}>
+        <div style={{ width: 'min(420px, 100%)', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-xl)', padding: 28, boxShadow: 'var(--shadow-lg)' }}>
+          <div style={{ fontWeight: 800, fontSize: 20, marginBottom: 6 }}>{L('Choose your password', 'בחירת סיסמה')}</div>
+          <div style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 18, lineHeight: 1.6 }}>
+            {L(`Hi ${user.username}. You signed in with a temporary password${user.orgName ? ` for ${user.orgName}` : ''}. Replace it to continue.`,
+               `שלום ${user.username}. נכנסת עם סיסמה זמנית${user.orgName ? ` ל-${user.orgName}` : ''}. צריך להחליף אותה כדי להמשיך.`)}
+          </div>
+          <ChangePasswordForm onDone={onDone} />
+          <button onClick={onLogout} style={{ marginTop: 16, background: 'transparent', color: 'var(--text-muted)', fontSize: 12.5, cursor: 'pointer' }}>
+            {L('Sign out', 'יציאה')}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   function AdminView({ onSelectUser, myAgents }) {
     const [tab, setTab]             = useState('users');
     const [users, setUsers]         = useState(null);
@@ -13055,6 +13555,16 @@ npm run migrate            # run it`}</Block>
     if (tab === 'history') {
       return <AdminChatHistoryView onBack={() => setTab('users')} />;
     }
+    if (tab === 'orgs') {
+      return (
+        <div>
+          <PageHeader eyebrow="Access" title="Admin"
+            actions={<SegTabs value={tab} onChange={setTab}
+              items={[{ id: 'orgs', label: 'Organizations' }, { id: 'users', label: 'Users' }, { id: 'history', label: 'Chat history' }]} />} />
+          <OrganizationsPanel />
+        </div>
+      );
+    }
 
     if (!users) return <div style={{ color: 'var(--text-2)', padding: 40 }}>Loading…</div>;
 
@@ -13068,7 +13578,7 @@ npm run migrate            # run it`}</Block>
           title="Admin"
           actions={
             <SegTabs value={tab} onChange={setTab}
-              items={[{ id: 'users', label: 'Users' }, { id: 'history', label: 'Chat history' }]} />
+              items={[{ id: 'orgs', label: 'Organizations' }, { id: 'users', label: 'Users' }, { id: 'history', label: 'Chat history' }]} />
           }
         />
 
@@ -13080,7 +13590,7 @@ npm run migrate            # run it`}</Block>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 880 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                {['User', 'Phone', 'Role', 'AI Chatbots', 'Last login', 'Actions'].map(h => (
+                {['User', 'Organization', 'Role', 'AI Chatbots', 'Last login', 'Actions'].map(h => (
                   <th key={h} style={th}><Eyebrow>{h}</Eyebrow></th>
                 ))}
               </tr>
@@ -13097,9 +13607,11 @@ npm run migrate            # run it`}</Block>
                       <span style={{ fontWeight: 650, color: 'var(--text)' }}>{u.username}</span>
                     </button>
                   </td>
-                  <td style={{ ...td, color: 'var(--text-2)', fontFamily: MONO, fontSize: 12 }}>{u.phone || '—'}</td>
+                  <td dir="auto" style={{ ...td, color: 'var(--text-2)', fontSize: 12.5 }}>{u.org_name || '—'}</td>
                   <td style={td}>
-                    <Chip tone={u.is_admin ? 'tools' : 'neutral'}>{u.is_admin ? 'Admin' : 'User'}</Chip>
+                    <Chip tone={u.is_admin ? 'tools' : 'neutral'}>
+                      {u.is_admin ? 'Platform admin' : u.org_role === 'admin' ? 'Org admin' : 'Member'}
+                    </Chip>
                   </td>
                   <td style={{ ...td, color: 'var(--text-2)', fontFamily: MONO, fontSize: 12.5 }}>{u.agent_count}</td>
                   <td style={{ ...td, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
@@ -13443,7 +13955,12 @@ npm run migrate            # run it`}</Block>
     const [error, setError] = useState(null);
     const [detail, setDetail] = useState(null);
 
-    useEffect(() => { if (!existingId) adminListUsers().then(setUsers).catch(() => {}); }, []);
+    /* Whose number it is: anyone, for the platform admin; someone in their own
+       organization, for an organization's admin. */
+    useEffect(() => {
+      if (existingId) return;
+      (isPlatformAdminNow() ? adminListUsers() : apiOrgMembers().then(d => d.members)).then(setUsers).catch(() => {});
+    }, []);
 
     useEffect(() => {
       if (!numberId) return;
@@ -15163,6 +15680,8 @@ npm run migrate            # run it`}</Block>
     const [saved, setSaved] = useState(false);
     const [error, setError] = useState(null);
     const [section, setSection] = useState('set-model');
+    /* The model settings are the organization's; only its admin changes them. */
+    const canEditModel = !settings || settings.canEditModel !== false;
 
     // Adopt the settings once they arrive, unless the user is already editing.
     const dirty = JSON.stringify(draft) !== JSON.stringify(settings || {});
@@ -15229,8 +15748,9 @@ npm run migrate            # run it`}</Block>
     const onClaude = ((settings && settings.provider) || 'claude') === 'claude';
     const SECTIONS = [
       { id: 'set-model',      label: 'Model & key' },
-      ...(onClaude ? [{ id: 'set-credit', label: L('Claude credit', 'קרדיט Claude') }] : []),
+      ...(onClaude && canEditModel ? [{ id: 'set-credit', label: L('Claude credit', 'קרדיט Claude') }] : []),
       { id: 'set-tokens',     label: 'Access tokens' },
+      { id: 'set-password',   label: L('Password', 'סיסמה') },
       { id: 'set-account',    label: 'Account' },
     ];
     function jump(id) {
@@ -15276,9 +15796,15 @@ npm run migrate            # run it`}</Block>
           <div style={sectionHeader}>AI · Model &amp; API key</div>
           <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-              {L('This key drives every AI Chatbot in the account, every channel and the assistant. There is no key to set on each one.', 'המפתח הזה משמש את כל ה-AI Chatbots בחשבון, את כל הערוצים ואת האסיסטנט. אין צורך להגדיר מפתח לכל אחד בנפרד.')}
+              {L('This key drives every AI Chatbot in the organization, every channel and the assistant. There is no key to set on each one.', 'המפתח הזה משמש את כל ה-AI Chatbots בארגון, את כל הערוצים ואת האסיסטנט. אין צורך להגדיר מפתח לכל אחד בנפרד.')}
+              {!canEditModel && (
+                <div style={{ marginTop: 6, color: 'var(--text-2)' }}>
+                  {L('Your organization\'s admin manages the key and the model.', 'אדמין הארגון מנהל את המפתח והמודל.')}
+                </div>
+              )}
             </div>
 
+            <ReadOnlyArea on={!canEditModel} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div>
               <Eyebrow style={{ marginBottom: 8 }}>Provider</Eyebrow>
               <SegTabs value={draft.provider} onChange={v => set('provider', v)}
@@ -15299,10 +15825,10 @@ npm run migrate            # run it`}</Block>
                 <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>API Key</label>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <input type={showKey ? 'text' : 'password'} value={draft.apiKey || ''} onChange={e => set('apiKey', e.target.value)} placeholder="sk-..." style={{ flex: 1 }} />
-                  <button onClick={() => setShowKey(v => !v)} title={showKey ? 'Hide' : 'Show'}
+                  {canEditModel && <button onClick={() => setShowKey(v => !v)} title={showKey ? 'Hide' : 'Show'}
                     style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', fontSize: 16 }}>
                     {showKey ? '🙈' : '👁'}
-                  </button>
+                  </button>}
                 </div>
               </div>
             )}
@@ -15318,6 +15844,7 @@ npm run migrate            # run it`}</Block>
                 )}
               </select>
             </div>
+            </ReadOnlyArea>
 
             <div>
               <Eyebrow style={{ marginBottom: 8 }}>{L('Interface language', 'שפת הממשק')}</Eyebrow>
@@ -15350,7 +15877,7 @@ npm run migrate            # run it`}</Block>
           </div>
         </div>
 
-        {onClaude && (
+        {onClaude && canEditModel && (
           <div id="set-credit">
             <CreditSection sectionStyle={sectionStyle} sectionHeader={sectionHeader} />
           </div>
@@ -15361,6 +15888,13 @@ npm run migrate            # run it`}</Block>
                          rowStyle={rowStyle} iconBox={iconBox} />
         </div>
 
+        <div id="set-password" style={sectionStyle}>
+          <div style={sectionHeader}>{L('Password', 'סיסמה')}</div>
+          <div style={{ padding: '14px 18px' }}>
+            <ChangePasswordForm compact />
+          </div>
+        </div>
+
         <div id="set-account" style={sectionStyle}>
           <div style={sectionHeader}>Account</div>
           <div style={rowStyle}>
@@ -15369,7 +15903,8 @@ npm run migrate            # run it`}</Block>
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600 }}>{user?.email || user?.username || 'User'}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                  {user?.role === 'admin' ? 'Administrator' : 'Member'}
+                  {user?.isAdmin ? 'Platform admin' : user?.orgRole === 'member' ? L('Member', 'חבר/ה') : L('Organization admin', 'אדמין ארגון')}
+                  {user?.orgName ? ` · ${user.orgName}` : ''}
                 </div>
               </div>
             </div>
@@ -15648,7 +16183,7 @@ npm run migrate            # run it`}</Block>
           <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--primary-dim)', border: '1px solid rgba(239,159,39,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}>{Icons.user}</div>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontWeight: 800, fontSize: 16 }}>{user.username}</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{user.isAdmin ? 'Administrator' : 'User'} · 8Legs.ai</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{user.isAdmin ? 'Administrator' : user.orgRole === 'member' ? L('Member', 'חבר/ה') : L('Org admin', 'אדמין ארגון')} · {user.orgName || '8Legs.ai'}</div>
           </div>
         </div>
         <div style={{ marginBottom: 6 }}>
@@ -15657,7 +16192,8 @@ npm run migrate            # run it`}</Block>
         <Row icon={Icons.rows} label="Tables" hint={L('Shared rows your AI Chatbots read and write', 'שורות משותפות שה-AI Chatbots קוראים וכותבים')} onClick={() => onOpen('tables')} />
         <Row icon={Icons.apps} label="Apps" hint={L('Your own interfaces, hosted here', 'ממשקים משלך, מתארחים כאן')} onClick={() => onOpen('apps')} />
         <Row icon={Icons.docs} label="Documentation" hint={L('How every part of this works', 'איך כל חלק במערכת עובד')} onClick={() => onOpen('docs')} />
-        {user.isAdmin && <Row icon={Icons.jarvis} label="Jarvis" hint={L('WhatsApp numbers and private assistants', 'מספרי וואטסאפ ועוזרים אישיים')} onClick={() => onOpen('jarvis')} />}
+        {isOrgAdminNow() && <Row icon={Icons.users} label="Team" hint={L('Who is in the organization, and what each may do', 'מי בארגון, ומה כל אחד רשאי')} onClick={() => onOpen('team')} />}
+        {isOrgAdminNow() && <Row icon={Icons.jarvis} label="Jarvis" hint={L('WhatsApp numbers and private assistants', 'מספרי וואטסאפ ועוזרים אישיים')} onClick={() => onOpen('jarvis')} />}
         {user.isAdmin && <Row icon={Icons.admin} label="Admin" hint={L('Users and the template AI Chatbots', 'משתמשים וAI Chatbots של התבנית')} onClick={() => onOpen('admin')} />}
         <div style={{ height: 6 }} />
         <Row icon={Icons.logout} label="Log out" onClick={onLogout} danger />
@@ -15994,7 +16530,8 @@ npm run migrate            # run it`}</Block>
             })}
           </div>
 
-          <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', paddingBottom: 24 }}>
+          {viewOnly(agent) && <div style={{ marginBottom: 10 }}><ViewOnlyChip /></div>}
+          <ReadOnlyArea on={viewOnly(agent)} style={{ flex: 1, minWidth: 0, overflowY: 'auto', paddingBottom: 24 }}>
             {tab === 'configuration' && <ConfigurationTab agent={agent} onUpdate={onUpdate} stacked />}
             {tab === 'skills' && <MobileSkillsTab agent={agent} onUpdate={onUpdate} onDetail={setDetail} />}
             {tab === 'tools' && <MobileToolsTab agent={agent} onUpdate={onUpdate} onDetail={setDetail} />}
@@ -16003,7 +16540,7 @@ npm run migrate            # run it`}</Block>
             {tab === 'manual tests' && <ManualTestsTab agent={agent} onTest={onTest} />}
             {tab === 'export' && <ExportTab agent={agent} stacked />}
             {tab === 'whatsapp' && <WhatsAppTab agent={agent} onUpdate={onUpdate} />}
-          </div>
+          </ReadOnlyArea>
         </div>
 
         <MobileSheet open={menu} onClose={() => setMenu(false)} title={agent.name}>
@@ -16124,7 +16661,16 @@ npm run migrate            # run it`}</Block>
           </div>
         </div>
       );
-    } else if (nav === 'jarvis' && user.isAdmin) {
+    } else if (nav === 'team' && isOrgAdminNow()) {
+      screen = (
+        <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <MobileTopBar title="Team" onBack={() => go('home')} />
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px 16px 24px' }}>
+            <TeamView />
+          </div>
+        </div>
+      );
+    } else if (nav === 'jarvis' && isOrgAdminNow()) {
       screen = (
         <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
           <MobileTopBar title="Jarvis" onBack={() => go('home')} />
@@ -16333,6 +16879,7 @@ npm run migrate            # run it`}</Block>
     const [tour, setTour] = useState(null);   // 'platform' | 'editor' | null
     const firstRunDone = useRef(false);
     useEffect(() => {
+      if (!TOURS_ON) return;
       if (firstRunDone.current || loading || !settings || autopilot || isMobile || askLanguage) return;
       firstRunDone.current = true;
       if (tourSeen()) return;
@@ -16343,9 +16890,11 @@ npm run migrate            # run it`}</Block>
        the starter chatbots at registration, so having one is not the same as
        having made one — and explaining the editor over somebody else's work
        is the version of this that nobody finishes. */
-    const mine = ownAgents(state.agents);
+    /* …and one they may change: the tour is about editing. */
+    const mine = ownAgents(state.agents).filter(a => !viewOnly(a));
     const editorTourDone = useRef(false);
     useEffect(() => {
+      if (!TOURS_ON) return;
       if (editorTourDone.current || loading || tour || autopilot || isMobile) return;
       if (!tourSeen() || editorTourSeen() || mine.length === 0) return;
       editorTourDone.current = true;
@@ -16413,6 +16962,8 @@ npm run migrate            # run it`}</Block>
     // Debounced save
     const saveErrorRef = useRef('');
     const saveAgent = useCallback(async (agent) => {
+      /* The screen is read-only for a viewer; this is the second lock. */
+      if (viewOnly(agent)) return;
       dispatch({ type: 'UPDATE_AGENT', agent });
       try {
         /* The first edit to a live agent opens a draft for it, and the save
@@ -16590,6 +17141,7 @@ npm run migrate            # run it`}</Block>
       docs: ['Workspace', 'Documentation'],
       settings: ['Workspace', 'Settings'],
       jarvis: ['Workspace', 'Jarvis'],
+      team: ['Workspace', 'Team'],
       admin: ['Workspace', 'Admin'],
     };
     const inEditor = nav === 'agents' && state.view === 'editor' && editingAgent;
@@ -16623,7 +17175,7 @@ npm run migrate            # run it`}</Block>
             newChatNonce={newChatNonce}
           />
         ) : (
-        <div style={{ flex: 1, overflowY: 'auto', position: 'relative' }}>
+        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', position: 'relative' }}>
           <BgLogo size={560} wrapStyle={{ bottom: '-80px', right: '-80px' }} />
           {/* A screen you work in takes the window it is given — an editor, a
               grid of cards, a table of conversations all get better with more
@@ -16650,9 +17202,11 @@ npm run migrate            # run it`}</Block>
           ) : nav === 'apps' ? (
             <AppsView agents={state.agents} />
           ) : nav === 'docs' ? (
-            <DocsView onReplayTour={which => setTour(which)} />
-          ) : nav === 'jarvis' && user.isAdmin ? (
+            <DocsView onReplayTour={TOURS_ON ? (which => setTour(which)) : undefined} />
+          ) : nav === 'jarvis' && isOrgAdminNow() ? (
             <JarvisView />
+          ) : nav === 'team' && isOrgAdminNow() ? (
+            <TeamView />
           ) : nav === 'admin' ? (
             adminSelectedUser ? (
               <UserAgentsView
@@ -16737,6 +17291,26 @@ npm run migrate            # run it`}</Block>
   /* ─────────────────── ROOT ─────────────────── */
   function Root() {
     const [user, setUser] = useState(() => getAuth());
+    setSession(user);
+
+    /* Merges what the server says about this person now — their organization
+       and role — into the stored session. */
+    const merge = useCallback((me) => {
+      if (!me) return;
+      setUser(u => {
+        if (!u) return u;
+        const next = { ...u, ...me };
+        try { sessionStorage.setItem('agentforge_auth', JSON.stringify(next)); } catch (e) { /* private mode */ }
+        return next;
+      });
+    }, []);
+    const token = user && user.token;
+    useEffect(() => {
+      if (!token) return;
+      let gone = false;
+      apiFetch('/api/me').then(r => (r.ok ? r.json() : null)).then(me => { if (!gone) merge(me); }).catch(() => {});
+      return () => { gone = true; };
+    }, [token, merge]);
 
     function handleLogin(data) { setUser(data); }
     function handleLogout() {
@@ -16745,6 +17319,7 @@ npm run migrate            # run it`}</Block>
     }
 
     if (!user) return <LoginGate onLogin={handleLogin} />;
+    if (user.mustChangePassword) return <ChangePasswordGate user={user} onDone={merge} onLogout={handleLogout} />;
     return <App user={user} onLogout={handleLogout} />;
   }
 

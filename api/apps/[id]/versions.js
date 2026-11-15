@@ -27,6 +27,7 @@ export default async function handler(req, res) {
     }
   } catch (err) {
     if (err.code === 'NO_VERSION') return res.status(404).json({ error: err.message });
+    if (err.code === 'READ_ONLY') return res.status(403).json({ error: err.message, code: err.code });
     return res.status(500).json({ error: err.message });
   }
   return res.status(405).end();

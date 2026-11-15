@@ -1,5 +1,5 @@
 import { sql } from '../../../_db.js';
-import { checkAdmin } from '../../../_auth.js';
+import { jarvisGate, numberInScope, ownerInScope } from '../../../_jarvisAccess.js';
 import { getNumber, kickWorker, leaseHeld, markQrWanted, setCommand, workerSetupProblem } from '../../../_waControl.js';
 import { groupSettingsOf, sanitizeGroupSettings } from '../../../_waGroups.js';
 
@@ -15,12 +15,12 @@ import { groupSettingsOf, sanitizeGroupSettings } from '../../../_waGroups.js';
  * their Jarvis is never read by this endpoint.
  */
 export default async function handler(req, res) {
-  const admin = checkAdmin(req, res);
+  const admin = await jarvisGate(req, res);
   if (!admin) return;
 
   const id = String(req.query.id || '');
   const number = await getNumber(id);
-  if (!number) return res.status(404).json({ error: 'No such number.' });
+  if (!number || !(await numberInScope(admin, number))) return res.status(404).json({ error: 'No such number.' });
 
   if (req.method === 'GET') {
     // Set only when the QR screen is open and no worker holds the number: the
@@ -65,7 +65,7 @@ export default async function handler(req, res) {
       agentId = body.agentId ? String(body.agentId) : null;
       if (agentId) {
         // Only the owner account's own AI Chatbots: their key pays for the conversation.
-        const [agent] = await sql`select id from agents where id = ${agentId} and user_id = ${number.owner_user_id}`;
+        const [agent] = await sql`select id from agents where id = ${agentId} and org_id = (select org_id from users where id = ${number.owner_user_id})`;
         if (!agent) return res.status(400).json({ error: 'That AI Chatbot does not belong to this number\'s account.' });
       }
     }
@@ -104,7 +104,7 @@ async function detail(id, { withQr = false } = {}) {
     order by created_at
   `;
   const agents = await sql`
-    select id, data->>'name' as name from agents where user_id = ${n.owner_user_id} order by data->>'name'
+    select id, data->>'name' as name from agents where org_id = (select org_id from users where id = ${n.owner_user_id}) order by data->>'name'
   `;
   // Groups the number is in. What is said there stays out of this list.
   const groups = await sql`

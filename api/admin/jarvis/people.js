@@ -1,5 +1,5 @@
 import { sql } from '../../_db.js';
-import { checkAdmin } from '../../_auth.js';
+import { jarvisGate, numberInScope, ownerInScope } from '../../_jarvisAccess.js';
 import { getNumber, newId, normalizePhone } from '../../_waControl.js';
 
 /**
@@ -8,13 +8,13 @@ import { getNumber, newId, normalizePhone } from '../../_waControl.js';
  *   POST → { numberId, name, phone, prompt?, callName? }
  */
 export default async function handler(req, res) {
-  const admin = checkAdmin(req, res);
+  const admin = await jarvisGate(req, res);
   if (!admin) return;
   if (req.method !== 'POST') return res.status(405).end();
 
   const body = req.body || {};
   const number = await getNumber(String(body.numberId || ''));
-  if (!number) return res.status(404).json({ error: 'No such number.' });
+  if (!number || !(await numberInScope(admin, number))) return res.status(404).json({ error: 'No such number.' });
 
   const phone = normalizePhone(body.phone);
   if (phone.length < 8 || phone.length > 15) return res.status(400).json({ error: 'That does not look like a phone number.' });

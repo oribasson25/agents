@@ -1,5 +1,5 @@
 import { waitUntil } from '@vercel/functions';
-import { checkAdmin } from '../../_auth.js';
+import { jarvisGate, numberInScope, ownerInScope } from '../../_jarvisAccess.js';
 import { getUserSettings, resolveApiConfig } from '../../_settings.js';
 import { getNumber } from '../../_waControl.js';
 import { describeClaudeError, getGroup } from '../../_waGroups.js';
@@ -18,12 +18,13 @@ import { buildKnowledge, digestPart, jobState, setKnowledge } from '../../_waGro
  * reaches the server whole. Reading runs on the number owner's Claude key.
  */
 export default async function handler(req, res) {
-  const admin = checkAdmin(req, res);
+  const admin = await jarvisGate(req, res);
   if (!admin) return;
 
   const numberId = String(req.query.numberId || '');
   const jid = String(req.query.jid || '');
-  const number = await getNumber(numberId);
+  const found = await getNumber(numberId);
+  const number = (await numberInScope(admin, found)) ? found : null;
   const group = number && (await getGroup(numberId, jid));
   if (!group) return res.status(404).json({ error: 'No such group.' });
   const k = group.knowledge || null;

@@ -2,9 +2,13 @@ import { sql } from './_db.js';
 import { DEFAULT_CLAUDE_MODEL, currentClaudeModel } from './_claudeModels.js';
 
 /**
- * Account-level API settings. One key, provider and model drive everything the
- * account owns — every agent, every channel, and the assistants. An agent's own
- * apiConfig is only a fallback for accounts whose settings are still empty.
+ * Model settings belong to the organization: one key, provider and model drive
+ * every agent, every channel and the assistants of everyone in it
+ * (org_settings). The interface language is each person's own (user_settings).
+ * An agent's own apiConfig is only a fallback while the organization has none.
+ *
+ * user_settings still has the old per-account key columns. They are read only
+ * as a fallback for an organization that has no org_settings row yet.
  */
 
 export const DEFAULT_MODELS = {
@@ -30,13 +34,30 @@ export function emptySettings() {
 export async function getUserSettings(userId) {
   if (!userId) return null;
   const [row] = await sql`
-    select provider, api_key, model, ollama_host, assistant_language, language_chosen
-    from user_settings where user_id = ${userId}
+    select coalesce(o.provider, s.provider)       as provider,
+           coalesce(o.api_key, s.api_key)         as api_key,
+           coalesce(o.model, s.model)             as model,
+           coalesce(o.ollama_host, s.ollama_host) as ollama_host,
+           coalesce(s.assistant_language, 'en')   as assistant_language,
+           coalesce(s.language_chosen, false)     as language_chosen,
+           (o.org_id is not null or s.user_id is not null) as found
+    from users u
+    left join user_settings s on s.user_id = u.id
+    left join org_settings  o on o.org_id = u.org_id
+    where u.id = ${userId}
   `;
-  return row || null;
+  if (!row || !row.found) return null;
+  const { found, ...settings } = row;
+  return settings;
 }
 
-export async function saveUserSettings(userId, patch) {
+/**
+ * Saves what this person may change. The language is always theirs; the
+ * model settings are the organization's, and only `canSetModel` (its admin)
+ * writes them — every screen sends the whole object back, so a member saving
+ * a language must not be refused over fields they never touched.
+ */
+export async function saveUserSettings(userId, patch, { canSetModel = true } = {}) {
   const provider = ['claude', 'openai', 'ollama'].includes(patch.provider) ? patch.provider : 'claude';
   const language = ASSISTANT_LANGUAGES.includes(patch.assistantLanguage) ? patch.assistantLanguage : 'en';
   const apiKey = typeof patch.apiKey === 'string' ? patch.apiKey.trim() : '';
@@ -48,20 +69,28 @@ export async function saveUserSettings(userId, patch) {
      accidentally answer a question nobody asked. */
   const chosen = patch.languageChosen === true;
 
-  const [row] = await sql`
-    insert into user_settings (user_id, provider, api_key, model, ollama_host, assistant_language, language_chosen, updated_at)
-    values (${userId}, ${provider}, ${apiKey}, ${model}, ${ollamaHost}, ${language}, ${chosen}, now())
+  await sql`
+    insert into user_settings (user_id, assistant_language, language_chosen, updated_at)
+    values (${userId}, ${language}, ${chosen}, now())
     on conflict (user_id) do update set
-      provider           = excluded.provider,
-      api_key            = excluded.api_key,
-      model              = excluded.model,
-      ollama_host        = excluded.ollama_host,
       assistant_language = excluded.assistant_language,
       language_chosen    = user_settings.language_chosen or excluded.language_chosen,
       updated_at         = now()
-    returning provider, api_key, model, ollama_host, assistant_language, language_chosen
   `;
-  return row;
+  if (canSetModel) {
+    await sql`
+      insert into org_settings (org_id, provider, api_key, model, ollama_host, updated_at)
+      select u.org_id, ${provider}, ${apiKey}, ${model}, ${ollamaHost}, now()
+      from users u where u.id = ${userId} and u.org_id is not null
+      on conflict (org_id) do update set
+        provider    = excluded.provider,
+        api_key     = excluded.api_key,
+        model       = excluded.model,
+        ollama_host = excluded.ollama_host,
+        updated_at  = now()
+    `;
+  }
+  return getUserSettings(userId);
 }
 
 /** The model to call: a retired Claude id becomes its replacement; other providers' ids are left alone. */

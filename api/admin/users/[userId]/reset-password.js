@@ -15,7 +15,8 @@ export default async function handler(req, res) {
 
   // Generate a random 10-char temporary password
   const tempPassword = crypto.randomBytes(5).toString('hex'); // e.g. "a3f9c21b4d"
-  await sql`update users set password_hash = ${hashPassword(tempPassword)} where id = ${userId}`;
+  /* Temporary: the next sign-in has to replace it. */
+  await sql`update users set password_hash = ${hashPassword(tempPassword)}, must_change_password = true where id = ${userId}`;
 
   return res.json({ tempPassword });
 }

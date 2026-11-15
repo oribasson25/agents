@@ -1,16 +1,17 @@
 import { sql } from '../../_db.js';
-import { checkAdmin } from '../../_auth.js';
+import { jarvisGate, numberInScope, ownerInScope } from '../../_jarvisAccess.js';
 import { newId } from '../../_waControl.js';
 
 /**
- * WhatsApp numbers linked as a device, for the Jarvis screen. Admins only:
- * nobody else sees or configures a number.
+ * WhatsApp numbers linked as a device, for the Jarvis screen. The platform
+ * admin sees every number; an organization's admin sees its own organization's
+ * (see _jarvisAccess.js). Members of an organization see none.
  *
  *   GET  → every number, with its routing and how many people are on its list
  *   POST → { label, ownerUserId } a new, not-yet-linked number
  */
 export default async function handler(req, res) {
-  const admin = checkAdmin(req, res);
+  const admin = await jarvisGate(req, res);
   if (!admin) return;
 
   if (req.method === 'GET') {
@@ -28,6 +29,7 @@ export default async function handler(req, res) {
       join users u on u.id = n.owner_user_id
       left join agents a on a.id = n.agent_id
       left join jarvis_people p on p.number_id = n.id and p.active
+      where (${admin.isPlatformAdmin}::boolean or u.org_id = ${admin.orgId})
       group by n.id, u.username, a.data
       order by n.created_at
     `;
@@ -39,7 +41,7 @@ export default async function handler(req, res) {
     const label = String(body.label || '').trim().slice(0, 80) || 'WhatsApp number';
     const ownerUserId = String(body.ownerUserId || admin.userId);
     const [owner] = await sql`select id from users where id = ${ownerUserId}`;
-    if (!owner) return res.status(400).json({ error: 'That account does not exist.' });
+    if (!owner || !(await ownerInScope(admin, ownerUserId))) return res.status(400).json({ error: 'That account does not exist.' });
     const id = newId('wan');
     const [row] = await sql`
       insert into wa_numbers (id, label, owner_user_id) values (${id}, ${label}, ${ownerUserId})

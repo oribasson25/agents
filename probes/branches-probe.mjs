@@ -26,13 +26,22 @@ function reset() {
   sessions = [];
 }
 
+/* Who may reach what: u1's organization owns the agent; u2 is in another. */
+const { accessStub } = await import('./access-stub.mjs');
+const access = accessStub({
+  users: { u1: { org: 'o1', role: 'admin' }, u2: { org: 'o2', role: 'admin' } },
+  item: (kind, id) => (kind === 'agent' && id === AGENT_ID ? { org: 'o1', user: 'u1' } : null),
+});
+
 /* A router over the statements _branches.js actually issues. */
 globalThis.__db = (text, p) => {
+  const answered = access(text, p);
+  if (answered !== undefined) return answered;
   const t = text.replace(/\s+/g, ' ').trim();
   const open = () => branches.filter(b => b.agent_id === AGENT_ID && !b.merged_at);
 
   if (t.startsWith('select data, user_id from agents'))
-    return agents.filter(a => a.id === p[0] && (a.user_id === p[1] || p[2] === true));
+    return agents.filter(a => a.id === p[0]);
   if (t.startsWith('select data from agents')) return agents.filter(a => a.id === p[0]);
 
   if (t.includes('from agent_branches where agent_id = ? and merged_at is null and (id = ? or lower(name)'))

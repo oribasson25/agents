@@ -2,6 +2,7 @@ import { sql } from '../_db.js';
 import { signJWT, hashPassword, verifyPassword } from '../_auth.js';
 import { clientIp, anyLocked, recordFailure, clearThrottle, LOCKED_MESSAGE } from '../_throttle.js';
 import crypto from 'crypto';
+import { sessionInfo } from '../_session.js';
 
 // Auto-initialize admin user on first ever login if no users exist yet.
 async function ensureAdminExists() {
@@ -13,13 +14,15 @@ async function ensureAdminExists() {
   if (!adminPassword) return; // can't create without a password
 
   const adminId = crypto.randomUUID();
+  const orgId = `org-${adminId}`;
+  await sql`insert into organizations (id, name) values (${orgId}, ${adminUsername})`;
   await sql`
-    insert into users (id, username, password_hash, is_admin)
-    values (${adminId}, ${adminUsername}, ${hashPassword(adminPassword)}, true)
+    insert into users (id, username, password_hash, is_admin, org_id, org_role, org_access)
+    values (${adminId}, ${adminUsername}, ${hashPassword(adminPassword)}, true, ${orgId}, 'admin', 'edit')
   `;
 
   // Assign all existing agents (no owner yet) to the admin
-  await sql`update agents set user_id = ${adminId} where user_id is null`;
+  await sql`update agents set user_id = ${adminId}, org_id = ${orgId} where user_id is null`;
 }
 
 export default async function handler(req, res) {
@@ -58,5 +61,5 @@ export default async function handler(req, res) {
     exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7, // 7 days
   });
 
-  return res.json({ token, username: user.username, isAdmin: user.is_admin });
+  return res.json({ token, username: user.username, isAdmin: user.is_admin, ...(await sessionInfo(user.id)) });
 }

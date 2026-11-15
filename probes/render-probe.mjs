@@ -15,7 +15,7 @@ const src = fs.readFileSync(new URL('../agentforge.html', import.meta.url).pathn
 const body = src.match(/<script type="text\/babel"[^>]*>([\s\S]*?)<\/script>/)[1];
 
 /* Hand the probe the components it wants to render. */
-const exposed = ['TokensSection', 'TokenMinter', 'LocalIdePanel', 'SettingsPanel', 'AgentEditor', 'BranchBar', 'MergePanel', 'MobileDraftBar', 'MobileAgentEditor', 'CopyableCommand', 'DocsView', 'HomeChatView', 'AgentBuildCard', 'Sidebar', 'splitOptions', 'HOME_COPY', 'homeSystemExtra', 'greeting', 'L', 'Eyebrow', 'sessionTitle', 'reducer', 'AvatarDisplay', 'avatarColor', 'AVATAR_COLORS', 'markSvgString', 'AppsView', 'AppWorkspace', 'AppFilesTab', 'AppLinksTab', 'NewAppDialog'];
+const exposed = ['TokensSection', 'TokenMinter', 'LocalIdePanel', 'SettingsPanel', 'AgentEditor', 'BranchBar', 'MergePanel', 'MobileDraftBar', 'MobileAgentEditor', 'CopyableCommand', 'DocsView', 'HomeChatView', 'AgentBuildCard', 'Sidebar', 'splitOptions', 'HOME_COPY', 'homeSystemExtra', 'greeting', 'L', 'Eyebrow', 'sessionTitle', 'reducer', 'AvatarDisplay', 'avatarColor', 'AVATAR_COLORS', 'markSvgString', 'AppsView', 'AppWorkspace', 'AppFilesTab', 'AppLinksTab', 'NewAppDialog', 'TeamView', 'OrganizationsPanel', 'ChangePasswordForm', 'ChangePasswordGate', 'AddMemberForm', 'OneTimePassword', 'ReadOnlyArea', 'AgentCard', 'setSession'];
 const code = babel.transform(
   body + `\n;globalThis.__probe = { ${exposed.map(n => `${n}: typeof ${n} !== 'undefined' ? ${n} : null`).join(', ')} };`,
   { presets: ['react'] }).code;
@@ -278,6 +278,29 @@ if (appIde && !appIde.includes('npx @8legs/cli pull --app leads-desk')) {
 if (!render('Sidebar with Apps', React.createElement(probe.Sidebar, { activeNav: 'apps', onNav() {}, user: { username: 'ori' }, recents: [] })).includes('Apps')) {
   console.log('✗ the sidebar has no Apps entry'); failed++;
 }
+
+/* ── Organizations ── */
+render('TeamView', React.createElement(probe.TeamView, {}));
+render('OrganizationsPanel', React.createElement(probe.OrganizationsPanel, {}));
+const pw = render('ChangePasswordGate', React.createElement(probe.ChangePasswordGate, { user: { username: 'dana', orgName: 'Acme' }, onDone() {}, onLogout() {} }));
+if (pw && !(pw.includes('dana') && pw.includes('Acme') && pw.includes('Change password'))) { console.log('✗ the password gate does not greet the person'); failed++; }
+const added = render('AddMemberForm', React.createElement(probe.AddMemberForm, { onAdd() {}, onCancel() {} }));
+if (added && !added.includes('Across the organization')) { console.log('✗ adding a member does not ask for their org-wide level'); failed++; }
+const once = render('OneTimePassword', React.createElement(probe.OneTimePassword, { username: 'dana', password: 'Abc123XyZ789' }));
+if (once && !once.includes('Abc123XyZ789')) { console.log('✗ the temporary password is not shown'); failed++; }
+const locked = render('ReadOnlyArea on', React.createElement(probe.ReadOnlyArea, { on: true }, React.createElement('input', {})));
+if (locked && !/<fieldset[^>]*disabled/.test(locked)) { console.log('✗ a read-only area does not disable its inputs'); failed++; }
+
+/* A view-only chatbot offers no delete, duplicate or AI edit. */
+const cardFor = (access) => render(`AgentCard (${access})`, React.createElement(probe.AgentCard, {
+  agent: { id: 'a1', name: 'Sales', skills: [], tools: [], _access: access },
+  onEdit() {}, onTest() {}, onExport() {},
+  onDuplicate: access === 'edit' ? () => {} : undefined, onDelete: access === 'edit' ? () => {} : undefined,
+  onEditWithAi: access === 'edit' ? () => {} : undefined }));
+const viewCard = cardFor('view');
+const editCard = cardFor('edit');
+if (viewCard && (viewCard.includes('title="Delete"') || !viewCard.includes('View only'))) { console.log('✗ a view-only card still offers Delete, or does not say View only'); failed++; }
+if (editCard && !editCard.includes('title="Delete"')) { console.log('✗ an editable card lost its Delete'); failed++; }
 
 console.log(`\n${failed ? `${failed} FAILURE(S)` : 'all green'}`);
 process.exit(failed ? 1 : 0);

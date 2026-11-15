@@ -8,7 +8,7 @@ export default async function handler(req, res) {
 
   const agentId = req.query.agentId || '';
   if (!agentId) return res.status(400).json({ error: 'agentId is required' });
-  if (!(await userOwnsAgent(agentId, user))) return res.status(404).json({ error: 'Agent not found' });
+  if (!(await userOwnsAgent(agentId, user, 'edit'))) return res.status(404).json({ error: 'Agent not found' });
 
   await disconnectGmail(agentId);
   return res.json({ ok: true });

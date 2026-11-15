@@ -31,13 +31,13 @@ export default async function handler(req, res) {
 
   const found = body.app ? await loadAppById(String(body.app)) : null;
   if (!found || !mayOpen(found.app, body.token)) return res.status(404).json({ error: 'No such app' });
-  const { app, ownerId } = found;
+  const { app, ownerId, orgId } = found;
 
   try {
     if (op === 'agent.info') {
       const agentId = linkId((app.agents || {})[name]);
       if (!agentId) return res.status(404).json({ error: `This app has no AI Chatbot linked as "${name}"` });
-      const [row] = await sql`select data from agents where id = ${agentId} and user_id = ${ownerId}`;
+      const [row] = await sql`select data from agents where id = ${agentId} and org_id = ${orgId}`;
       if (!row) return res.status(404).json({ error: `The AI Chatbot linked as "${name}" no longer exists` });
       /* What a page needs to introduce the chatbot, and nothing else of it:
          not its prompt, its tools or anything its owner configured. */
@@ -51,7 +51,7 @@ export default async function handler(req, res) {
       if (!Array.isArray(messages) || !messages.length) {
         return res.status(400).json({ error: 'messages array required' });
       }
-      const [row] = await sql`select data, user_id from agents where id = ${agentId} and user_id = ${ownerId}`;
+      const [row] = await sql`select data, user_id from agents where id = ${agentId} and org_id = ${orgId}`;
       if (!row) return res.status(404).json({ error: `The AI Chatbot linked as "${name}" no longer exists` });
 
       const branchId = await branchForSession(agentId, sessionId);

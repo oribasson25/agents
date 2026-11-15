@@ -1,5 +1,6 @@
 import { sql } from '../../_db.js';
 import { checkAuth } from '../../_auth.js';
+import { accessTo, allows } from '../../_access.js';
 import { searchDocuments } from '../../_knowledge.js';
 
 export default async function handler(req, res) {
@@ -11,8 +12,8 @@ export default async function handler(req, res) {
   const { query, skill_id } = req.body || {};
 
   // Someone else's agent id must not read out their knowledge base.
-  const [owned] = await sql`select id from agents where id = ${id} and user_id = ${user.userId}`;
-  if (!owned) return res.status(404).json({ error: 'Agent not found', chunks: [] });
+  const { level } = await accessTo(user, 'agent', id);
+  if (!allows(level, 'view')) return res.status(404).json({ error: 'Agent not found', chunks: [] });
 
   if (!query || !query.trim()) return res.json({ chunks: [] });
 

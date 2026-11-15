@@ -53,7 +53,12 @@ function reset() {
   treeFiles = agentToFiles(stored);
 }
 
+const { accessStub } = await import('./access-stub.mjs');
+const access = accessStub({ item: (kind, id) => (kind === 'agent' && id === 'a1' ? { org: 'o1', user: 'u1' } : null) });
+
 globalThis.__db = (text, p) => {
+  const answered = access(text, p);
+  if (answered !== undefined) return answered;
   const t = text.replace(/\s+/g, ' ').trim();
   if (t.startsWith('select r.agent_id, r.last_push_sha'))
     return p[0] === '8legs-agents' && p[1] === 'car-insurance-a1'

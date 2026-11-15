@@ -1,5 +1,6 @@
 import { checkAuth } from '../_auth.js';
 import { getTable, updateTable, deleteTable, listRows } from '../_tables.js';
+import { accessTo, allows, refuse } from '../_access.js';
 
 /** One table: its shape, and the rows in it. */
 export default async function handler(req, res) {
@@ -8,8 +9,11 @@ export default async function handler(req, res) {
   const { id } = req.query;
 
   try {
-    const table = await getTable(id, user.userId);
+    const { level } = await accessTo(user, 'table', id);
+    const table = allows(level, 'view') ? await getTable(id, user.userId) : null;
     if (!table) return res.status(404).json({ error: 'No such table.' });
+    if (req.method !== 'GET' && !allows(level, 'edit')) return refuse(res, level, 'this table');
+    table._access = level;
 
     if (req.method === 'GET') {
       const { rows, total } = await listRows(id, {

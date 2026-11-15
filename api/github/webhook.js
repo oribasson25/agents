@@ -68,9 +68,9 @@ export default async function handler(req, res) {
      straight back in as incoming changes and overwrite what just happened. */
   if (link.last_push_sha === sha) return res.status(200).json({ skipped: 'own push' });
 
-  /* The repository belongs to an agent, and the agent to a person. The push
-     runs as that person — GitHub access is proof enough of who may edit. */
-  const user = { userId: link.user_id, isAdmin: false };
+  /* GitHub has already decided who may push to this repository, so the push
+     is applied by the platform itself, recorded against the agent's owner. */
+  const user = { userId: link.user_id, system: true };
   const appUrl = (process.env.APP_URL || '').trim().replace(/\/+$/, '');
   const targetUrl = appUrl ? `${appUrl}/#agent/${link.agent_id}` : undefined;
   const fail = async (description) => {
@@ -131,7 +131,7 @@ export default async function handler(req, res) {
 async function applyAppPush({ res, link, owner, repo, sha, branch }) {
   if (link.last_push_sha === sha) return res.status(200).json({ skipped: 'own push' });
 
-  const user = { userId: link.user_id, isAdmin: false };
+  const user = { userId: link.user_id, system: true };
   const base = (process.env.APP_URL || '').trim().replace(/\/+$/, '');
   const targetUrl = base ? `${base}/#app/${link.app_id}` : undefined;
   const fail = async (description) => {

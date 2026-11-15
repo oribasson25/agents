@@ -1,5 +1,6 @@
 import { checkAuth } from '../../_auth.js';
 import { getTable, addRow, updateRow, deleteRow } from '../../_tables.js';
+import { accessTo, allows, refuse } from '../../_access.js';
 
 /** Rows, from the Tables screen. An AI Chatbot reaches them another way. */
 export default async function handler(req, res) {
@@ -8,8 +9,11 @@ export default async function handler(req, res) {
   const { id } = req.query;
 
   try {
-    const table = await getTable(id, user.userId);
+    const { level } = await accessTo(user, 'table', id);
+    const table = allows(level, 'view') ? await getTable(id, user.userId) : null;
     if (!table) return res.status(404).json({ error: 'No such table.' });
+    /* Every method here writes. */
+    if (!allows(level, 'edit')) return refuse(res, level, 'this table');
 
     if (req.method === 'POST') {
       return res.json(await addRow(table, (req.body || {}).row || {}, 'user'));

@@ -14,18 +14,28 @@
 import crypto from 'crypto';
 import { sql } from './_db.js';
 import { agentVersion } from './_agentFiles.js';
+import { accessTo, allows, ReadOnlyError } from './_access.js';
 
 export const MAIN = 'main';
 
 const isMain = (ref) => !ref || ref === MAIN;
 
-/** The agent the caller owns, or null. Admins may read anyone's. */
-async function ownedAgent(agentId, user) {
-  const [row] = await sql`
-    select data, user_id from agents
-    where id = ${agentId} and (user_id = ${user.userId} or ${!!user.isAdmin})
-  `;
-  return row || null;
+/**
+ * The agent, if the caller may see it; null when they may not (a 404, never
+ * "it exists but is not yours"). Asked for `edit` by someone who may only
+ * look, it throws ReadOnlyError, which handlers answer with 403.
+ */
+async function ownedAgent(agentId, user, need = 'view') {
+  const { level } = await accessTo(user, 'agent', agentId);
+  if (!allows(level, 'view')) return null;
+  if (need === 'edit' && !allows(level, 'edit')) throw new ReadOnlyError('this AI Chatbot');
+  const [row] = await sql`select data, user_id from agents where id = ${agentId}`;
+  return row ? { ...row, level } : null;
+}
+
+/** The caller's level on an agent: 'none', 'view' or 'edit'. */
+export async function agentLevel(agentId, user) {
+  return (await accessTo(user, 'agent', agentId)).level;
 }
 
 /** A branch by name or id, still open. */
@@ -49,22 +59,23 @@ async function findBranch(agentId, ref) {
 export async function loadAgent({ agentId, user, branch = MAIN }) {
   const owned = await ownedAgent(agentId, user);
   if (!owned) return null;
+  const access = owned.level;
   if (isMain(branch)) {
-    return { agent: owned.data, branch: MAIN, branchId: null, version: agentVersion(owned.data) };
+    return { agent: owned.data, branch: MAIN, branchId: null, version: agentVersion(owned.data), access };
   }
   const row = await findBranch(agentId, branch);
   if (!row) throw Object.assign(new Error(`No branch called "${branch}"`), { code: 'NO_BRANCH' });
-  return { agent: row.data, branch: row.name, branchId: row.id, kind: row.kind, version: agentVersion(row.data) };
+  return { agent: row.data, branch: row.name, branchId: row.id, kind: row.kind, version: agentVersion(row.data), access };
 }
 
 /** Writes the agent back to whichever branch it came from. */
 export async function saveAgent({ agentId, user, branch = MAIN, data }) {
-  const owned = await ownedAgent(agentId, user);
+  const owned = await ownedAgent(agentId, user, 'edit');
   if (!owned) return null;
   if (isMain(branch)) {
     await sql`
       update agents set data = ${JSON.stringify(data)}::jsonb, updated_at = now()
-      where id = ${agentId} and (user_id = ${user.userId} or ${!!user.isAdmin})
+      where id = ${agentId}
     `;
     return { branch: MAIN, branchId: null, version: agentVersion(data) };
   }
@@ -106,6 +117,7 @@ export async function listBranches(agentId, user) {
  * unanswerable in every screen that shows a name.
  */
 export async function createBranch({ agentId, user, name, from = MAIN, kind = 'branch' }) {
+  if (!(await ownedAgent(agentId, user, 'edit'))) return null;
   const clean = String(name || '').trim();
   if (!clean) throw Object.assign(new Error('A branch needs a name'), { code: 'BAD_NAME' });
   if (kind === 'branch' && /^(main|draft)$/i.test(clean)) {
@@ -127,6 +139,7 @@ export async function createBranch({ agentId, user, name, from = MAIN, kind = 'b
 
 /** The interface's working copy, made on first edit rather than up front. */
 export async function getOrCreateDraft(agentId, user) {
+  if (!(await ownedAgent(agentId, user, 'edit'))) return null;
   const [existing] = await sql`
     select id, name, data from agent_branches
     where agent_id = ${agentId} and kind = 'draft' and merged_at is null
@@ -167,7 +180,7 @@ function pickWhatsapp(wa = {}) {
 
 /** Applies a branch to main and closes it. */
 export async function mergeBranch({ agentId, user, branch }) {
-  const owned = await ownedAgent(agentId, user);
+  const owned = await ownedAgent(agentId, user, 'edit');
   if (!owned) return null;
   const row = await findBranch(agentId, branch);
   if (!row) throw Object.assign(new Error(`No branch called "${branch}"`), { code: 'NO_BRANCH' });
@@ -185,7 +198,7 @@ export async function mergeBranch({ agentId, user, branch }) {
 }
 
 export async function deleteBranch({ agentId, user, branch }) {
-  const owned = await ownedAgent(agentId, user);
+  const owned = await ownedAgent(agentId, user, 'edit');
   if (!owned) return null;
   const row = await findBranch(agentId, branch);
   if (!row) throw Object.assign(new Error(`No branch called "${branch}"`), { code: 'NO_BRANCH' });
@@ -249,7 +262,7 @@ export async function loadForConversation(agentId, branchId) {
 }
 
 export async function setTraffic({ agentId, user, branch, weight }) {
-  const owned = await ownedAgent(agentId, user);
+  const owned = await ownedAgent(agentId, user, 'edit');
   if (!owned) return null;
   const pct = Math.max(0, Math.min(100, Math.round(Number(weight) || 0)));
   const row = await findBranch(agentId, branch);
@@ -279,7 +292,7 @@ export async function setTraffic({ agentId, user, branch, weight }) {
  * something.
  */
 export async function stopExperiments({ agentId, user }) {
-  const owned = await ownedAgent(agentId, user);
+  const owned = await ownedAgent(agentId, user, 'edit');
   if (!owned) return null;
   const rows = await sql`
     update agent_branches set traffic_weight = 0, updated_at = now()

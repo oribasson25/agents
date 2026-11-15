@@ -1,5 +1,6 @@
 import { sql } from '../../_db.js';
 import { checkAuth } from '../../_auth.js';
+import { accessTo, allows, refuse } from '../../_access.js';
 import { crawlSite } from '../../_crawlSite.js';
 
 // The function itself is capped at 300s in vercel.json. A crawl still marked
@@ -28,8 +29,9 @@ export default async function handler(req, res) {
   // Every branch here reads or writes an agent's knowledge base, so the agent
   // has to be the caller's. Without this, any signed-in account could start a
   // crawl on someone else's agent and write documents into it.
-  const [owned] = await sql`select id from agents where id = ${id} and user_id = ${user.userId}`;
-  if (!owned) return res.status(404).json({ error: 'Agent not found' });
+  const { level } = await accessTo(user, 'agent', id);
+  if (!allows(level, 'view')) return res.status(404).json({ error: 'Agent not found' });
+  if (req.method !== 'GET' && !allows(level, 'edit')) return refuse(res, level, 'this AI Chatbot');
 
   if (req.method === 'GET') {
     const rows = await sql`SELECT data FROM agents WHERE id = ${id}`;

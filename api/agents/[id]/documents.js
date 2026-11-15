@@ -1,20 +1,23 @@
 import { sql } from '../../_db.js';
 import { checkAuth } from '../../_auth.js';
 import { getUserSettings, resolveApiConfig } from '../../_settings.js';
+import { accessTo, allows, refuse } from '../../_access.js';
 import { storeDocument } from '../../_knowledge.js';
 
-/** The agent must belong to the caller — a document id is not a capability. */
-async function ownsAgent(agentId, userId) {
-  const [row] = await sql`select id from agents where id = ${agentId} and user_id = ${userId}`;
-  return !!row;
+/** The caller's level on the agent — a document id is not a capability. */
+async function agentLevel(agentId, user) {
+  return (await accessTo(user, 'agent', agentId)).level;
 }
+
 
 export default async function handler(req, res) {
   const user = checkAuth(req, res);
   if (!user) return;
 
   const { id } = req.query;
-  if (!(await ownsAgent(id, user.userId))) return res.status(404).json({ error: 'Agent not found' });
+  const level = await agentLevel(id, user);
+  if (!allows(level, 'view')) return res.status(404).json({ error: 'Agent not found' });
+  if (req.method !== 'GET' && !allows(level, 'edit')) return refuse(res, level, 'this AI Chatbot');
 
   if (req.method === 'GET') {
     // Chunks are a search detail; the list shows documents.

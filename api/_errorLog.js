@@ -22,7 +22,7 @@ export async function logError({ agentId = null, source, message, context = {} }
   }
 }
 
-/** Recent failures for the agents a user owns. */
+/** Recent failures for the agents of a user's organization. */
 export async function recentErrors(userId, { agentId = null, source = null, limit = 20 } = {}) {
   const capped = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
   return sql`
@@ -30,7 +30,7 @@ export async function recentErrors(userId, { agentId = null, source = null, limi
            a.data->>'name' as agent_name
     from error_log e
     join agents a on a.id = e.agent_id
-    where a.user_id = ${userId}
+    where a.org_id = (select org_id from users where id = ${userId})
       and (${agentId}::text is null or e.agent_id = ${agentId})
       and (${source}::text is null or e.source = ${source})
     order by e.created_at desc

@@ -1,16 +1,18 @@
 import { sql } from '../_db.js';
 import { checkAuth } from '../_auth.js';
 import { getUserSettings, resolveApiConfig } from '../_settings.js';
+import { accessTo, allows, refuse } from '../_access.js';
 import { rechunk, normalizeDocument } from '../_knowledge.js';
 
-/** Loads the document only if the caller owns the agent it belongs to. */
-async function ownedDoc(docId, userId) {
+/** The document, with the caller's level on the agent it belongs to. */
+async function ownedDoc(docId, user) {
   const [row] = await sql`
     select d.id, d.agent_id, d.skill_id, d.title, d.content, d.raw_content, d.normalized
-    from documents d join agents a on a.id = d.agent_id
-    where d.id = ${docId} and a.user_id = ${userId}
+    from documents d where d.id = ${docId}
   `;
-  return row || null;
+  if (!row) return null;
+  const { level } = await accessTo(user, 'agent', row.agent_id);
+  return allows(level, 'view') ? { ...row, level } : null;
 }
 
 export default async function handler(req, res) {
@@ -18,8 +20,10 @@ export default async function handler(req, res) {
   if (!user) return;
 
   const { docId } = req.query;
-  const doc = await ownedDoc(docId, user.userId);
+  const doc = await ownedDoc(docId, user);
   if (!doc) return res.status(404).json({ error: 'Document not found' });
+  /* Every method here changes the document. */
+  if (!allows(doc.level, 'edit')) return refuse(res, doc.level, 'this AI Chatbot');
 
   /* An edit has to rebuild the chunks, or search keeps answering from the old text. */
   if (req.method === 'PATCH') {

@@ -1,4 +1,5 @@
 import { sql } from './_db.js';
+import { accessTo, allows } from './_access.js';
 
 /**
  * Gmail is connected per agent: an agent's send_email tool sends from the
@@ -6,13 +7,10 @@ import { sql } from './_db.js';
  * agent_id (see migrations/008-gmail-per-agent.sql).
  */
 
-export async function userOwnsAgent(agentId, user) {
+/** May this person reach the agent's mailbox? Connecting one is editing. */
+export async function userOwnsAgent(agentId, user, need = 'view') {
   if (!agentId) return false;
-  const [row] = await sql`
-    select 1 from agents
-    where id = ${agentId} and (user_id = ${user.userId} or ${!!user.isAdmin})
-  `;
-  return !!row;
+  return allows((await accessTo(user, 'agent', agentId)).level, need);
 }
 
 export async function getGmailStatus(agentId) {

@@ -161,20 +161,27 @@ export function shapeRow(columns, input) {
 
 /* ─────────────────── tables ─────────────────── */
 
+/*
+ * A table belongs to an organization. `userId` in these functions names whose
+ * organization to look in — the person asking, or the owner of the chatbot
+ * running — and is never a check on its own: who in the organization may see
+ * or change a table is decided by the endpoints, through _access.js.
+ */
+
 export async function listTables(userId) {
   return sql`
-    select t.id, t.name, t.description, t.columns, t.created_at, t.updated_at,
+    select t.id, t.org_id, t.name, t.description, t.columns, t.created_at, t.updated_at,
            (select count(*)::int from data_table_rows r where r.table_id = t.id) as row_count
     from data_tables t
-    where t.user_id = ${userId}
+    where t.org_id = (select org_id from users where id = ${userId})
     order by t.updated_at desc
   `;
 }
 
 export async function getTable(id, userId) {
   const [row] = await sql`
-    select id, name, description, columns, created_at, updated_at
-    from data_tables where id = ${id} and user_id = ${userId}
+    select id, org_id, name, description, columns, created_at, updated_at
+    from data_tables where id = ${id} and org_id = (select org_id from users where id = ${userId})
   `;
   return row || null;
 }
@@ -208,13 +215,13 @@ export async function updateTable(id, userId, patch) {
     update data_tables
        set name = ${name}, description = ${description},
            columns = ${JSON.stringify(columns)}::jsonb, updated_at = now()
-     where id = ${id} and user_id = ${userId}
+     where id = ${id} and org_id = (select org_id from users where id = ${userId})
   `;
   return { id, name, description, columns };
 }
 
 export async function deleteTable(id, userId) {
-  await sql`delete from data_tables where id = ${id} and user_id = ${userId}`;
+  await sql`delete from data_tables where id = ${id} and org_id = (select org_id from users where id = ${userId})`;
   return { ok: true };
 }
 

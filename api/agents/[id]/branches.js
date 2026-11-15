@@ -25,8 +25,8 @@ export default async function handler(req, res) {
   const body = req.body || {};
 
   const fail = (e) => {
-    const codes = { NO_BRANCH: 404, EXISTS: 409, BAD_NAME: 400, OVER_100: 409, BAD_TARGET: 400 };
-    if (e.code && codes[e.code]) return res.status(codes[e.code]).json({ error: e.message });
+    const codes = { NO_BRANCH: 404, EXISTS: 409, BAD_NAME: 400, OVER_100: 409, BAD_TARGET: 400, READ_ONLY: 403 };
+    if (e.code && codes[e.code]) return res.status(codes[e.code]).json({ error: e.message, code: e.code });
     throw e;
   };
 

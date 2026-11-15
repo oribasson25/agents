@@ -19,11 +19,13 @@ const db = { tables: [], rows: [] };
 globalThis.__db = (text, params) => {
   const q = text.replace(/\s+/g, ' ').trim();
 
-  if (q.startsWith('select t.id, t.name, t.description')) {
+  /* Each user is their own organization here; the query is scoped by the
+     user whose organization it asks about. */
+  if (q.startsWith('select t.id, t.org_id, t.name, t.description')) {
     return db.tables.filter(t => t.user_id === params[0])
       .map(t => ({ ...t, row_count: db.rows.filter(r => r.table_id === t.id).length }));
   }
-  if (q.startsWith('select id, name, description, columns')) {
+  if (q.startsWith('select id, org_id, name, description, columns')) {
     return db.tables.filter(t => t.id === params[0] && t.user_id === params[1]);
   }
   if (q.startsWith('insert into data_tables')) {

@@ -41,6 +41,10 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'PUT') {
+    /* Checked before anything is parsed, so a viewer is told plainly. */
+    if (loaded.access !== 'edit') {
+      return res.status(403).json({ error: 'You can view this AI Chatbot but not change it.', code: 'READ_ONLY' });
+    }
     const { baseVersion, files } = req.body || {};
     if (!files || typeof files !== 'object') {
       return res.status(400).json({ error: 'files required' });

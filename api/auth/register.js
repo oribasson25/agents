@@ -5,6 +5,7 @@ import { seedDefaultApp } from '../_defaultApp.js';
 import { claimInvite, releaseInvite, attachInviteUser } from '../_invites.js';
 import { clientIp, isLocked, recordFailure, LOCKED_MESSAGE } from '../_throttle.js';
 import crypto from 'crypto';
+import { sessionInfo } from '../_session.js';
 
 /**
  * Registration, which only an invitation code opens.
@@ -50,13 +51,18 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: claim.reason });
   }
 
+  /* A code opens a new organization, and the person registering is its admin. */
   const id = crypto.randomUUID();
+  const orgId = `org-${id}`;
   try {
+    await sql`insert into organizations (id, name, created_by) values (${orgId}, ${username}, null)`;
     await sql`
-      insert into users (id, username, password_hash, phone, is_admin)
-      values (${id}, ${username}, ${hashPassword(password)}, ${phone}, false)
+      insert into users (id, username, password_hash, phone, is_admin, org_id, org_role, org_access)
+      values (${id}, ${username}, ${hashPassword(password)}, ${phone}, false, ${orgId}, 'admin', 'edit')
     `;
+    await sql`update organizations set created_by = ${id} where id = ${orgId}`;
   } catch (err) {
+    await sql`delete from organizations where id = ${orgId}`.catch(() => {});
     /* Somebody took the name in the seconds since the check above, or the
        write failed outright. Either way the code was never used. */
     await releaseInvite(claim.id).catch(() => {});
@@ -83,5 +89,5 @@ export default async function handler(req, res) {
     exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7,
   });
 
-  return res.status(201).json({ token, username, isAdmin: false });
+  return res.status(201).json({ token, username, isAdmin: false, ...(await sessionInfo(id)) });
 }
