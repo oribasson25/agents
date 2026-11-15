@@ -15,6 +15,9 @@ import { sql } from './_db.js';
 import { createApp } from './_apps.js';
 
 export const DEFAULT_APP_NAME = 'Chat';
+/* The first version's message. It is how a re-run of the backfill tells an
+   account that already has this app from one that does not. */
+export const SEEDED_MESSAGE = 'Created with the account';
 const DESCRIPTION = 'A page of your own for talking to your AI Chatbots. Edit it here, or pull it with 8legs pull --app.';
 
 /** A name a page's code can use: `legs.agent('support')`. */
@@ -45,7 +48,7 @@ export async function seedDefaultApp(userId) {
     const agents = Object.fromEntries(rows.map((r, i) => [aliasFor(r.name, i, taken), r.id]));
     const app = await createApp({
       user: { userId }, name: DEFAULT_APP_NAME, description: DESCRIPTION,
-      files: defaultAppFiles(), agents, uniqueSlug: true, message: 'Created with the account',
+      files: defaultAppFiles(), agents, uniqueSlug: true, message: SEEDED_MESSAGE,
     });
     console.log(`[seed] user=${userId} got the default app (${rows.length} AI Chatbot(s) linked)`);
     return app.id;
