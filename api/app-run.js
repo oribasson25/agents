@@ -34,6 +34,16 @@ export default async function handler(req, res) {
   const { app, ownerId } = found;
 
   try {
+    if (op === 'agent.info') {
+      const agentId = linkId((app.agents || {})[name]);
+      if (!agentId) return res.status(404).json({ error: `This app has no AI Chatbot linked as "${name}"` });
+      const [row] = await sql`select data from agents where id = ${agentId} and user_id = ${ownerId}`;
+      if (!row) return res.status(404).json({ error: `The AI Chatbot linked as "${name}" no longer exists` });
+      /* What a page needs to introduce the chatbot, and nothing else of it:
+         not its prompt, its tools or anything its owner configured. */
+      return res.json({ name: row.data.name || name, openingMessage: row.data.openingMessage || '' });
+    }
+
     if (op === 'agent.send') {
       const agentId = linkId((app.agents || {})[name]);
       if (!agentId) return res.status(404).json({ error: `This app has no AI Chatbot linked as "${name}"` });

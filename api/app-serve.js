@@ -60,6 +60,7 @@ window.legs={
   app:{id:B.id,slug:B.slug,name:B.name},
   agents:B.agents,tables:B.tables,
   agent:function(name){return{
+    info:function(){return call('agent.info',{name:name})},
     send:function(messages,opts){
       if(typeof messages==='string')messages=[{role:'user',content:messages}];
       return call('agent.send',{name:name,messages:messages,sessionId:opts&&opts.sessionId}).then(function(d){return d.content});

@@ -6490,7 +6490,8 @@ AGENTS.md       how to edit this app — for Claude Code
 
           <H3>Reaching chatbots and tables</H3>
           <P>An app can use only what it links. Link a chatbot or a table on the app&rsquo;s <strong>AI Chatbots &amp; Tables</strong> tab (or in <Code>app.json</Code>), under a name your code will use. Every page then has a global <Code>legs</Code>:</P>
-          <Block>{`const chat = legs.agent('support').chat();
+          <Block>{`const { name, openingMessage } = await legs.agent('support').info();
+const chat = legs.agent('support').chat();
 const reply = await chat.send('hello');          // keeps the conversation
 
 const leads = legs.table('leads');

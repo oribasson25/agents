@@ -248,6 +248,7 @@ Every page gets a global \`legs\`:
 legs.app                                  // { id, slug, name }
 legs.agents, legs.tables                  // the names linked in app.json
 
+const { name, openingMessage } = await legs.agent('support').info();
 const chat = legs.agent('support').chat();
 const reply = await chat.send('hello');   // keeps the conversation going
 

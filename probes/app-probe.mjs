@@ -9,6 +9,7 @@
  *   the runtime    an app reaches only what it links and its owner has
  */
 import crypto from 'crypto';
+import fs from 'fs';
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 
 process.env.JWT_SECRET = 'probe-secret';
@@ -131,6 +132,11 @@ globalThis.__db = (text, p) => {
     return db.versions.filter(v => v.app_id === p[0] && (v.id === p[1] || String(v.number) === p[2]));
 
   if (t.startsWith('select id from agents where user_id')) return p[1].filter(id => db.agents[id] === p[0]).map(id => ({ id }));
+  if (t.startsWith("select id, data->>'name' as name from agents")) return db.userAgents || [];
+  if (t.startsWith('select data from agents where id')) {
+    const owner = db.agents[p[0]];
+    return owner && owner === p[1] && db.agentData?.[p[0]] ? [{ data: db.agentData[p[0]] }] : [];
+  }
   if (t.startsWith('select id from data_tables where user_id')) return p[1].filter(id => db.tables[id] === p[0]).map(id => ({ id }));
 
   if (t.startsWith('select owner, repo, webhook_id from app_repos')) { const r = db.repos.get(p[0]); return r ? [r] : []; }
@@ -325,6 +331,46 @@ check('a private app answers nobody without its link', (await ask({ op: 'table.r
 check('and answers with it', (await ask({ op: 'table.rows', name: 'leads', token: viewToken(APP, 'u1') })).statusCode === 200);
 check('a read-only link refuses a write',
       (await ask({ op: 'table.add', name: 'leads', row: {}, token: viewToken(APP, 'u1') })).statusCode === 403);
+
+/* ── agent.info ─────────────────────────────────────────────────────────── */
+db.agentData = { 'agent-1': { name: 'Support bot', openingMessage: 'שלום!', basePrompt: 'SECRET PROMPT' } };
+await call(appHandler, 'PUT', { id: APP }, { access: 'link', agents: { support: 'agent-1', theirs: 'agent-1' } }, session);
+const info = await ask({ op: 'agent.info', name: 'support' });
+check('a linked chatbot introduces itself', info.statusCode === 200 && info.payload.name === 'Support bot' && info.payload.openingMessage === 'שלום!',
+      JSON.stringify(info.payload));
+check('and gives away nothing else of itself', !JSON.stringify(info.payload).includes('SECRET'));
+check('a chatbot the app does not link has nothing to say', (await ask({ op: 'agent.info', name: 'nobody' })).statusCode === 404);
+check('the page handle has info()', (await get('/a/leads-desk/')).body.includes("info:function(){return call('agent.info'"));
+
+/* ── the default app every account is handed ────────────────────────────── */
+const { seedDefaultApp, defaultAppFiles } = await import(`${ROOT}/api/_defaultApp.js`);
+db.userAgents = [{ id: 'agent-1', name: 'Support bot' }, { id: 'agent-2', name: 'בוט מכירות' }, { id: 'agent-3', name: 'Support Bot' }];
+const defaultId = await seedDefaultApp('u1');
+const handed = db.apps.get(defaultId);
+check('a new account is handed the default app', !!handed && handed.user_id === 'u1' && handed.data.name === 'Chat', JSON.stringify(handed?.data?.name));
+check('it links every chatbot the account starts with, by a name code can use',
+      same(handed.data.agents, { support_bot: 'agent-1', chatbot_2: 'agent-2', support_bot_2: 'agent-3' }), JSON.stringify(handed.data.agents));
+check('its address never takes the plain name', /^chat-[0-9a-f]{6}$/.test(handed.slug), handed.slug);
+check('it starts private', handed.data.access === 'private');
+check('it is a version like any other', db.versions.some(v => v.app_id === defaultId && v.message === 'Created with the account'));
+{
+  const { app: back, errors } = filesToApp(appToFiles(handed.data), handed.data);
+  check('it survives being pulled and pushed unchanged', !errors.length && same(back, handed.data), errors.join('; '));
+}
+const page = await get(`/a/${handed.slug}/~${viewToken(defaultId, 'u1')}/`);
+check('it opens, with the handle ahead of its script',
+      page.statusCode === 200 && page.body.indexOf('window.legs=') < page.body.indexOf('src="app.js"') && /"agents":\["support_bot","chatbot_2","support_bot_2"\]/.test(page.body),
+      page.body.slice(0, 200));
+const second = db.apps.get(await seedDefaultApp('u1'));
+check('every account gets its own address', second && second.slug !== handed.slug);
+db.userAgents = [];
+check('an account with no chatbots still gets the app, linked to nothing', same(db.apps.get(await seedDefaultApp('u1')).data.agents, {}));
+const realDb = globalThis.__db;
+globalThis.__db = () => { throw new Error('database is down'); };
+check('a failure to make it never fails the sign-up', (await seedDefaultApp('u1')) === null);
+globalThis.__db = realDb;
+check('sign-up hands it out', /await seedDefaultApp\(id\)/.test(fs.readFileSync(`${ROOT}/api/auth/register.js`, 'utf8')));
+check('its script parses', (() => { try { new Function(defaultAppFiles()['app.js']); return true; } catch (e) { console.log('    ' + e.message); return false; } })());
 
 /* ── delete ─────────────────────────────────────────────────────────────── */
 check('deleting an app takes it off the air',

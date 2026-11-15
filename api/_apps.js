@@ -54,7 +54,14 @@ export async function loadAppById(id) {
   return row ? { app: row.data, ownerId: row.user_id } : null;
 }
 
-export async function createApp({ user, name, description }) {
+/**
+ * A new app. With no `files` it gets the starter page; the default app every
+ * account is handed passes its own, and the AI Chatbots it links.
+ *
+ * `uniqueSlug` always adds a piece of the id: an app every account receives
+ * must not hand its plain name (/a/chat/) to whoever happened to sign up first.
+ */
+export async function createApp({ user, name, description, files, agents, tables, uniqueSlug = false, message = 'Created' }) {
   const clean = String(name || '').trim().slice(0, 80);
   if (!clean) throw Object.assign(new Error('An app needs a name'), { code: 'BAD_NAME' });
   const id = crypto.randomUUID();
@@ -62,22 +69,22 @@ export async function createApp({ user, name, description }) {
   /* The slug is global — it is a URL on the platform — so a taken one gets a
      short piece of the id rather than an error nobody can act on. */
   let slug = slugFrom(clean);
-  const [taken] = await sql`select 1 as x from apps where slug = ${slug}`;
+  const [taken] = uniqueSlug ? [true] : await sql`select 1 as x from apps where slug = ${slug}`;
   if (taken || slug === 'app') slug = `${slug}-${id.slice(0, 6)}`;
 
   const app = {
     id, slug, name: clean,
     description: String(description || '').trim().slice(0, 400),
-    entry: 'index.html', agents: {}, tables: {},
+    entry: 'index.html', agents: agents || {}, tables: tables || {},
     access: 'private',
-    files: starterFiles(clean),
+    files: files || starterFiles(clean),
     createdAt: new Date().toISOString(),
   };
   await sql`
     insert into apps (id, user_id, slug, data)
     values (${id}, ${user.userId}, ${slug}, ${JSON.stringify(app)}::jsonb)
   `;
-  await recordVersion({ appId: id, user, data: app, source: 'ui', message: 'Created' });
+  await recordVersion({ appId: id, user, data: app, source: 'ui', message });
   return app;
 }
 

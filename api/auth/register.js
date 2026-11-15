@@ -1,6 +1,7 @@
 import { sql } from '../_db.js';
 import { signJWT, hashPassword } from '../_auth.js';
 import { seedDefaultAgents } from '../_defaultAgent.js';
+import { seedDefaultApp } from '../_defaultApp.js';
 import { claimInvite, releaseInvite, attachInviteUser } from '../_invites.js';
 import { clientIp, isLocked, recordFailure, LOCKED_MESSAGE } from '../_throttle.js';
 import crypto from 'crypto';
@@ -72,6 +73,8 @@ export default async function handler(req, res) {
   // A new account starts with a copy of each starter agent. This never throws,
   // so a missing or broken template cannot fail the sign-up.
   await seedDefaultAgents(id);
+  // And the default app, a chat page linked to those chatbots. Never throws either.
+  await seedDefaultApp(id);
 
   const token = signJWT({
     userId: id,
