@@ -33,18 +33,36 @@ export async function getNumber(id) {
 
 /* ---------- connection state (worker writes, admin reads) ---------- */
 
-export async function publishState(numberId, state) {
-  const payload = { ...state, updatedAt: Date.now() };
+/**
+ * `host` is the address the publishing worker was reached on: one where a
+ * production worker answers from inside Vercel, which kickWorker falls back
+ * to when its own address fails. A state published without one keeps the
+ * host already stored.
+ */
+export async function publishState(numberId, state, { host } = {}) {
+  const payload = JSON.stringify({ ...state, ...(host && { host }), updatedAt: Date.now() });
   const phone = state.status === 'open' && state.me?.id ? state.me.id.split('@')[0].split(':')[0] : undefined;
   if (phone) {
     await sql`
-      update wa_numbers set state = ${JSON.stringify(payload)}, phone = ${phone}, updated_at = now()
-      where id = ${numberId}
+      update wa_numbers
+         set state = jsonb_strip_nulls(jsonb_build_object('host', state->'host')) || ${payload}::jsonb,
+             phone = ${phone}, updated_at = now()
+       where id = ${numberId}
     `;
   } else if (state.status === 'logged_out') {
-    await sql`update wa_numbers set state = ${JSON.stringify(payload)}, phone = null, updated_at = now() where id = ${numberId}`;
+    await sql`
+      update wa_numbers
+         set state = jsonb_strip_nulls(jsonb_build_object('host', state->'host')) || ${payload}::jsonb,
+             phone = null, updated_at = now()
+       where id = ${numberId}
+    `;
   } else {
-    await sql`update wa_numbers set state = ${JSON.stringify(payload)}, updated_at = now() where id = ${numberId}`;
+    await sql`
+      update wa_numbers
+         set state = jsonb_strip_nulls(jsonb_build_object('host', state->'host')) || ${payload}::jsonb,
+             updated_at = now()
+       where id = ${numberId}
+    `;
   }
 }
 
@@ -142,24 +160,55 @@ export function workerSetupProblem() {
  * function inside Vercel cannot reach ("fetch failed"), or a domain added to
  * the project before its DNS was set up (it does not resolve at all).
  *
- * So: the caller's host, then the address that last worked for this number
- * (kept in wa_numbers.worker_host), then the production URL's www form, then
- * the production URL itself. Whichever works is remembered for next time.
+ * So, in order: the caller's host; the address the number's last worker was
+ * reached on (wa_numbers.state.host, which every worker publishes); APP_URL;
+ * the production URL's www form; the production URL; and only then this
+ * deployment's own URL, which reaches this deployment alone and only when
+ * Deployment Protection is off.
+ *
+ * The remembered address is what lets the cron bring a number back with
+ * nobody signed in. It used to live in wa_numbers.worker_host (migration 027),
+ * which production never got, so the cron had nothing that worked and a
+ * dropped number stayed down until someone opened its page.
  */
 export async function kickWorker(numberId, { via } = {}) {
   if (!process.env.CRON_SECRET) return false;
   const prod = process.env.VERCEL_PROJECT_PRODUCTION_URL;
-  const [row] = await sql`select worker_host from wa_numbers where id = ${numberId}`.catch(() => []);
-  const hosts = [...new Set([via, row?.worker_host, prod && !prod.startsWith('www.') ? `www.${prod}` : null, prod].filter(Boolean))];
+  const own = process.env.VERCEL_URL;
+  const [row] = await sql`select state->>'host' as host from wa_numbers where id = ${numberId}`.catch(() => []);
+  const hosts = [...new Set([
+    via !== own ? via : null,
+    row?.host,
+    hostOf(process.env.APP_URL),
+    prod && !prod.startsWith('www.') ? `www.${prod}` : null,
+    prod,
+    via,
+  ].filter(Boolean))];
   for (const host of hosts) {
-    const reached = await kickAt(host, numberId);
-    if (!reached) continue;
-    if (reached !== row?.worker_host) {
-      await sql`update wa_numbers set worker_host = ${reached} where id = ${numberId}`.catch(() => {});
-    }
-    return true;
+    if (await kickAt(host, numberId)) return true;
   }
+  console.error(`[wa] no address started a worker for ${numberId} (tried ${hosts.join(', ') || 'none'})`);
   return false;
+}
+
+/**
+ * The host to remember for a worker reached on `host`: null for this
+ * deployment's own URL, which keeps pointing at this deployment after the
+ * next one is promoted, so a chain started there would never run new code.
+ */
+export function publicHost(host) {
+  return host && host !== process.env.VERCEL_URL ? host : null;
+}
+
+/** "https://www.8legs.world/" or "www.8legs.world\n" → "www.8legs.world"; null when unusable. */
+function hostOf(url) {
+  const raw = String(url || '').replace(/[\s\u0000-\u001f\u007f]+/g, '');
+  if (!raw) return null;
+  try {
+    return new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).host || null;
+  } catch {
+    return null;
+  }
 }
 
 /** One attempt at one host: the host that answered when a production worker took the call, else null. */

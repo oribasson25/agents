@@ -15,11 +15,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * cleanly so the next session can take over. The lease on the wa_numbers row
  * makes sure only one session is connected for a number at any moment.
  *
+ * `host` (the public address this worker was reached on) goes out with every
+ * state it publishes: the cron starts the next worker there when its own
+ * address does not reach production.
+ *
  * Returns why it ended: 'busy' (another session holds the lease), 'idle'
  * (nothing linked and nobody looking at the QR), 'disabled', 'done' (reached
  * the deadline), 'logout', 'replaced', 'lost-lease'.
  */
-export async function runSession({ numberId, deadline, baseUrl }) {
+export async function runSession({ numberId, deadline, baseUrl, host = null }) {
   const token = await control.acquireLease(numberId);
   if (!token) return 'busy';
 
@@ -33,7 +37,7 @@ export async function runSession({ numberId, deadline, baseUrl }) {
 
     wa = new WhatsApp({ numberId });
     wa.on('state', (s) => {
-      control.publishState(numberId, s).catch((err) => console.warn(`[wa ${numberId}] state publish failed:`, err.message));
+      control.publishState(numberId, s, { host }).catch((err) => console.warn(`[wa ${numberId}] state publish failed:`, err.message));
     });
     const router = createRouter(wa, numberId, { baseUrl });
     await wa.start();
@@ -83,7 +87,7 @@ export async function runSession({ numberId, deadline, baseUrl }) {
     await wa?.stop().catch((err) => console.warn(`[wa ${numberId}] stop failed:`, err.message));
     if (result !== 'lost-lease') await control.releaseLease(numberId, token);
     if (result === 'idle' || result === 'disabled') {
-      await control.publishState(numberId, { status: result === 'idle' ? 'unlinked' : 'paused', qr: null }).catch(() => {});
+      await control.publishState(numberId, { status: result === 'idle' ? 'unlinked' : 'paused', qr: null }, { host }).catch(() => {});
     }
   }
   return result;
