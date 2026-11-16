@@ -6,6 +6,8 @@ import { createRouter } from './_waRouter.mjs';
 const RENEW_MS = 45_000;
 const COMMAND_POLL_MS = 5_000;
 const REMINDER_POLL_MS = 30_000;
+// How often to look for messages automations asked this number to send.
+const OUTBOX_POLL_MS = 2_000;
 const DRAIN_MS = 45_000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -45,8 +47,14 @@ export async function runSession({ numberId, deadline, baseUrl, host = null }) {
     let lastRenew = Date.now();
     let lastCommand = 0;
     let lastReminders = 0;
+    let lastOutbox = 0;
     while (Date.now() < deadline) {
       await sleep(1000);
+      if (Date.now() - lastOutbox >= OUTBOX_POLL_MS) {
+        lastOutbox = Date.now();
+        /* Not awaited: sending paces itself, and the loop has a lease to keep. */
+        router.sendOutbox().catch((err) => console.warn(`[wa ${numberId}] outbox failed:`, err.message));
+      }
       if (wa.fatal) {
         result = wa.fatal;
         break;

@@ -30,6 +30,25 @@ An app — a small web interface the platform hosts — is edited the same way:
 8legs rollback 3             # make version 3 live again
 ```
 
+## Automations
+
+An automation — a trigger and steps the platform runs — is a folder too:
+
+```bash
+8legs automations                          # your automations, and which are live
+8legs pull --automation "New lead follow-up"
+8legs push                                 # saves the draft; nothing live changes
+8legs run --input '{"name": "Dana"}'       # runs the draft, prints every step
+8legs publish                              # makes the draft what the trigger fires
+8legs versions
+8legs rollback 2
+```
+
+`automation.json` holds the trigger, the steps and how they connect;
+`steps/<id>.py` is the code of each Code step; `layout.json` is where the
+boxes sit on the canvas, and can be left out. `AGENTS.md` in the folder
+documents every kind of step.
+
 ## What is not in the folder
 
 Secrets never land on disk. The account's API key, the WhatsApp tokens and each

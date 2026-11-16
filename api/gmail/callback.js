@@ -3,6 +3,8 @@ import { sql } from '../_db.js';
 import { jwtSecret } from '../_auth.js';
 import { appBaseUrl } from '../_gmail.js';
 import { logError } from '../_errorLog.js';
+import { readState } from '../_connections.js';
+import { finishConnection } from '../connections/callback.js';
 
 // Same key the rest of the app signs with — never a hard-coded fallback.
 const JWT_SECRET = jwtSecret();
@@ -21,6 +23,10 @@ export default async function handler(req, res) {
   // through Google's flow, with nothing said and nothing logged. Send them
   // back to the app with a reason instead.
   try {
+    /* An organization's Gmail connection for automations comes back through
+       this same address — the one Google already has on file — and is told
+       apart by its state, which only the connections flow can sign. */
+    if (readState(req.query.state)) return await finishConnection(req, res);
     return await connect(req, res);
   } catch (err) {
     await logError({ source: 'gmail', message: err.message, context: { step: 'oauth_callback' } });

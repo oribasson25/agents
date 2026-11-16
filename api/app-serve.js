@@ -58,7 +58,10 @@ function call(op,body){
 function sid(){return 'app-'+B.id.slice(0,8)+'-'+Date.now().toString(36)+Math.random().toString(36).slice(2,10)}
 window.legs={
   app:{id:B.id,slug:B.slug,name:B.name},
-  agents:B.agents,tables:B.tables,
+  agents:B.agents,tables:B.tables,automations:B.automations||[],
+  automation:function(name){return{
+    run:function(input){return call('automation.run',{name:name,input:input||{}}).then(function(d){return d.output})}
+  }},
   agent:function(name){return{
     info:function(){return call('agent.info',{name:name})},
     send:function(messages,opts){
@@ -151,6 +154,7 @@ export default async function handler(req, res) {
       api: '/api/app-run', token: parsed.token || null,
       agents: Object.keys(app.agents || {}).filter(k => linkId(app.agents[k])),
       tables: Object.keys(app.tables || {}).filter(k => linkId(app.tables[k])),
+      automations: Object.keys(app.automations || {}).filter(k => linkId(app.automations[k])),
     });
   }
 

@@ -1,5 +1,5 @@
 /**
- * Who may do what to an AI Chatbot, a Table or an App.
+ * Who may do what to an AI Chatbot, a Table, an App or an Automation.
  *
  * Everything belongs to an organization, and the answer for one person and one
  * item is a level: 'none', 'view' or 'edit'.
@@ -20,8 +20,8 @@
 import { sql } from './_db.js';
 
 export const LEVELS = ['none', 'view', 'edit'];
-export const KINDS = ['agent', 'table', 'app'];
-const TABLE_OF = { agent: 'agents', table: 'data_tables', app: 'apps' };
+export const KINDS = ['agent', 'table', 'app', 'automation'];
+const TABLE_OF = { agent: 'agents', table: 'data_tables', app: 'apps', automation: 'automations' };
 
 const RANK = { none: 0, view: 1, edit: 2 };
 export const allows = (level, need) => RANK[level || 'none'] >= RANK[need];
@@ -89,7 +89,9 @@ export async function accessTo(user, kind, itemId, me) {
     ? await sql`select id, org_id, user_id from agents where id = ${id}`
     : kind === 'table'
       ? await sql`select id, org_id, user_id from data_tables where id = ${id}`
-      : await sql`select id, org_id, user_id from apps where id = ${id} or slug = ${id}`;
+      : kind === 'automation'
+        ? await sql`select id, org_id, user_id from automations where id = ${id}`
+        : await sql`select id, org_id, user_id from apps where id = ${id} or slug = ${id}`;
   if (!item) return { level: 'none', me: who, item: null };
   const needsGrant = !who.isPlatformAdmin && item.org_id === who.orgId && !isOrgAdmin(who);
   item.grant_level = needsGrant ? ((await grant(item.id))[0] || {}).level : undefined;

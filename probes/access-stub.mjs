@@ -31,6 +31,7 @@ export function accessStub(world = {}) {
     if (t.startsWith('select id, org_id, user_id from agents where id')) return item('agent', p[0]);
     if (t.startsWith('select id, org_id, user_id from data_tables where id')) return item('table', p[0]);
     if (t.startsWith('select id, org_id, user_id from apps where id')) return item('app', p[0], p[1]);
+    if (t.startsWith('select id, org_id, user_id from automations where id')) return item('automation', p[0]);
     if (t.startsWith('select level from access_grants')) {
       return (world.grants || []).filter(g => g.user === p[0] && g.kind === p[1] && g.item === p[2]).map(g => ({ level: g.level }));
     }

@@ -46,12 +46,12 @@ export function readTree(root) {
   return files;
 }
 
-export function writeLock(root, { agentId, appId, kind, branch, version, host, files }) {
+export function writeLock(root, { agentId, appId, automationId, kind, branch, version, host, files }) {
   const dir = path.join(root, '.8legs');
   fs.mkdirSync(dir, { recursive: true });
   const lock = {
     /* `kind` is absent in folders pulled before apps existed: those are agents. */
-    ...(kind === 'app' ? { kind: 'app', appId } : { agentId }),
+    ...(kind === 'app' ? { kind: 'app', appId } : kind === 'automation' ? { kind: 'automation', automationId } : { agentId }),
     branch, version, host,
     pulledAt: new Date().toISOString(),
     files: Object.fromEntries(Object.entries(files).map(([p, c]) => [p, hash(c)])),

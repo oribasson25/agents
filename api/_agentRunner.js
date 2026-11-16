@@ -4,6 +4,7 @@ import { searchDocuments } from './_knowledge.js';
 import { sendGmail } from './_gmail.js';
 import { logError } from './_errorLog.js';
 import { TABLE_TOOLS, runAgentTableTool } from './_tables.js';
+import { AUTOMATION_TOOLS, runAgentAutomationTool } from './_automationTools.js';
 import { internalSecret } from './_auth.js';
 import { recordUsage } from './_usage.js';
 import { DEFAULT_CLAUDE_MODEL, currentClaudeModel, claudeRequestShape, claudeText } from './_claudeModels.js';
@@ -126,6 +127,11 @@ function buildClaudeTools(agent) {
       tools.push({ name: t.name, description: t.description, input_schema: t.schema });
     }
   }
+  if ((agent.automations || []).length > 0) {
+    for (const t of AUTOMATION_TOOLS) {
+      tools.push({ name: t.name, description: t.description, input_schema: t.schema });
+    }
+  }
   if (agent.canEndConversation) {
     tools.push({ ...END_CONVERSATION_TOOL, input_schema: { type: 'object', properties: {} } });
   }
@@ -174,6 +180,11 @@ function buildOpenAITools(agent) {
       tools.push({ type: 'function', function: { name: t.name, description: t.description, parameters: t.schema } });
     }
   }
+  if ((agent.automations || []).length > 0) {
+    for (const t of AUTOMATION_TOOLS) {
+      tools.push({ type: 'function', function: { name: t.name, description: t.description, parameters: t.schema } });
+    }
+  }
   if (agent.canEndConversation) {
     tools.push({ type: 'function', function: { ...END_CONVERSATION_TOOL, parameters: { type: 'object', properties: {} } } });
   }
@@ -192,6 +203,18 @@ async function executeTool(toolName, inputs, agent, baseUrl, agentId) {
     } catch (err) {
       await logError({ agentId, source: 'tool', message: `${toolName}: ${err.message}`, context: { tool: toolName } });
       return `The table tool failed: ${err.message}`;
+    }
+  }
+
+  if (toolName === 'automation_list' || toolName === 'automation_run') {
+    try {
+      const [owner] = await sql`select user_id from agents where id = ${agentId}`;
+      let host = null;
+      try { host = new URL(baseUrl).host; } catch { /* no address to run code steps from */ }
+      return await runAgentAutomationTool({ toolName, inputs, agent, ownerId: owner && owner.user_id, agentId, host });
+    } catch (err) {
+      await logError({ agentId, source: 'tool', message: `${toolName}: ${err.message}`, context: { tool: toolName } });
+      return `The automation tool failed: ${err.message}`;
     }
   }
 

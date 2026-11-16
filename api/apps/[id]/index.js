@@ -3,7 +3,7 @@ import { loadApp, saveApp, deleteApp, linkProblems, appUrl } from '../../_apps.j
 import { appToFiles, filesToApp } from '../../_appFiles.js';
 import { mirrorLinked } from '../../_github.js';
 
-const EDITABLE = ['name', 'description', 'entry', 'agents', 'tables', 'files'];
+const EDITABLE = ['name', 'description', 'entry', 'agents', 'tables', 'automations', 'files'];
 
 /**
  * One app, as the Apps screen reads and edits it.

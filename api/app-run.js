@@ -6,6 +6,7 @@ import { runAgentTurn, saveSession } from './_agentRunner.js';
 import { resolveAgentApiConfig } from './_settings.js';
 import { branchForSession, loadForConversation } from './_branches.js';
 import { logError } from './_errorLog.js';
+import { startRun, workRun } from './_automations.js';
 
 /**
  * What a running app may ask the platform for — the other end of `legs`.
@@ -97,6 +98,25 @@ export default async function handler(req, res) {
         if (!body.rowId) return res.status(400).json({ error: 'rowId is required' });
         return res.json(await deleteRow(tableId, body.rowId));
       }
+    }
+
+    if (op === 'automation.run') {
+      const id = linkId((app.automations || {})[name]);
+      if (!id) return res.status(404).json({ error: `This app has no automation linked as "${name}"` });
+      const [auto] = await sql`select * from automations where id = ${id} and org_id = ${orgId}`;
+      if (!auto) return res.status(404).json({ error: `The automation linked as "${name}" no longer exists` });
+      if (!auto.published || !auto.enabled) {
+        return res.status(409).json({ error: `The automation linked as "${name}" is not live — publish it and switch it on` });
+      }
+      const input = body.input && typeof body.input === 'object' && !Array.isArray(body.input) ? body.input : {};
+      const runId = await startRun({ row: auto, mode: 'live', source: 'app', input, host: req.headers.host });
+      const run = await workRun(runId, { host: req.headers.host, budgetMs: 70 * 1000 });
+      if (run && run.status === 'failed') {
+        await logError({ agentId: null, source: 'app', message: run.error, context: { appId: app.id, automationId: id } });
+        /* What went wrong inside is the owner's to read in the run log, not the visitor's. */
+        return res.status(500).json({ error: 'The automation failed' });
+      }
+      return res.json({ status: run ? run.status : 'queued', output: run && run.status === 'done' ? run.output : null });
     }
 
     return res.status(400).json({ error: `Unknown operation "${op}"` });

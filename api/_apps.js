@@ -193,6 +193,14 @@ export async function linkProblems(app, ownerId) {
       if (!mine.has(linkId(target))) problems.push(`app.json: tables.${alias} is not one of your Tables`);
     }
   }
+  const automationIds = Object.values(app.automations || {}).map(linkId);
+  if (automationIds.length) {
+    const rows = await sql`select id from automations where org_id = (select org_id from users where id = ${ownerId}) and id = any(${automationIds})`;
+    const mine = new Set((rows || []).map(r => r.id));
+    for (const [alias, target] of Object.entries(app.automations)) {
+      if (!mine.has(linkId(target))) problems.push(`app.json: automations.${alias} is not one of your automations`);
+    }
+  }
   return problems;
 }
 

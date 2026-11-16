@@ -65,6 +65,7 @@ globalThis.__db = (text, p) => {
       ? [{ agent_id: 'a1', last_push_sha: lastSha, user_id: 'u1' }] : [];
   /* A repository that is no agent's is looked for among the apps next. */
   if (t.startsWith('select r.app_id, r.last_push_sha')) return [];
+  if (t.startsWith('select r.automation_id, r.last_push_sha')) return [];
   if (t.startsWith('select data, user_id from agents')) return [{ data: stored, user_id: 'u1' }];
   if (t.includes('from agent_branches')) return [];
   if (t.startsWith('update agents set data')) { stored = JSON.parse(p[0]); return []; }

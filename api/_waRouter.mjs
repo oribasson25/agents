@@ -6,6 +6,8 @@ import { logError } from './_errorLog.js';
 import { getNumber } from './_waControl.js';
 import { runJarvisTurn, capabilityOn, recordAssistantMessage } from './_jarvis.js';
 import { createGroupRouter } from './_waGroupRouter.mjs';
+import { onWhatsAppMessage } from './_automationTriggers.js';
+import { claim, markSent, markFailed, requeueStuck, jidOfRecipient, SEND_GAP_MS } from './_waOutbox.js';
 
 // Messages older than this (delivered after the number was offline) never trigger a turn.
 const STALE_MS = 10 * 60 * 1000;
@@ -68,6 +70,15 @@ export function createRouter(wa, numberId, { baseUrl }) {
 
     const n = await currentNumber();
     if (!n || !n.enabled) return;
+
+    /* An automation may be waiting for exactly this message — an answer to
+       an approval it asked for, or the thing its trigger listens for. When it
+       takes the message, nobody else answers it. */
+    const taken = await onWhatsAppMessage({ numberId, message: m, baseUrl }).catch((err) => {
+      console.error(`[wa ${numberId}] automations could not look at a message:`, err.message);
+      return null;
+    });
+    if (taken && taken.consumed) return;
 
     const [person] = await sql`
       select * from jarvis_people
@@ -273,6 +284,34 @@ export function createRouter(wa, numberId, { baseUrl }) {
     }
   }
 
+  /**
+   * Messages automations asked this number to send, a few at a time and with
+   * a pause between: a number that fires off a burst is a number that gets
+   * banned.
+   */
+  let sendingOutbox = false;
+  let lastRequeue = 0;
+  async function sendOutbox() {
+    if (wa.state.status !== 'open' || sendingOutbox || draining) return;
+    sendingOutbox = true;
+    try {
+      if (Date.now() - lastRequeue > 60_000) { lastRequeue = Date.now(); await requeueStuck(numberId); }
+      const rows = await claim(numberId, 5);
+      for (const r of rows) {
+        try {
+          await wa.sendText(jidOfRecipient(r.recipient), r.body);
+          await markSent(r.id);
+        } catch (err) {
+          console.error(`[wa ${numberId}] outbox ${r.id} not sent:`, err.message);
+          await markFailed(r.id, err.message).catch(() => {});
+        }
+        await sleep(SEND_GAP_MS);
+      }
+    } finally {
+      sendingOutbox = false;
+    }
+  }
+
   /** End of session: run debounced turns now and wait up to `timeoutMs` for running ones. */
   async function drain(timeoutMs) {
     draining = true;
@@ -287,7 +326,7 @@ export function createRouter(wa, numberId, { baseUrl }) {
     await groupsDone;
   }
 
-  return { drain, sendDueReminders };
+  return { drain, sendDueReminders, sendOutbox };
 }
 
 // Claude requires strict user/assistant alternation; merge consecutive turns of one role.

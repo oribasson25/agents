@@ -1,0 +1,174 @@
+/**
+ * The steps that reach into the organization: its connections, its tables,
+ * its AI Chatbots and its model key.
+ *
+ * Each is handed its settings already filled in, and `ctx` for where it is
+ * running: `orgId` and `ownerId` (whose automation this is — everything is
+ * looked up inside that organization, so a name or an id in a file can never
+ * reach another organization's things), `automationId`, `baseUrl`.
+ */
+import { sql } from './_db.js';
+import { useConnection } from './_connections.js';
+import { enqueue, recipientOf } from './_waOutbox.js';
+import { sendMail, searchMail } from './_mail.js';
+import { getTable, listRows, addRow, updateRow } from './_tables.js';
+import { runAgentTurn } from './_agentRunner.js';
+import { getUserSettings, resolveApiConfig, resolveAgentApiConfig, configUsable } from './_settings.js';
+import { currentClaudeModel, claudeRequestShape, claudeText, CLAUDE_MODELS } from './_claudeModels.js';
+import { recordUsage } from './_usage.js';
+import { fieldsToObject } from './_automationSpec.js';
+
+const source = (ctx) => `automation:${ctx.automationId || ''}`;
+
+/* ─────────────────── WhatsApp ─────────────────── */
+
+async function whatsapp(config, ctx) {
+  const conn = await useConnection({ orgId: ctx.orgId, name: config.connection, kinds: ['whatsapp'] });
+  const sent = await enqueue({ numberId: conn.data.numberId, to: config.to, text: config.text, source: source(ctx) });
+  return { output: { queued: true, to: sent.to, from: conn.account }, port: 'out' };
+}
+
+const YES = /^\s*(yes|y|ok|okay|approve|approved|כן|מאשר|מאשרת|אשר|אישור|בסדר|👍|✅)\s*[.!]*\s*$/i;
+const NO = /^\s*(no|n|reject|rejected|decline|לא|דחה|דוחה|לדחות|👎|❌)\s*[.!]*\s*$/i;
+
+/** What a reply to an approval question means: 'yes', 'no', or null when it is neither. */
+export function readAnswer(text) {
+  if (YES.test(String(text || ''))) return 'yes';
+  if (NO.test(String(text || ''))) return 'no';
+  return null;
+}
+
+/**
+ * Asks one person a yes/no question on WhatsApp and waits for the answer.
+ * The run is parked until they reply (see `onWhatsAppMessage`), or until
+ * the time allowed runs out, when it leaves by "timeout".
+ */
+async function approval(config, ctx) {
+  const now = ctx.now ? ctx.now() : Date.now();
+  if (ctx.parked) {
+    const got = ctx.parked.answer;
+    if (got) return { output: { answer: got.answer, approved: got.answer === 'yes', text: got.text || '', by: ctx.parked.phone }, port: got.answer };
+    if (now >= ctx.parked.until) return { output: { answer: 'timeout', approved: false, text: '', by: ctx.parked.phone }, port: 'timeout' };
+    return { park: ctx.parked };
+  }
+  const conn = await useConnection({ orgId: ctx.orgId, name: config.connection, kinds: ['whatsapp'] });
+  const phone = recipientOf(config.to);
+  if (!phone || phone.includes('@')) throw new Error('an approval is asked of one person, so it needs a phone number with a country code');
+  if (ctx.single) {
+    return { output: { note: 'Testing this step on its own does not send the question. Run the automation to ask it.', to: phone }, port: 'yes' };
+  }
+  const hours = Math.max(0.1, Math.min(24 * 14, Number(config.timeoutHours) || 24));
+  await enqueue({ numberId: conn.data.numberId, to: phone, source: source(ctx),
+                  text: `${String(config.text || '').trim()}\n\nכן / לא · yes / no` });
+  const until = now + hours * 3600 * 1000;
+  return { park: { kind: 'approval', numberId: conn.data.numberId, phone, until },
+           waitingOutput: { asked: phone, waitsUntil: new Date(until).toISOString() } };
+}
+
+/* ─────────────────── mail ─────────────────── */
+
+async function email(config, ctx) {
+  const conn = await useConnection({ orgId: ctx.orgId, name: config.connection, kinds: ['gmail', 'microsoft'] });
+  const sent = await sendMail(conn, { to: config.to, cc: config.cc, subject: config.subject, body: config.body }, { fetchImpl: ctx.fetch });
+  return { output: sent, port: 'out' };
+}
+
+async function emailSearch(config, ctx) {
+  const conn = await useConnection({ orgId: ctx.orgId, name: config.connection, kinds: ['gmail', 'microsoft'] });
+  const messages = await searchMail(conn, { query: config.query, limit: config.limit }, { fetchImpl: ctx.fetch });
+  return { output: { count: messages.length, messages }, port: 'out' };
+}
+
+/* ─────────────────── tables ─────────────────── */
+
+const flat = (r) => ({ id: r.id, ...(r.data || {}) });
+
+async function table(config, ctx) {
+  const t = await getTable(String(config.table || ''), ctx.ownerId);
+  if (!t) throw new Error('the table no longer exists, or is not this organization\'s');
+  const action = config.action || 'find';
+  if (action === 'find') {
+    const { rows, total } = await listRows(t.id, { q: config.q == null ? '' : String(config.q), limit: config.limit || 20 });
+    return { output: { table: t.name, total, count: rows.length, rows: rows.map(flat), first: rows.length ? flat(rows[0]) : null }, port: 'out' };
+  }
+  const values = fieldsToObject(config.fields, {});
+  if (!Object.keys(values).length) throw new Error('has no values to write');
+  const saved = action === 'update'
+    ? await updateRow(t, String(config.rowId || ''), values, source(ctx))
+    : await addRow(t, values, source(ctx));
+  if (saved.error) throw new Error(`there is no row "${config.rowId}" in ${t.name}`);
+  /* A column name the table does not have, or a value it would not take, is
+     a mistake the author needs to see — not a row quietly saved without it. */
+  const unknown = saved.unknown || [], refused = saved.refused || [];
+  if (!Object.keys(saved.data || {}).length || (action !== 'update' && (unknown.length || refused.length))) {
+    const why = [unknown.length ? `${t.name} has no column called ${unknown.map(x => `"${x}"`).join(', ')}` : '',
+                 refused.length ? refused.map(x => `"${x.value}" is not a ${x.type}, which is what the column "${x.column}" holds`).join('; ') : '']
+      .filter(Boolean).join('; ');
+    if (!Object.keys(saved.data || {}).length) throw new Error(why || 'nothing was written');
+  }
+  return { output: { table: t.name, row: { id: saved.id, ...saved.data }, unknown, refused }, port: 'out' };
+}
+
+/* ─────────────────── AI Chatbot and plain AI ─────────────────── */
+
+async function agent(config, ctx) {
+  const [row] = await sql`select id, data, user_id from agents where id = ${String(config.agentId || '')} and org_id = ${ctx.orgId}`;
+  if (!row) throw new Error('the AI Chatbot no longer exists, or is not this organization\'s');
+  const message = String(config.message ?? '').trim();
+  if (!message) throw new Error('has nothing to ask');
+  const bot = { ...row.data, apiConfig: await resolveAgentApiConfig(row) };
+  const { text } = await runAgentTurn({ agent: bot, agentId: row.id, messages: [{ role: 'user', content: message }], baseUrl: ctx.baseUrl });
+  return { output: { text, chatbot: row.data.name || '' }, port: 'out' };
+}
+
+function parseJsonReply(text) {
+  const body = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+  try { return JSON.parse(body); } catch { /* look for the object inside the words */ }
+  const start = body.search(/[[{]/);
+  const end = Math.max(body.lastIndexOf('}'), body.lastIndexOf(']'));
+  if (start !== -1 && end > start) {
+    try { return JSON.parse(body.slice(start, end + 1)); } catch { /* fall through */ }
+  }
+  throw new Error(`was asked for JSON and the model answered with something else: ${body.slice(0, 200)}`);
+}
+
+/** One prompt to the organization's model, answered as text or as JSON. */
+async function ai(config, ctx) {
+  const cfg = resolveApiConfig(await getUserSettings(ctx.ownerId), null);
+  if (!configUsable(cfg)) throw new Error('the organization has no model key set — add one under Settings');
+  const prompt = String(config.prompt ?? '').trim();
+  if (!prompt) throw new Error('has no prompt');
+  const wantsJson = !!config.json;
+  const system = wantsJson
+    ? 'Answer with a single JSON value and nothing else: no explanation, no code fence.'
+    : 'Answer directly, with no preamble.';
+  const doFetch = ctx.fetch || fetch;
+  let text;
+
+  if (cfg.provider === 'claude') {
+    const model = currentClaudeModel(CLAUDE_MODELS.includes(config.model) ? config.model : cfg.model);
+    const r = await doFetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model, ...claudeRequestShape(model, 4000), system, messages: [{ role: 'user', content: prompt }] }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error((d.error && d.error.message) || `the model answered ${r.status}`);
+    await recordUsage({ userId: ctx.ownerId, model: d.model || model, usage: d.usage, source: 'automation' });
+    if (d.stop_reason === 'refusal') throw new Error('the model declined to answer this');
+    text = claudeText(d);
+  } else {
+    const base = cfg.provider === 'ollama' ? `${cfg.ollamaHost}/v1/chat/completions` : 'https://api.openai.com/v1/chat/completions';
+    const r = await doFetch(base, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(cfg.provider === 'ollama' ? {} : { Authorization: `Bearer ${cfg.apiKey}` }) },
+      body: JSON.stringify({ model: cfg.model, messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }] }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error((d.error && d.error.message) || `the model answered ${r.status}`);
+    text = ((d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content) || '').trim();
+  }
+  return { output: wantsJson ? parseJsonReply(text) : { text }, port: 'out' };
+}
+
+export const CONNECTED_RUNNERS = { whatsapp, approval, email, email_search: emailSearch, table, agent, ai };

@@ -257,7 +257,31 @@ export async function addRow(table, input, writtenBy = 'user') {
     values (${id}, ${table.id}, ${JSON.stringify(data)}::jsonb, ${writtenBy})
   `;
   await sql`update data_tables set updated_at = now() where id = ${table.id}`;
+  await rowAdded(table, { id, data }, writtenBy);
   return { id, data, unknown, refused };
+}
+
+/**
+ * Tells automations a row was added, and gets on with the ones it starts.
+ *
+ * Loaded here rather than at the top: automations use this file to read and
+ * write tables, and the two must not need each other to load. Whatever goes
+ * wrong, the row is already saved and adding it must not fail.
+ */
+async function rowAdded(table, row, writtenBy) {
+  try {
+    if (!table.org_id) return;
+    const { onRowAdded } = await import('./_automationTriggers.js');
+    const runs = await onRowAdded({ table, row, writtenBy });
+    if (!runs.length) return;
+    const [{ workRun }, { waitUntil }] = await Promise.all([import('./_automations.js'), import('@vercel/functions')]);
+    const work = Promise.all(runs.map(id => workRun(id).catch(() => {})));
+    /* Outside a request there is nothing to keep alive; the cron picks the
+       runs up within the minute either way. */
+    try { waitUntil(work); } catch { /* not in a request */ }
+  } catch (err) {
+    console.error('[tables] could not tell automations about a new row:', err.message);
+  }
 }
 
 /** Only the fields passed are touched; the rest of the row stays as it was. */

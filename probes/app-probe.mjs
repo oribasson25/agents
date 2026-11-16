@@ -162,6 +162,7 @@ globalThis.__db = (text, p) => {
   if (t.startsWith('insert into app_repos')) { db.repos.set(p[0], { owner: p[1], repo: p[2], webhook_id: p[3], last_push_sha: p[4] }); return []; }
   if (t.startsWith('update app_repos set last_push_sha')) { db.repos.get(p[1]).last_push_sha = p[0]; return []; }
   if (t.startsWith('select r.agent_id, r.last_push_sha')) return [];
+  if (t.startsWith('select r.automation_id, r.last_push_sha')) return [];
   if (t.startsWith('select r.app_id, r.last_push_sha')) {
     const hit = [...db.repos.entries()].find(([, r]) => r.owner === p[0] && r.repo === p[1]);
     return hit ? [{ app_id: hit[0], last_push_sha: hit[1].last_push_sha, user_id: db.apps.get(hit[0]).user_id }] : [];

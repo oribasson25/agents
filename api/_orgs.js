@@ -172,6 +172,7 @@ export async function removeMember({ orgId, userId, heirId }) {
   await sql`update agents      set user_id = ${heir.id} where user_id = ${userId}`;
   await sql`update data_tables set user_id = ${heir.id} where user_id = ${userId}`;
   await sql`update apps        set user_id = ${heir.id} where user_id = ${userId}`;
+  await sql`update automations set user_id = ${heir.id} where user_id = ${userId}`;
   await sql`update claude_usage set user_id = ${heir.id} where user_id = ${userId}`;
   await sql`delete from users where id = ${userId}`;
   return { id: userId, username: target.username, heir: heir.id };
@@ -193,10 +194,11 @@ export async function deleteOrg(orgId) {
 export async function accessMap(orgId, userId) {
   const target = await memberOf(orgId, userId);
   if (!target) throw fail('No such member.', 'NO_MEMBER', 404);
-  const [agents, tables, apps, grants] = await Promise.all([
+  const [agents, tables, apps, automations, grants] = await Promise.all([
     sql`select id, data->>'name' as name from agents where org_id = ${orgId} order by created_at`,
     sql`select id, name from data_tables where org_id = ${orgId} order by created_at`,
     sql`select id, data->>'name' as name, slug from apps where org_id = ${orgId} order by created_at`,
+    sql`select id, data->>'name' as name from automations where org_id = ${orgId} order by created_at`,
     sql`select kind, item_id, level from access_grants where user_id = ${userId}`,
   ]);
   const grant = new Map(grants.map(g => [`${g.kind}:${g.item_id}`, g.level]));
@@ -208,7 +210,8 @@ export async function accessMap(orgId, userId) {
   };
   return {
     member: { id: target.id, username: target.username, orgRole: target.org_role, orgAccess: target.org_access },
-    items: [...agents.map(shape('agent')), ...tables.map(shape('table')), ...apps.map(shape('app'))],
+    items: [...agents.map(shape('agent')), ...tables.map(shape('table')), ...apps.map(shape('app')),
+            ...automations.map(shape('automation'))],
   };
 }
 
@@ -221,7 +224,9 @@ export async function setGrant({ orgId, userId, kind, itemId, level, grantedBy }
     ? await sql`select id from agents where id = ${itemId} and org_id = ${orgId}`
     : kind === 'table'
       ? await sql`select id from data_tables where id = ${itemId} and org_id = ${orgId}`
-      : await sql`select id from apps where id = ${itemId} and org_id = ${orgId}`;
+      : kind === 'automation'
+        ? await sql`select id from automations where id = ${itemId} and org_id = ${orgId}`
+        : await sql`select id from apps where id = ${itemId} and org_id = ${orgId}`;
   if (!item) throw fail('No such item in this organization.', 'NO_ITEM', 404);
 
   if (level === null) {

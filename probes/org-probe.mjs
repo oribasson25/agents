@@ -139,7 +139,7 @@ globalThis.__db = (text, p) => {
       return [];
     }
   }
-  if (/^update (agents|data_tables|apps|claude_usage) +set user_id/.test(t)) {
+  if (/^update (agents|data_tables|apps|automations|claude_usage) +set user_id/.test(t)) {
     const list = { agents: 'agents', data_tables: 'tables', claude_usage: 'usage' }[t.split(' ')[1]];
     if (list) db[list].filter(r => r.user_id === p[1]).forEach(r => { r.user_id = p[0]; });
     return [];
@@ -148,6 +148,7 @@ globalThis.__db = (text, p) => {
   if (t.startsWith("select id, data->>'name' as name from agents where org_id")) return db.agents.filter(a => a.org_id === p[0]).map(a => ({ id: a.id, name: a.data.name }));
   if (t.startsWith('select id, name from data_tables where org_id')) return db.tables.filter(x => x.org_id === p[0]);
   if (t.startsWith("select id, data->>'name' as name, slug from apps where org_id")) return [];
+  if (t.startsWith("select id, data->>'name' as name from automations where org_id")) return [];
   if (t.startsWith('select kind, item_id, level from access_grants')) return db.grants.filter(g => g.user_id === p[0]);
   if (t.startsWith('select id from agents where id = ? and org_id = ?')) return db.agents.filter(a => a.id === p[0] && a.org_id === p[1]);
   if (t.startsWith('select id from data_tables where id = ? and org_id = ?')) return db.tables.filter(x => x.id === p[0] && x.org_id === p[1]);

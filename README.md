@@ -640,6 +640,78 @@ There is no build step: editing `agentforge.html` and reloading is the whole loo
 page is transformed by Babel in the browser, a JSX syntax error shows up as a blank screen —
 worth transforming the `text/babel` script once before deploying if you changed it heavily.
 
+## Automations
+
+An automation is one trigger and a graph of steps, drawn on a canvas
+(**Automations** in the sidebar) and run by the platform.
+
+- **Triggers**: a manual run, a webhook (`/api/hook/<key>`), or a schedule
+  (every N, a time of day on chosen days, or cron — in the platform's time zone);
+  and the three under "Reaching out" below.
+- **Steps**: Code (Python, the same runner tools use), HTTP request (method,
+  params, headers, auth, body; imports a cURL line), If, Switch, Loop, Wait,
+  Set values, Run automation, Output; and the ones under "Reaching out".
+- **References**: a field reads an earlier step as `{{step_id.field}}`, the
+  trigger as `{{trigger.…}}`, a secret as `{{secrets.NAME}}`, and inside a loop
+  `{{item}}` and `{{index}}`. A field that is nothing but one reference keeps
+  the value's type.
+- **Draft and published**: the canvas edits a draft and saves as you go. Test
+  runs the draft, for real. Triggers fire what was last published, and only
+  while the automation is switched on. Every publish is kept as a version.
+- **Runs**: every firing is kept for 30 days with what each step was given and
+  returned. A Wait longer than a few seconds parks the run; the cron at
+  `/api/cron/automations` carries it on, fires schedules, and picks up a run
+  whose function died.
+- **Secrets** are stored beside the automation, never in its definition, a
+  version or a run log (their values are masked wherever they would appear).
+
+### Reaching out: connections
+
+Three more triggers — a WhatsApp message on a linked number, a new email, a
+new table row — and the steps that go with them: Send WhatsApp, Ask for
+approval (a yes/no on WhatsApp that parks the run until it is answered), Send
+email, Find emails, Table, Ask AI Chatbot and AI.
+
+Mailboxes and WhatsApp numbers are **connections** (`api/_connections.js`,
+migration 031): linked once per organization by its admin, named, and used by
+name. Tokens are encrypted at rest (AES-256-GCM; key from `CONNECTIONS_KEY`,
+else derived from `JWT_SECRET`).
+
+- **Gmail** reuses the Google client and the `/api/gmail/callback` redirect the
+  per-chatbot flow already has on file; the connection flow is told apart by
+  its signed state. It asks for `gmail.send` and `gmail.readonly`.
+- **Microsoft 365** needs `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET`
+  from a multi-tenant app registered in Microsoft Entra, with the redirect
+  `<APP_URL>/api/connections/callback` and delegated `Mail.Send`, `Mail.Read`,
+  `User.Read`, `offline_access`. The steps are in the app under
+  Documentation › Connections.
+- **WhatsApp**: only a number's worker holds its connection, so a step queues
+  the message in `wa_outbox` and the worker sends it a couple of seconds
+  later — one at a time, at most 120 an hour per number.
+
+### As files
+
+`8legs pull --automation <name>` gives `automation.json`, `steps/<id>.py` for
+each Code step, and `layout.json` (`api/_automationFiles.js`). `8legs push`
+replaces the draft, all or nothing; `8legs run` runs it and prints every step;
+`8legs publish` makes it live. An automation's GitHub repository holds what is
+published: a push to `main` that validates is published.
+
+### From elsewhere
+
+A chatbot runs the automations ticked on it (`automation_list`,
+`automation_run` — `api/_automationTools.js`). An app runs the ones linked in
+`app.json`: `legs.automation('name').run(input)`. The platform assistant
+writes, tests and publishes them.
+
+The rules live in `api/_automationSpec.js` (shape, validation, references),
+`api/_automationEngine.js` (the walk) and `api/_automationSteps.js` (what each
+step does); `api/_automations.js` is the database side. `npm run
+probe:automations` checks the first three without a database.
+
+The HTTP step refuses addresses inside the platform's own network, resolving
+the name and checking each redirect.
+
 ## Scheduled work
 
 `vercel.json` registers two daily crons that re-crawl every agent's configured sites, and raises

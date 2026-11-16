@@ -21,7 +21,7 @@
 import { agentVersion, extrasOf, compact, json, parseJson } from './_agentFiles.js';
 
 const SERVER_OWNED = ['slug', 'access', 'createdAt'];
-const MAPPED = new Set(['id', 'name', 'description', 'entry', 'agents', 'tables', 'files', ...SERVER_OWNED]);
+const MAPPED = new Set(['id', 'name', 'description', 'entry', 'agents', 'tables', 'automations', 'files', ...SERVER_OWNED]);
 
 /* Files the platform writes into the folder; an app cannot have its own. */
 const GENERATED = new Set(['app.json', 'AGENTS.md', 'CLAUDE.md', '.gitignore']);
@@ -84,6 +84,9 @@ export function appToFiles(app) {
     entry: app.entry || 'index.html',
     agents: app.agents || {},
     tables: app.tables || {},
+    /* Left out of app.json until an app links one, so an app that never did
+       reads exactly as it always has. */
+    ...(Object.keys(app.automations || {}).length ? { automations: app.automations } : {}),
     extras: extrasOf(app, MAPPED),
   }));
   files['.gitignore'] = ['.8legs/', 'node_modules/', '*.log', '.DS_Store', ''].join('\n');
@@ -124,6 +127,7 @@ export function filesToApp(files, existing = {}) {
 
   const agents = checkLinks(config.agents, 'agents', errors);
   const tables = checkLinks(config.tables, 'tables', errors);
+  const automations = checkLinks(config.automations, 'automations', errors);
 
   if (errors.length) return { app: null, errors };
 
@@ -134,6 +138,7 @@ export function filesToApp(files, existing = {}) {
     entry,
     agents,
     tables,
+    ...(Object.keys(automations).length ? { automations } : {}),
     files: own,
     ...(config.extras || {}),
   });
@@ -257,13 +262,16 @@ const { rows, total, columns } = await leads.rows({ q: '', limit: 100 });
 await leads.add({ name: 'Dana' });
 await leads.update(rowId, { status: 'won' });
 await leads.remove(rowId);
+
+const result = await legs.automation('new_lead').run({ name: 'Dana' });  // what its Output returned
 \`\`\`
 
 Link them in \`app.json\` by the name your code will use:
 
 \`\`\`json
 "agents": { "support": "<agent id>" },
-"tables": { "leads": "<table id>", "prices": { "id": "<table id>", "readonly": true } }
+"tables": { "leads": "<table id>", "prices": { "id": "<table id>", "readonly": true } },
+"automations": { "new_lead": "<automation id>" }
 \`\`\`
 
 ## Rules

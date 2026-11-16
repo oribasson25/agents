@@ -47,6 +47,8 @@ function fileFor(route) {
       return;
     }
     build(i + 1, [...acc, parts[i]]);
+    /* An automation's verbs (publish, run, versions…) share one handler. */
+    if (i === parts.length - 1 && parts[i] !== ':id') build(i + 1, [...acc, '[action]']);
     if (parts[i] === ':id') build(i + 1, [...acc, '[id]']);
     if (parts[i] === ':id') build(i + 1, [...acc, '[agentId]']);
   };

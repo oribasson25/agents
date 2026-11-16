@@ -205,6 +205,16 @@ export function verifyWebhook(rawBody, signature, secret) {
  * every step of the git flow; the only difference is which table remembers it.
  */
 function repoStore(kind, sql) {
+  if (kind === 'automation') return {
+    get: (id) => sql`select owner, repo, webhook_id from automation_repos where automation_id = ${id}`,
+    setHook: (id, hook) => sql`update automation_repos set webhook_id = ${hook} where automation_id = ${id}`,
+    insert: (id, m, sha) => sql`
+      insert into automation_repos (automation_id, owner, repo, webhook_id, last_push_sha)
+      values (${id}, ${m.owner}, ${m.repo}, ${m.webhookId}, ${sha})
+      on conflict (automation_id) do nothing
+    `,
+    setSha: (id, sha) => sql`update automation_repos set last_push_sha = ${sha} where automation_id = ${id}`,
+  };
   if (kind === 'app') return {
     get: (id) => sql`select owner, repo, webhook_id from app_repos where app_id = ${id}`,
     setHook: (id, hook) => sql`update app_repos set webhook_id = ${hook} where app_id = ${id}`,
