@@ -105,9 +105,7 @@ export class WhatsApp extends EventEmitter {
         }
         this.log.warn({ code, err: lastDisconnect?.error?.message }, 'connection closed, reconnecting');
         this.#setState({ status: 'connecting', error: lastDisconnect?.error?.message || null });
-        setTimeout(() => {
-          if (!this.#stopping) this.start().catch((err) => this.log.error(err, 'restart failed'));
-        }, 2000);
+        this.#reconnect(2000);
       }
     });
 
@@ -227,6 +225,22 @@ export class WhatsApp extends EventEmitter {
   #setState(patch) {
     this.state = { ...this.state, ...patch };
     this.emit('state', this.state);
+  }
+
+  /**
+   * Opens a new socket after `delayMs`. A failed attempt (the database not
+   * answering while the keys load, say) is tried again, backing off to 30s,
+   * until one starts or the session stops: one failure used to leave the
+   * number offline until the session handed over, up to 12 minutes later.
+   */
+  #reconnect(delayMs) {
+    setTimeout(() => {
+      if (this.#stopping) return;
+      this.start().catch((err) => {
+        this.log.error({ err: err.message }, 'restart failed, trying again');
+        this.#reconnect(Math.min(delayMs * 2, 30_000));
+      });
+    }, delayMs);
   }
 
   /**

@@ -6,7 +6,14 @@ import { pruneGroups } from '../_waGroups.js';
  * Every minute: make sure each linked number has a worker session holding its
  * connection. Sessions normally chain one into the next on their own; this is
  * the safety net that brings a number back within a minute or two if a chain
- * breaks. A number nobody linked yet only runs while an admin has its QR open.
+ * breaks (a crash, a socket WhatsApp closed for good, a session cut off at
+ * maxDuration once its lease runs out), with nobody signed in. A number
+ * nobody linked yet only runs while an admin has its QR open; a disabled or
+ * unlinked number is left alone.
+ *
+ * This request's own host is the deployment URL, which does not reach a
+ * worker (Deployment Protection); kickWorker goes through the public address
+ * the number's last worker published instead.
  */
 export default async function handler(req, res) {
   if (!workerAuthorized(req)) return res.status(401).json({ error: 'unauthorized' });

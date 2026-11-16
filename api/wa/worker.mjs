@@ -1,5 +1,5 @@
 import { waitUntil } from '@vercel/functions';
-import { kickWorker, workerAuthorized } from '../_waControl.js';
+import { kickWorker, publicHost, workerAuthorized } from '../_waControl.js';
 import { runSession } from '../_waSession.mjs';
 
 // Must match "api/wa/worker.mjs".maxDuration in vercel.json.
@@ -30,10 +30,11 @@ export default function handler(req, res) {
   // The host this call reached, as the widget and the webhook use: one that
   // reaches this deployment from inside Vercel. The bare production domain
   // does not ("fetch failed"), for agent tools and for the next kick alike.
+  // The session publishes it, so the cron can start the next worker there.
   const host = req.headers.host || process.env.VERCEL_PROJECT_PRODUCTION_URL;
   const deadline = Date.now() + MAX_DURATION_S * 1000 - RESERVE_MS;
   waitUntil(
-    runSession({ numberId, deadline, baseUrl: `https://${host}` })
+    runSession({ numberId, deadline, baseUrl: `https://${host}`, host: publicHost(host) })
       .then(async (result) => {
         console.log(`[wa ${numberId}] session ended: ${result}`);
         if (result === 'done') await kickWorker(numberId, { via: host });

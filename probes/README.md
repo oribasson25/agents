@@ -13,6 +13,7 @@ blank screen, and a bug in `_agentFiles.js` deletes fields from a live agent.
 | `github-probe.mjs` | git as a real remote, and every push it must refuse |
 | `app-probe.mjs` | an app survives files and back; pull, push, git, versions, serving and its runtime |
 | `org-probe.mjs` | who in an organization may see and change what, Team, Jarvis per organization, passwords |
+| `wa-reconnect-probe.mjs` | a linked WhatsApp number comes back by itself (crash, socket closed, cut off at maxDuration) through the cron alone; never two connections; never re-links an unlinked or disabled number |
 | `check-jsx.mjs` | agentforge.html compiles |
 | `render-probe.mjs` | its new components actually render |
 
