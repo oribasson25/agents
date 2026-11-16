@@ -14328,6 +14328,13 @@ npm run migrate            # run it`}</Block>
     limited:   ['Held back by a limit', 'draft'],
     error:     ['Error', 'danger'],
     knowledge: ['Learned the group', 'skills'],
+    poll:      ['Posted a poll', 'live'],
+    scheduled: ['Sent on schedule', 'tools'],
+    birthday:  ['Congratulated', 'tools'],
+    holiday:   ['Holiday greeting', 'tools'],
+    shabbat:   ['Shabbat greeting', 'tools'],
+    welcome:   ['Welcomed', 'teal'],
+    skipped:   ['Skipped', 'draft'],
   };
 
   /*
@@ -14786,7 +14793,513 @@ npm run migrate            # run it`}</Block>
     );
   }
 
-  /** One WhatsApp group of a linked number: how it takes part, who speaks, and what it did. */
+  /*
+   * Reads a spreadsheet of birthdays in the browser (.xlsx, .xls or .csv) and
+   * turns its rows into dates. The file never reaches the server; only the
+   * names and dates it holds do.
+   */
+  const DateSheet = {
+    lib: null,
+    load() {
+      if (window.XLSX) return Promise.resolve(window.XLSX);
+      if (!this.lib) {
+        this.lib = new Promise((resolve, reject) => {
+          // Monaco's AMD loader is on the page; hide it so the library registers as a plain global.
+          const amd = window.define;
+          window.define = undefined;
+          const s = document.createElement('script');
+          s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+          s.onload = () => { window.define = amd; window.XLSX ? resolve(window.XLSX) : reject(new Error('The spreadsheet reader did not load.')); };
+          s.onerror = () => { window.define = amd; this.lib = null; reject(new Error('The spreadsheet reader could not be downloaded. Check the connection and try again.')); };
+          document.head.appendChild(s);
+        });
+      }
+      return this.lib;
+    },
+    /** The first sheet as rows of cells (strings, numbers and Dates), empty rows dropped. */
+    async read(file) {
+      const XLSX = await this.load();
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      if (!ws) throw new Error('The file has no sheet.');
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' })
+        .map((r, i) => ({ n: i + 1, cells: r }))
+        .filter(r => r.cells.some(c => String(c ?? '').trim() !== ''));
+      if (!rows.length) throw new Error('The sheet is empty.');
+      return rows;
+    },
+    /** { day, month, year } from a cell: a real date, or text written day first ("5.3.1990", "05/03", "1990-03-05"). */
+    parseDate(v) {
+      if (v instanceof Date && !isNaN(v)) {
+        const d = new Date(v.getTime() + 12 * 3600 * 1000); // spreadsheet dates sit at midnight, give or take a time zone
+        return { day: d.getUTCDate(), month: d.getUTCMonth() + 1, year: d.getUTCFullYear() };
+      }
+      const s = String(v ?? '').trim();
+      let m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s);
+      if (m) return this.check(+m[3], +m[2], +m[1]);
+      m = /^(\d{1,2})\s*[./\-]\s*(\d{1,2})(?:\s*[./\-]\s*(\d{2}|\d{4}))?$/.exec(s);
+      if (!m) return null;
+      let year = m[3] ? +m[3] : null;
+      if (year !== null && year < 100) year += year > new Date().getFullYear() % 100 ? 1900 : 2000;
+      return this.check(+m[1], +m[2], year);
+    },
+    check(day, month, year) {
+      if (!(month >= 1 && month <= 12) || !(day >= 1 && day <= new Date(Date.UTC(2024, month, 0)).getUTCDate())) return null;
+      const thisYear = new Date().getFullYear();
+      return { day, month, year: year && year >= 1900 && year <= thisYear ? year : null };
+    },
+    /** Which columns hold what, guessed from the headings and from what the cells look like. */
+    guess(rows) {
+      const width = Math.max(...rows.map(r => r.cells.length));
+      const head = rows[0].cells.map(c => String(c ?? '').trim().toLowerCase());
+      const header = !rows[0].cells.some(c => this.parseDate(c));
+      const body = header ? rows.slice(1) : rows;
+      const share = (col, test) => body.length ? body.filter(r => test(r.cells[col])).length / body.length : 0;
+      const byHead = (re) => (header ? head.findIndex(h => re.test(h)) : -1);
+      const cols = [...Array(width).keys()];
+      let date = byHead(/date|birth|תאריך|לידה|הולדת/);
+      if (date < 0 || share(date, c => this.parseDate(c)) < 0.5) date = cols.find(c => share(c, v => this.parseDate(v)) >= 0.5) ?? -1;
+      const isPhone = (v) => { const d = String(v ?? '').replace(/\D/g, ''); return d.length >= 9 && d.length <= 15 && !this.parseDate(v); };
+      let phone = byHead(/phone|mobile|cell|טלפון|נייד|סלולרי|פלאפון/);
+      if (phone < 0) phone = cols.find(c => c !== date && share(c, isPhone) >= 0.5) ?? -1;
+      let name = byHead(/name|שם/);
+      if (name < 0 || name === date) name = cols.find(c => c !== date && c !== phone && share(c, v => /\p{L}/u.test(String(v ?? ''))) >= 0.5) ?? -1;
+      // First name and family name in two columns: use both.
+      let name2 = -1;
+      if (header && name >= 0) {
+        const first = /first|פרטי/.test(head[name]);
+        name2 = first ? head.findIndex((h, i) => i !== name && /last|family|surname|משפחה/.test(h)) : -1;
+      }
+      const note = byHead(/note|remark|הערה|הערות/);
+      return { header, name, name2, date, phone, note, width };
+    },
+    /** Rows ready to save, and the ones that could not be read. */
+    build(rows, map) {
+      const good = [], bad = [];
+      for (const r of map.header ? rows.slice(1) : rows) {
+        const cell = (i) => (i >= 0 ? String(r.cells[i] ?? '').trim() : '');
+        const name = [cell(map.name), cell(map.name2)].filter(Boolean).join(' ');
+        const d = map.date >= 0 ? this.parseDate(r.cells[map.date]) : null;
+        if (!name && !d) continue;
+        if (!name) { bad.push({ row: r.n, error: 'no name' }); continue; }
+        if (!d) { bad.push({ row: r.n, error: `${name}: the date could not be read` }); continue; }
+        good.push({ row: r.n, name, ...d, phone: cell(map.phone), note: cell(map.note) });
+      }
+      return { good, bad };
+    },
+  };
+
+  const JV_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const JV_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const JV_SCHEDULE_KINDS = [
+    { id: 'text', label: 'Fixed text', chip: 'neutral', hint: 'Sent exactly as written.' },
+    { id: 'ai', label: 'Writes it itself', chip: 'tools', hint: 'You say what it is about; it writes a fresh message each time, in the group’s style.' },
+    { id: 'summary', label: 'Recap', chip: 'skills', hint: 'What was said in the group since the last recap.' },
+    { id: 'poll', label: 'Poll', chip: 'teal', hint: 'A WhatsApp poll people answer with a tap.' },
+  ];
+  const jvScheduleKind = (id) => JV_SCHEDULE_KINDS.find(k => k.id === id) || JV_SCHEDULE_KINDS[0];
+  const jvOrdinal = (n) => `${n}${n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th'}`;
+
+  /** "Every Thu at 18:00" */
+  function jvScheduleWhen(s) {
+    if (s.repeat === 'once') {
+      const [y, m, d] = String(s.onDate || '').split('-').map(Number);
+      return y ? `${d} ${JV_MONTHS[m - 1]} ${y} at ${s.atTime}` : `Once at ${s.atTime}`;
+    }
+    if (s.repeat === 'daily') return `Every day at ${s.atTime}`;
+    if (s.repeat === 'weekly') return `Every ${s.weekdays.map(d => JV_WEEKDAYS[d]).join(', ')} at ${s.atTime}`;
+    return `On the ${jvOrdinal(s.monthDay)} of every month at ${s.atTime}`;
+  }
+  function jvWhenNext(at) {
+    if (!at) return null;
+    const d = new Date(at);
+    const days = Math.round((new Date(d).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86400000);
+    const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    if (days === 0) return `today ${time}`;
+    if (days === 1) return `tomorrow ${time}`;
+    return `${d.toLocaleDateString([], { day: 'numeric', month: 'short' })} ${time}`;
+  }
+  const jvTodayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  const jvInline = { width: 'auto', minWidth: 0 };
+  const jvNote = { fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.55 };
+
+  /** Scheduled messages and one-time reminders of one group. */
+  function JarvisGroupSchedules({ numberId, jid, g, onChanged }) {
+    const blank = { title: '', kind: 'text', body: '', pollText: '', repeat: 'once', onDate: jvTodayIso(), atTime: '09:00', weekdays: [], monthDay: 1 };
+    const [form, setForm] = useState(null);     // the draft being added or edited ({ id } when editing)
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const [confirm, setConfirm] = useState(null);
+    const base = `/api/admin/jarvis/group-schedules?numberId=${encodeURIComponent(numberId)}&jid=${encodeURIComponent(jid)}`;
+    const off = g.mode === 'off';
+
+    async function call(path, opts) {
+      setBusy(true); setError(null);
+      try { await jarvisApi(base + path, opts); await onChanged(); return true; }
+      catch (e) { setError(e.message); return false; }
+      finally { setBusy(false); }
+    }
+    async function save() {
+      const body = {
+        title: form.title, kind: form.kind, body: form.body, repeat: form.repeat, atTime: form.atTime,
+        onDate: form.onDate, weekdays: form.weekdays, monthDay: Number(form.monthDay),
+        pollOptions: form.pollText.split('\n').map(s => s.trim()).filter(Boolean),
+      };
+      const ok = form.id
+        ? await call(`&id=${form.id}`, { method: 'PATCH', body })
+        : await call('', { method: 'POST', body });
+      if (ok) setForm(null);
+    }
+    const edit = (s) => { setError(null); setForm({ ...blank, ...s, onDate: s.onDate || jvTodayIso(), monthDay: s.monthDay || 1, pollText: (s.pollOptions || []).join('\n') }); };
+    const set = (patch) => setForm(f => ({ ...f, ...patch }));
+    const kind = form && jvScheduleKind(form.kind);
+    const bodyLabel = { text: 'Message', ai: 'What it should write about', summary: 'Anything to focus on (optional)', poll: 'Question' };
+    const bodyHolder = {
+      text: 'Reminder: team meeting tomorrow at 10:00. @everyone',
+      ai: 'A reminder to send the weekly report by noon, with a bit of humor',
+      summary: 'Only decisions and open tasks',
+      poll: 'Who is coming on Thursday?',
+    };
+
+    return (
+      <section style={{ ...jvCard, padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h2 style={jvH2}>Scheduled messages and reminders</h2>
+            <div style={jvSub}>What it sends to the group on its own, once or on a repeat. Times are in {g.timezone}.</div>
+          </div>
+          {!form && <Btn size="sm" variant="primary" onClick={() => { setError(null); setForm(blank); }}>Add a message</Btn>}
+        </div>
+        {off && g.schedules.length > 0 && <div style={{ ...jvNote, color: 'var(--warning)' }}>The group is switched off, so nothing is sent. Choose how it takes part above to start.</div>}
+
+        {g.schedules.length === 0 && !form && <div style={jvNote}>Nothing scheduled yet. Add a reminder for a date, a message for every Sunday morning, a weekly recap or a poll.</div>}
+
+        {g.schedules.map(s => {
+          const k = jvScheduleKind(s.kind);
+          const done = !s.nextRunAt;
+          return (
+            <div key={s.id} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '12px 14px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--bg-panel)', opacity: s.enabled && !done ? 1 : 0.65 }}>
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <Chip tone={k.chip}>{k.label}</Chip>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>{jvScheduleWhen(s)}</span>
+                </div>
+                {(s.title || s.body) && <div dir="auto" style={{ fontSize: 13, color: 'var(--text)', whiteSpace: 'pre-wrap', textAlign: 'start', overflowWrap: 'anywhere' }}>
+                  {s.title ? <strong>{s.title}{s.body ? ': ' : ''}</strong> : null}{s.body.length > 220 ? s.body.slice(0, 220) + '…' : s.body}
+                </div>}
+                {s.kind === 'poll' && <div dir="auto" style={{ fontSize: 12, color: 'var(--text-2)', textAlign: 'start' }}>{s.pollOptions.join(' · ')}</div>}
+                <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                  {s.sending ? 'Sending now…' : done ? 'Finished' : !s.enabled ? 'Paused' : `Next: ${jvWhenNext(s.nextRunAt)}`}
+                  {s.lastStatus ? <> · Last time: <span style={{ color: /^(Failed|Skipped)/.test(s.lastStatus) ? 'var(--warning)' : 'inherit' }}>{s.lastStatus}</span> ({jvAgo(s.lastRunAt)})</> : null}
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                {!done && <JvToggle on={s.enabled} label={s.enabled ? 'Pause' : 'Resume'} disabled={busy} onChange={v => call(`&id=${s.id}`, { method: 'PATCH', body: { enabled: v } })} />}
+                <Btn size="sm" disabled={busy || off || s.sending} title={off ? 'The group is switched off' : 'Send it to the group now, once'} onClick={() => setConfirm(s)}>Send now</Btn>
+                <Btn size="sm" disabled={busy} onClick={() => edit(s)}>Edit</Btn>
+                <Btn size="sm" danger disabled={busy} onClick={() => call(`&id=${s.id}`, { method: 'DELETE' })}>Delete</Btn>
+              </div>
+            </div>
+          );
+        })}
+
+        {form && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 16, borderRadius: 12, border: '1.5px solid var(--primary)', background: 'rgba(239,159,39,0.04)' }}>
+            <div style={{ fontSize: 13.5, fontWeight: 700 }}>{form.id ? 'Edit the message' : 'A new message'}</div>
+            <div>
+              <SegTabs value={form.kind} onChange={v => set({ kind: v })} items={JV_SCHEDULE_KINDS.map(k => ({ id: k.id, label: k.label }))} />
+              <div style={{ ...jvNote, marginTop: 6 }}>{kind.hint}</div>
+            </div>
+            <div className="field-group" style={{ marginBottom: 0 }}>
+              <label className="field-label" htmlFor="jvs-body">{bodyLabel[form.kind]}</label>
+              <textarea id="jvs-body" dir="auto" rows={form.kind === 'poll' ? 2 : 4} value={form.body} placeholder={bodyHolder[form.kind]} onChange={e => set({ body: e.target.value })} />
+              {(form.kind === 'text' || form.kind === 'ai') && <div style={jvNote}>Write @ and a member’s name to tag them, or @everyone to tag the whole group.</div>}
+            </div>
+            {form.kind === 'poll' && (
+              <div className="field-group" style={{ marginBottom: 0 }}>
+                <label className="field-label" htmlFor="jvs-poll">Answers, one on each line</label>
+                <textarea id="jvs-poll" dir="auto" rows={4} value={form.pollText} placeholder={'Coming\nNot coming\nMaybe'} onChange={e => set({ pollText: e.target.value })} />
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <SegTabs value={form.repeat} onChange={v => set({ repeat: v })}
+                items={[{ id: 'once', label: 'Once' }, { id: 'daily', label: 'Every day' }, { id: 'weekly', label: 'Every week' }, { id: 'monthly', label: 'Every month' }]} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 13 }}>
+                {form.repeat === 'once' && <><span>On</span><input type="date" aria-label="Day" style={jvInline} value={form.onDate} min={jvTodayIso()} onChange={e => set({ onDate: e.target.value })} /></>}
+                {form.repeat === 'weekly' && <span style={{ display: 'inline-flex', gap: 5, flexWrap: 'wrap' }}>
+                  {JV_WEEKDAYS.map((d, i) => {
+                    const on = form.weekdays.includes(i);
+                    return <button key={d} aria-pressed={on} onClick={() => set({ weekdays: on ? form.weekdays.filter(x => x !== i) : [...form.weekdays, i].sort() })}
+                      style={{ padding: '6px 10px', borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', color: on ? '#0a0a0a' : 'var(--text-2)',
+                        background: on ? 'var(--primary)' : 'var(--bg-card)', border: `1px solid ${on ? 'var(--primary)' : 'var(--border)'}` }}>{d}</button>;
+                  })}
+                </span>}
+                {form.repeat === 'monthly' && <><span>On day</span><input type="number" aria-label="Day of the month" min={1} max={31} style={{ ...jvInline, width: 72 }} value={form.monthDay} onChange={e => set({ monthDay: e.target.value })} /></>}
+                <span>at</span>
+                <input type="time" aria-label="Time" style={jvInline} value={form.atTime} onChange={e => set({ atTime: e.target.value })} />
+              </div>
+            </div>
+            <div className="field-group" style={{ marginBottom: 0 }}>
+              <label className="field-label" htmlFor="jvs-title">Name (optional, only you see it)</label>
+              <input id="jvs-title" dir="auto" value={form.title} maxLength={80} placeholder="Weekly meeting reminder" onChange={e => set({ title: e.target.value })} />
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <Btn size="sm" onClick={() => { setForm(null); setError(null); }} disabled={busy}>Cancel</Btn>
+              <Btn size="sm" variant="primary" onClick={save} disabled={busy}>{form.id ? 'Save' : 'Schedule it'}</Btn>
+            </div>
+          </div>
+        )}
+        <JvError error={error} />
+        {confirm && <ConfirmDialog title="Send it to the group now?"
+          body={`“${(confirm.title || confirm.body || jvScheduleKind(confirm.kind).label).slice(0, 120)}” goes out to ${g.name || 'the group'} within half a minute. Its schedule stays as it is.`}
+          confirmLabel="Send now" busy={busy} onCancel={() => setConfirm(null)}
+          onConfirm={async () => { const s = confirm; setConfirm(null); await call(`&id=${s.id}`, { method: 'POST', body: { action: 'send' } }); }} />}
+      </section>
+    );
+  }
+
+  /** A group's birthdays and yearly dates: the list, the spreadsheet import, and how it congratulates. */
+  function JarvisGroupDates({ numberId, jid, g, onChanged, saveProactive }) {
+    const [sheet, setSheet] = useState(null);     // { fileName, rows, map, hebrew, replace } while a file is being mapped
+    const [adding, setAdding] = useState(null);   // the one-date form
+    const [result, setResult] = useState(null);   // what the last import did
+    const [fixed, setFixed] = useState(null);     // draft of the fixed greeting
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const [filter, setFilter] = useState('');
+    const fileRef = React.useRef(null);
+    const base = `/api/admin/jarvis/group-dates?numberId=${encodeURIComponent(numberId)}&jid=${encodeURIComponent(jid)}`;
+    const cfg = g.proactive.birthdays;
+
+    async function pick(file) {
+      setError(null); setResult(null); setBusy(true);
+      try {
+        const rows = await DateSheet.read(file);
+        const map = DateSheet.guess(rows);
+        setSheet({ fileName: file.name, rows, map, hebrew: false, replace: false });
+      } catch (e) { setError(e.message); }
+      finally { setBusy(false); }
+    }
+    async function call(path, opts) {
+      setBusy(true); setError(null);
+      try { const d = await jarvisApi(base + path, opts); await onChanged(); return d; }
+      catch (e) { setError(e.message); return null; }
+      finally { setBusy(false); }
+    }
+    async function importSheet() {
+      const { good, bad } = DateSheet.build(sheet.rows, sheet.map);
+      const rows = good.map(r => ({ ...r, kind: 'birthday', hebrew: sheet.hebrew && !!r.year }));
+      const d = await call('', { method: 'POST', body: { rows, replace: sheet.replace } });
+      if (d) { setResult({ added: d.added, duplicates: d.duplicates, skipped: [...bad, ...(d.skipped || [])] }); setSheet(null); }
+    }
+    async function addOne() {
+      const [y, m, d] = adding.date.split('-').map(Number);
+      if (!y) return setError('Choose the date.');
+      const ok = await call('', { method: 'POST', body: { name: adding.name, day: d, month: m, year: adding.noYear ? null : y, phone: adding.phone, kind: adding.kind, label: adding.label, hebrew: adding.hebrew && !adding.noYear } });
+      if (ok) setAdding(null);
+    }
+
+    const built = sheet ? DateSheet.build(sheet.rows, sheet.map) : null;
+    const colName = (i) => {
+      const h = sheet.map.header ? String(sheet.rows[0].cells[i] ?? '').trim() : '';
+      return h || `Column ${String.fromCharCode(65 + (i % 26))}`;
+    };
+    const colSelect = (key, label, optional) => (
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, fontWeight: 600, flex: '1 1 130px', minWidth: 0 }}>
+        {label}
+        <select dir="auto" value={sheet.map[key]} onChange={e => setSheet(s => ({ ...s, map: { ...s.map, [key]: Number(e.target.value) } }))}>
+          {(optional || sheet.map[key] < 0) && <option value={-1}>{optional ? 'None' : 'Choose…'}</option>}
+          {[...Array(sheet.map.width).keys()].map(i => <option key={i} value={i}>{colName(i)}</option>)}
+        </select>
+      </label>
+    );
+    const shown = g.dates.filter(d => !filter.trim() || d.name.toLowerCase().includes(filter.trim().toLowerCase()));
+    const check = (label, on, onChange, hint) => (
+      <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5, cursor: 'pointer' }}>
+        <input type="checkbox" checked={!!on} onChange={e => onChange(e.target.checked)} style={{ width: 'auto', marginTop: 2 }} />
+        <span>{label}{hint && <span style={{ display: 'block', ...jvNote }}>{hint}</span>}</span>
+      </label>
+    );
+
+    return (
+      <section style={{ ...jvCard, padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h2 style={jvH2}>Birthdays and dates</h2>
+            <div style={jvSub}>{g.dates.length ? `${g.dates.length} on the list. ` : ''}On the day, it congratulates in the group and tags the person when their phone is on the list.</div>
+          </div>
+          <JvToggle on={cfg.on} label="Congratulate on the day" disabled={busy} onChange={v => saveProactive({ birthdays: { on: v } })} />
+        </div>
+
+        {cfg.on && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 14, borderBottom: '1px solid var(--bg-hover)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 13 }}>
+              <span>Every day at</span>
+              <input type="time" aria-label="Greeting time" style={jvInline} value={cfg.time} onChange={e => e.target.value && saveProactive({ birthdays: { time: e.target.value } })} />
+              <SegTabs value={cfg.mode} onChange={v => (v === 'fixed' && !cfg.text.trim() ? setFixed('') : saveProactive({ birthdays: { mode: v } }))}
+                items={[{ id: 'ai', label: 'Writes its own greeting' }, { id: 'fixed', label: 'Fixed greeting' }]} />
+            </div>
+            {(cfg.mode === 'fixed' || fixed !== null) && (
+              <div className="field-group" style={{ marginBottom: 0 }}>
+                <textarea dir="auto" rows={2} aria-label="Fixed greeting" value={fixed ?? cfg.text} placeholder="🎂 Happy birthday {name}!" onChange={e => setFixed(e.target.value)} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ ...jvNote, flex: 1 }}>{'{name}'} becomes the person (tagged when possible), {'{age}'} their age when the year is known.</span>
+                  {fixed !== null && <>
+                    <Btn size="sm" onClick={() => setFixed(null)}>Discard</Btn>
+                    <Btn size="sm" variant="primary" disabled={busy || !fixed.trim()} onClick={async () => { if (await saveProactive({ birthdays: { mode: 'fixed', text: fixed } })) setFixed(null); }}>Save greeting</Btn>
+                  </>}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" style={{ display: 'none' }}
+          onChange={e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) pick(f); }} />
+        {!sheet && !adding && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <Btn size="sm" variant={g.dates.length ? 'ghost' : 'primary'} disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}>Upload Excel or CSV</Btn>
+            <Btn size="sm" disabled={busy} onClick={() => { setError(null); setAdding({ name: '', date: '', phone: '', kind: 'birthday', label: '', hebrew: false, noYear: false }); }}>Add one</Btn>
+            <span style={{ ...jvNote, flex: '1 1 220px' }}>A sheet with a name and a date in each row; a phone column lets it tag people. The file is read in this browser.</span>
+          </div>
+        )}
+
+        {sheet && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 16, borderRadius: 12, border: '1.5px solid var(--primary)', background: 'rgba(239,159,39,0.04)' }}>
+            <div dir="auto" style={{ fontSize: 13.5, fontWeight: 700 }}>{sheet.fileName}</div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              {colSelect('name', 'Name')}
+              {colSelect('name2', 'Family name', true)}
+              {colSelect('date', 'Date')}
+              {colSelect('phone', 'Phone', true)}
+              {colSelect('note', 'Note', true)}
+            </div>
+            {check('The first row is headings', sheet.map.header, v => setSheet(s => ({ ...s, map: { ...s.map, header: v } })))}
+            {check('Celebrate by the Hebrew date', sheet.hebrew, v => setSheet(s => ({ ...s, hebrew: v })), 'For rows that have the year of birth. The rest stay on the civil date.')}
+            {g.dates.length > 0 && check(`Replace the ${g.dates.length} dates already on the list`, sheet.replace, v => setSheet(s => ({ ...s, replace: v })), 'Otherwise the new rows are added, and people already on the list are not doubled.')}
+            <div style={{ fontSize: 12.5, color: 'var(--text-2)' }}>
+              <strong>{built.good.length}</strong> {built.good.length === 1 ? 'date' : 'dates'} ready
+              {built.bad.length > 0 && <span style={{ color: 'var(--warning)' }}> · {built.bad.length} {built.bad.length === 1 ? 'row' : 'rows'} cannot be read (row {built.bad.slice(0, 8).map(b => b.row).join(', ')}{built.bad.length > 8 ? '…' : ''})</span>}
+            </div>
+            {built.good.length > 0 && (
+              <div dir="auto" style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.7 }}>
+                {built.good.slice(0, 4).map(r => `${r.name} · ${r.day} ${JV_MONTHS[r.month - 1]}${r.year ? ' ' + r.year : ''}${r.phone ? ' · ' + r.phone : ''}`).join('  |  ')}{built.good.length > 4 ? '  …' : ''}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <Btn size="sm" onClick={() => setSheet(null)} disabled={busy}>Cancel</Btn>
+              <Btn size="sm" variant="primary" onClick={importSheet} disabled={busy || !built.good.length}>{busy ? 'Saving…' : `Add ${built.good.length} ${built.good.length === 1 ? 'date' : 'dates'}`}</Btn>
+            </div>
+          </div>
+        )}
+
+        {adding && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 16, borderRadius: 12, border: '1.5px solid var(--primary)', background: 'rgba(239,159,39,0.04)' }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <input dir="auto" aria-label="Name" placeholder="Name" style={{ flex: '2 1 160px', minWidth: 0 }} value={adding.name} onChange={e => setAdding(a => ({ ...a, name: e.target.value }))} />
+              <input type="date" aria-label="Date" style={{ flex: '1 1 140px', minWidth: 0 }} value={adding.date} max={jvTodayIso()} onChange={e => setAdding(a => ({ ...a, date: e.target.value }))} />
+              <input dir="ltr" aria-label="Phone" placeholder="Phone (optional)" style={{ flex: '1 1 140px', minWidth: 0 }} value={adding.phone} onChange={e => setAdding(a => ({ ...a, phone: e.target.value }))} />
+            </div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              <SegTabs value={adding.kind} onChange={v => setAdding(a => ({ ...a, kind: v }))} items={[{ id: 'birthday', label: 'Birthday' }, { id: 'anniversary', label: 'Anniversary' }, { id: 'other', label: 'Other' }]} />
+              {adding.kind === 'other' && <input dir="auto" aria-label="What the day is" placeholder="What the day is" style={{ flex: '1 1 160px', minWidth: 0 }} value={adding.label} onChange={e => setAdding(a => ({ ...a, label: e.target.value }))} />}
+            </div>
+            {check('The year is not known', adding.noYear, v => setAdding(a => ({ ...a, noYear: v })), 'Only the day and month of the date above are used.')}
+            {!adding.noYear && check('Celebrate by the Hebrew date', adding.hebrew, v => setAdding(a => ({ ...a, hebrew: v })))}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <Btn size="sm" onClick={() => { setAdding(null); setError(null); }} disabled={busy}>Cancel</Btn>
+              <Btn size="sm" variant="primary" onClick={addOne} disabled={busy || !adding.name.trim() || !adding.date}>Add</Btn>
+            </div>
+          </div>
+        )}
+
+        {result && (
+          <div style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.6 }}>
+            Added {result.added}{result.duplicates ? `, ${result.duplicates} were already on the list` : ''}.
+            {result.skipped.length > 0 && <div style={{ color: 'var(--warning)' }}>Not added: {result.skipped.slice(0, 6).map(s => `row ${s.row} (${s.error})`).join('; ')}{result.skipped.length > 6 ? `, and ${result.skipped.length - 6} more` : ''}.</div>}
+          </div>
+        )}
+        <JvError error={error} />
+
+        {g.dates.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {g.dates.length > 8 && <input dir="auto" aria-label="Find a name" placeholder="Find a name…" value={filter} onChange={e => setFilter(e.target.value)} />}
+            <div style={{ maxHeight: 320, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 12 }}>
+              {shown.map(d => (
+                <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', borderBottom: '1px solid var(--bg-hover)', fontSize: 13 }}>
+                  <span dir="ltr" style={{ width: 96, flexShrink: 0, color: 'var(--text-2)', fontVariantNumeric: 'tabular-nums' }}>{d.day} {JV_MONTHS[d.month - 1]}{d.year ? ` ${d.year}` : ''}</span>
+                  <span dir="auto" style={{ flex: 1, minWidth: 0, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</span>
+                  {d.kind !== 'birthday' && <Chip tone="neutral">{d.kind === 'anniversary' ? 'Anniversary' : d.label || 'Other'}</Chip>}
+                  {d.hebrew && <Chip tone="teal" title="Celebrated on the Hebrew date">Hebrew date</Chip>}
+                  {d.phone && <span dir="ltr" style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>+{d.phone}</span>}
+                  <button aria-label={`Remove ${d.name}`} title="Remove" disabled={busy} onClick={() => call(`&id=${d.id}`, { method: 'DELETE' })}
+                    style={{ background: 'transparent', color: 'var(--text-muted)', fontSize: 16, lineHeight: 1, padding: '2px 6px', cursor: 'pointer' }}>×</button>
+                </div>
+              ))}
+              {shown.length === 0 && <div style={{ padding: '12px 14px', ...jvNote }}>No name matches.</div>}
+            </div>
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  /** Holiday and Shabbat greetings, and the welcome for people who join. */
+  function JarvisGroupGreetings({ g, saveProactive, busy }) {
+    const [welcome, setWelcome] = useState(null);   // the welcome draft, null while untouched
+    const p = g.proactive;
+    const text = welcome ?? p.welcome.text;
+    const dirty = welcome !== null && welcome !== p.welcome.text;
+    const line = (title, hint, toggle, extra) => (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>{title}</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.5 }}>{hint}</div>
+          </div>
+          {toggle}
+        </div>
+        {extra}
+      </div>
+    );
+    return (
+      <section style={{ ...jvCard, padding: 22, display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div>
+          <h2 style={jvH2}>Greetings and welcome</h2>
+          <div style={jvSub}>It writes each greeting itself, in the group’s style.</div>
+        </div>
+        {line('Jewish holidays', 'A greeting on the morning a holiday begins: Rosh Hashanah, Yom Kippur, Sukkot, Hanukkah, Purim, Passover, Independence Day, Shavuot and more.',
+          <JvToggle on={p.holidays.on} label="Holiday greetings" disabled={busy} onChange={v => saveProactive({ holidays: { on: v } })} />,
+          p.holidays.on && <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+            <span>At</span><input type="time" aria-label="Holiday greeting time" style={jvInline} value={p.holidays.time} onChange={e => e.target.value && saveProactive({ holidays: { time: e.target.value } })} />
+          </div>)}
+        {line('Shabbat shalom', 'Every Friday, with candle lighting and the end of Shabbat for the city. Times are calculated and may differ by a minute or two from a printed calendar.',
+          <JvToggle on={p.shabbat.on} label="Shabbat greeting" disabled={busy} onChange={v => saveProactive({ shabbat: { on: v } })} />,
+          p.shabbat.on && <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 13 }}>
+            <span>Fridays at</span><input type="time" aria-label="Shabbat greeting time" style={jvInline} value={p.shabbat.time} onChange={e => e.target.value && saveProactive({ shabbat: { time: e.target.value } })} />
+            <span>for</span>
+            <select aria-label="City" style={jvInline} value={p.shabbat.city} onChange={e => saveProactive({ shabbat: { city: e.target.value } })}>
+              {g.cities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>)}
+        {line('Welcome new members', 'Sent when someone is added to the group or joins by link.',
+          <JvToggle on={p.welcome.on} label="Welcome message" disabled={busy || (!p.welcome.on && !p.welcome.text.trim())}
+            onChange={v => saveProactive({ welcome: { on: v } })} />,
+          <div className="field-group" style={{ marginBottom: 0 }}>
+            <textarea dir="auto" rows={3} aria-label="Welcome message" value={text} placeholder="Welcome {name}! The group’s rules are in the description." onChange={e => setWelcome(e.target.value)} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ ...jvNote, flex: 1 }}>{'{name}'} tags the new member.{!p.welcome.on && !p.welcome.text.trim() ? ' Write and save the message, then switch it on.' : ''}</span>
+              {dirty && <>
+                <Btn size="sm" onClick={() => setWelcome(null)}>Discard</Btn>
+                <Btn size="sm" variant="primary" disabled={busy || (p.welcome.on && !welcome.trim())} onClick={async () => { if (await saveProactive({ welcome: { text: welcome } })) setWelcome(null); }}>Save message</Btn>
+              </>}
+            </div>
+          </div>)}
+      </section>
+    );
+  }
+
+  /** One WhatsApp group of a linked number: how it takes part, who speaks, what it sends on its own, and what it did. */
   function JarvisGroupView({ numberId, jid, numberLabel, onBack }) {
     const [g, setG] = useState(null);
     const [error, setError] = useState(null);
@@ -14807,6 +15320,13 @@ npm run migrate            # run it`}</Block>
       setSaving(true); setError(null);
       try { setG(await jarvisApi(url, { method: 'PATCH', body })); }
       catch (err) { setError(err.message); }
+      finally { setSaving(false); }
+    }
+    /** Saves part of what it does on its own; true when it was saved. */
+    async function saveProactive(part) {
+      setSaving(true); setError(null);
+      try { setG(await jarvisApi(url, { method: 'PATCH', body: { proactive: part } })); return true; }
+      catch (err) { setError(err.message); return false; }
       finally { setSaving(false); }
     }
 
@@ -14872,6 +15392,14 @@ npm run migrate            # run it`}</Block>
                       items={[{ id: 'low', label: 'One-liners' }, { id: 'medium', label: 'Short' }, { id: 'high', label: 'Longer' }]} />)}
                   {row('Emoji reactions', <JvToggle on={g.allowReactions} label="Emoji reactions" onChange={v => patch({ allowReactions: v })} />,
                     'It may react to a message instead of writing.')}
+                  {(g.mode === 'smart' || g.mode === 'always') && (g.mutedUntil
+                    ? row('Quiet for now', <Btn size="sm" onClick={() => patch({ muteHours: 0 })} disabled={saving}>Let it talk again</Btn>,
+                        `Until ${new Date(g.mutedUntil).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false })} it only answers when addressed. Scheduled messages still go out.`)
+                    : row('Quiet for now',
+                        <span style={{ display: 'inline-flex', gap: 6 }}>
+                          {[[1, '1 hour'], [8, '8 hours'], [24, '1 day']].map(([h, label]) => <Btn key={h} size="sm" onClick={() => patch({ muteHours: h })} disabled={saving}>{label}</Btn>)}
+                        </span>,
+                        'It only answers when addressed for a while. Scheduled messages still go out.'))}
                 </div>
               )}
             </section>
@@ -14898,6 +15426,10 @@ npm run migrate            # run it`}</Block>
               </div>
             </section>
 
+            <JarvisGroupSchedules numberId={numberId} jid={jid} g={g} onChanged={load} />
+            <JarvisGroupDates numberId={numberId} jid={jid} g={g} onChanged={load} saveProactive={saveProactive} />
+            <JarvisGroupGreetings g={g} saveProactive={saveProactive} busy={saving} />
+
             <JarvisGroupKnowledge numberId={numberId} jid={jid} group={g} onChanged={load} />
           </div>
 
@@ -14922,6 +15454,7 @@ npm run migrate            # run it`}</Block>
                       {e.unsolicited && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>unprompted</span>}
                       <span style={{ marginInlineStart: 'auto', fontSize: 11.5, color: 'var(--text-muted)' }}>{jvAgo(e.at)}</span>
                     </div>
+                    {e.title && <div dir="auto" style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'left' }}>{e.title}</div>}
                     {e.trigger && <div dir="auto" style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'left' }}>↪ {e.triggerFrom ? `${e.triggerFrom}: ` : ''}{e.trigger}</div>}
                     {e.text && <div dir="auto" style={{ fontSize: 13, color: 'var(--text)', whiteSpace: 'pre-wrap', textAlign: 'left' }}>{e.text}</div>}
                     {e.why && <div dir="auto" style={{ fontSize: 11.5, color: 'var(--text-2)', fontStyle: 'italic', textAlign: 'left' }}>{e.why}</div>}

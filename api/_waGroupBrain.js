@@ -19,13 +19,15 @@ const OWN_RECENT = 8;
 const DECISION_SCHEMA = {
   type: 'object',
   properties: {
-    action: { type: 'string', enum: ['silent', 'reply', 'react'] },
-    text: { type: 'string', description: 'The message to send when action is "reply", otherwise ""' },
+    action: { type: 'string', enum: ['silent', 'reply', 'react', 'poll', 'summary'] },
+    text: { type: 'string', description: 'The message to send when action is "reply"; the question when it is "poll"; otherwise ""' },
     emoji: { type: 'string', description: 'A single emoji when action is "react", otherwise ""' },
     quote: { type: 'integer', description: 'Id of the message to quote (reply) or react to; 0 for none' },
+    options: { type: 'array', items: { type: 'string' }, description: 'The answers of a "poll" (2 to 12), otherwise []' },
+    hours: { type: 'integer', description: 'For "summary": how many hours back to cover (1 to 168); otherwise 0' },
     why: { type: 'string', description: "One short sentence for the admin's activity log: why this action. Never sent to the chat." },
   },
-  required: ['action', 'text', 'emoji', 'quote', 'why'],
+  required: ['action', 'text', 'emoji', 'quote', 'options', 'hours', 'why'],
   additionalProperties: false,
 };
 
@@ -78,7 +80,8 @@ ${knowledge.samples}
   return out;
 }
 
-export function buildSystem({ name, agent, group, allowReactions, replyLength }) {
+/** Who it is in this group: the part of the prompt every kind of turn shares. */
+function systemHead({ name, agent, group }) {
   const instructions = (group.instructions || '').trim();
   return `You are ${name}, a participant in the WhatsApp group "${group.name || 'unnamed'}". You are an AI agent the group's owner added, and you take part in the conversation like a member.
 
@@ -87,7 +90,13 @@ Your instructions come first. <persona> is who you are and what you know${instru
 <persona>
 ${personaOf(agent)}
 </persona>
-${instructions ? `\n<group_instructions>\n${instructions}\n</group_instructions>\n` : ''}${knowledgeBlocks(group.knowledge)}
+${instructions ? `\n<group_instructions>\n${instructions}\n</group_instructions>\n` : ''}${knowledgeBlocks(group.knowledge)}`;
+}
+
+const TAGGING = 'To tag someone, write @ and then their name exactly as it appears in the chat (for example "@Dana Levi"); it becomes a real WhatsApp mention.';
+
+export function buildSystem({ name, agent, group, allowReactions, replyLength }) {
+  return `${systemHead({ name, agent, group })}
 How the conversation reaches you:
 - Each message is shown as "#<id> [<date time>] <sender>: <text>". Your own earlier messages are marked "(you)".
 - "↪ #<id>" or "↪ "<text>"" after the sender means the message replies to that earlier message.
@@ -97,16 +106,20 @@ How the conversation reaches you:
 You answer with a JSON decision:
 - "reply": send a message, written in "text". Set "quote" to a message id to reply to it explicitly (useful when answering an older message or when several conversations are interleaved); otherwise 0.
 - "react": react with a single emoji ("emoji") to the message whose id is in "quote". Good for acknowledging something without interrupting.${allowReactions ? '' : ' Reactions are turned off in this group: never choose "react".'}
+- "poll": post a WhatsApp poll, only when someone asks you for one. Put the question in "text" and 2 to 12 short answers in "options".
+- "summary": someone asks what they missed or for a recap of the chat. Set "hours" to how far back they mean (24 when they don't say); the recap is then written from the full history of that time, which is more than you see here. Leave "text" empty.
 - "silent": do nothing.
-Leave unused fields as "" or 0. Always fill "why": one short sentence, in the language of your instructions, telling the admin why you chose this; it is shown only in their activity log.
+Leave unused fields as "", 0 or []. Always fill "why": one short sentence, in the language of your instructions, telling the admin why you chose this; it is shown only in their activity log.
 
 Defaults (your instructions override these):
 - Write like a person texting, in the language the group is using. No greetings or sign-offs, and don't start with your name or a message id.
 - WhatsApp formatting only: *bold*, _italic_, ~strike~. No Markdown headings, tables, or [text](url) links.
 - ${LENGTH[replyLength] || LENGTH.low}
+- ${TAGGING} Tag only when it helps; "@everyone" tags the whole group, so use it only when someone explicitly asks you to call everyone.
 - Don't repeat or summarize what others just said.
 - Never repeat yourself. Before writing, check your own messages in the transcript (marked "(you)"): don't reuse their jokes, nicknames, references, punchlines or phrasing, and don't open your messages the same way each time.
 - If people tell you to talk less, stop, or leave them alone, take it seriously: hold back for the rest of that conversation unless someone addresses you. After a break of a few hours or a new day, it no longer applies.
+- Your reminders, scheduled messages, birthday list and settings are managed by the group's admin outside the chat, and you cannot change them from here. If someone asks you to remind them of something later, to send something on a schedule, or to change how you behave from now on, say briefly that the admin sets that up for you; never promise to do it.
 - If someone sincerely asks whether you are a bot or an AI, be honest.`;
 }
 
@@ -217,7 +230,7 @@ export async function decideGroup({ apiConfig, agent, agentId, ownerId, group, s
     structured = false;
     const { output_config: { format: _drop, ...rest }, ...plain } = request;
     if (Object.keys(rest).length) plain.output_config = rest;
-    plain.messages = [{ role: 'user', content: [...content, { type: 'text', text: `Answer with only a JSON object with the keys action, text, emoji, quote and why, as described.` }] }];
+    plain.messages = [{ role: 'user', content: [...content, { type: 'text', text: `Answer with only a JSON object with the keys action, text, emoji, quote, options, hours and why, as described.` }] }];
     response = await client.messages.create(plain);
   }
   await recordUsage({ userId: ownerId, model: response.model || model, usage: response.usage, source: 'groups' });
@@ -245,17 +258,68 @@ export async function decideGroup({ apiConfig, agent, agentId, ownerId, group, s
   const target = rows.find((r) => r.id === Number(decision.quote)) || null;
   const text = String(decision.text || '').trim();
   const emoji = String(decision.emoji || '').trim();
+  const options = [...new Set((Array.isArray(decision.options) ? decision.options : []).map((o) => String(o || '').trim().slice(0, 100)).filter(Boolean))].slice(0, 12);
   let action = decision.action;
-  if (!['reply', 'react', 'silent'].includes(action)) action = 'silent';
+  if (!['reply', 'react', 'silent', 'poll', 'summary'].includes(action)) action = 'silent';
   if (action === 'reply' && !text) action = 'silent';
   if (action === 'react' && (!emoji || !allowReactions)) action = 'silent';
+  if (action === 'poll' && (!text || options.length < 2)) action = 'silent';
   return {
     action,
-    text: action === 'reply' ? text : '',
+    text: action === 'reply' || action === 'poll' ? text : '',
     emoji: action === 'react' ? emoji : '',
+    options: action === 'poll' ? options : [],
+    hours: action === 'summary' ? Math.min(Math.max(Number(decision.hours) || 24, 1), 168) : 0,
     why: String(decision.why || '').trim(),
     // A reaction needs a target; default to the newest message from someone else.
     target: action === 'react' ? target || newRows.at(-1) || null : target,
     ...meta,
   };
+}
+
+/**
+ * Writes a message the number sends on its own: a scheduled message, a
+ * birthday or holiday greeting, a recap of the chat. Same persona and group
+ * instructions as a reply, but the answer is the message itself.
+ *
+ * @param {object} p
+ * @param {string} p.brief      what to write, in words
+ * @param {object[]} p.rows     conversation for context (or the stretch to recap), oldest first
+ * @param {boolean} [p.recap]   the rows are what to summarize, not just background
+ * @returns {Promise<{ text: string, model: string }>}
+ */
+export async function composeGroupMessage({ apiConfig, agent, ownerId, group, settings, name, rows = [], brief, recap = false }) {
+  const tz = settings.timezone || 'Asia/Jerusalem';
+  const byWaId = new Map(rows.map((r) => [r.wa_id, r]));
+  const lines = rows.map((r) => formatLine(r, byWaId, name, tz));
+  const system = `${systemHead({ name, agent, group })}
+This turn nobody wrote to you: it is time for a message you send to the group on your own, set up by the group's admin. You answer with the message itself and nothing else: no preface, no quotation marks, no notes.
+
+Defaults (your instructions override these):
+- Write like a person texting, in the language the group is using. Don't start with your name.
+- WhatsApp formatting only: *bold*, _italic_, ~strike~. No Markdown headings, tables, or [text](url) links.
+- ${TAGGING}
+- Don't reuse the wording of your own earlier messages in the chat (marked "(you)"); a message that goes out regularly should read fresh each time.`;
+
+  const content = [
+    { type: 'text', text: lines.length
+      ? `${recap ? 'The stretch of the conversation to recap' : 'The latest of the conversation, for context and tone'} ("#<id> [<date time>] <sender>: <text>"):\n${lines.join('\n')}`
+      : '(no recent messages in the group)' },
+    { type: 'text', text: `---\nCurrent time: ${nowFmt(tz).format(new Date())}.\n${brief}\nWrite the message now.` },
+  ];
+  const client = new Anthropic({ apiKey: apiConfig.apiKey });
+  const model = currentClaudeModel(apiConfig.model);
+  const shape = claudeRequestShape(model, recap ? 3000 : 1500);
+  const response = await client.messages.create({
+    model,
+    max_tokens: shape.max_tokens,
+    system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+    messages: [{ role: 'user', content }],
+    ...(shape.output_config && { output_config: shape.output_config }),
+  });
+  await recordUsage({ userId: ownerId, model: response.model || model, usage: response.usage, source: 'groups' });
+  if (response.stop_reason === 'refusal') throw new Error('The model declined to write this message.');
+  const text = (response.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+  if (!text) throw new Error('The model returned no message.');
+  return { text, model: response.model || model };
 }
