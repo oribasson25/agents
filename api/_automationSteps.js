@@ -234,7 +234,7 @@ const RUNNERS = { http, code, if: ifStep, switch: switchStep, set, output, call 
 /* Steps that reach into the organization — its connections, tables, chatbots
    and model key — live in their own file, loaded the first time one runs, so
    everything above stays free of the database. */
-const CONNECTED = new Set(['whatsapp', 'approval', 'email', 'email_search', 'table', 'agent', 'ai']);
+const CONNECTED = new Set(['whatsapp', 'approval', 'wa_reply', 'email', 'email_search', 'table', 'agent', 'ai']);
 
 /**
  * A step's settings with every reference filled in from `scope`.

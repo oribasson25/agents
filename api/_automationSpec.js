@@ -41,6 +41,7 @@ export const STEPS = {
   output: { label: 'Output',         ports: [] },
   whatsapp:     { label: 'Send WhatsApp',   ports: ['out'] },
   approval:     { label: 'Ask for approval', ports: ['yes', 'no', 'timeout'] },
+  wa_reply:     { label: 'Wait for WhatsApp reply', ports: ['reply', 'timeout'] },
   email:        { label: 'Send email',      ports: ['out'] },
   email_search: { label: 'Find emails',     ports: ['out'] },
   table:        { label: 'Table',           ports: ['out'] },
@@ -50,7 +51,7 @@ export const STEPS = {
 
 /* Steps that stop the run until something outside it happens. Like a long
    Wait, they cannot sit inside a loop. */
-export const PARKING = new Set(['approval']);
+export const PARKING = new Set(['approval', 'wa_reply']);
 
 export const LIMITS = {
   steps: 100,
@@ -111,6 +112,7 @@ export function defaultConfig(type, isTrigger = false) {
     case 'output': return { fields: [{ key: 'result', value: '' }] };
     case 'whatsapp': return { connection: '', to: '', text: '' };
     case 'approval': return { connection: '', to: '', text: '', timeoutHours: 24 };
+    case 'wa_reply': return { connection: '', from: '', amount: 1, unit: 'hours' };
     case 'email': return { connection: '', to: '', cc: '', subject: '', body: '' };
     case 'email_search': return { connection: '', query: '', limit: 10 };
     case 'table': return { table: '', action: 'find', q: '', limit: 20, rowId: '', fields: [] };
@@ -495,6 +497,14 @@ function configProblems(step) {
       if (!String(c.connection || '').trim()) out.push('pick the WhatsApp connection to send from');
       if (!String(c.to || '').trim()) out.push('needs who to send to');
       if (!String(c.text || '').trim()) out.push(step.type === 'approval' ? 'needs the question to ask' : 'needs the text to send');
+      return out;
+    }
+    case 'wa_reply': {
+      const out = [];
+      if (!String(c.connection || '').trim()) out.push('pick the WhatsApp connection to listen on');
+      if (!String(c.from || '').trim()) out.push('needs whose reply to wait for');
+      if (waitSeconds(c) < 10) out.push('needs how long to wait for the reply');
+      if (waitSeconds(c) > LIMITS.waitMaxDays * 86400) out.push(`can wait at most ${LIMITS.waitMaxDays} days`);
       return out;
     }
     case 'email': {

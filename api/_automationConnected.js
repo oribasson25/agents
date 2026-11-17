@@ -16,7 +16,7 @@ import { runAgentTurn } from './_agentRunner.js';
 import { getUserSettings, resolveApiConfig, resolveAgentApiConfig, configUsable } from './_settings.js';
 import { currentClaudeModel, claudeRequestShape, claudeText, CLAUDE_MODELS } from './_claudeModels.js';
 import { recordUsage } from './_usage.js';
-import { fieldsToObject } from './_automationSpec.js';
+import { fieldsToObject, waitSeconds } from './_automationSpec.js';
 
 const source = (ctx) => `automation:${ctx.automationId || ''}`;
 
@@ -63,6 +63,39 @@ async function approval(config, ctx) {
   const until = now + hours * 3600 * 1000;
   return { park: { kind: 'approval', numberId: conn.data.numberId, phone, until },
            waitingOutput: { asked: phone, waitsUntil: new Date(until).toISOString() } };
+}
+
+/**
+ * Waits for one person's next WhatsApp message to a connected number.
+ *
+ * It sends nothing itself: put a Send WhatsApp before it to ask the question.
+ * The run is parked until the person writes (see `onWhatsAppMessage`), and
+ * then goes on by "reply" with what they wrote — or by "timeout" when the
+ * time allowed runs out first. The message that answers a waiting run is the
+ * run's: it does not also start an automation or reach the number's chatbot.
+ */
+async function waReply(config, ctx) {
+  const now = ctx.now ? ctx.now() : Date.now();
+  if (ctx.parked) {
+    const got = ctx.parked.answer;
+    if (got) {
+      return { output: { replied: true, text: got.text || '', from: ctx.parked.phone, name: got.name || '', kind: got.kind || 'text', at: got.at || null }, port: 'reply' };
+    }
+    if (now >= ctx.parked.until) return { output: { replied: false, text: '', from: ctx.parked.phone, name: '', kind: '', at: null }, port: 'timeout' };
+    return { park: ctx.parked };
+  }
+  const conn = await useConnection({ orgId: ctx.orgId, name: config.connection, kinds: ['whatsapp'] });
+  const phone = recipientOf(config.from);
+  /* Tested on its own there is nobody to wait for, and often no earlier test
+     to say who it would be: it answers with an example so the steps after it
+     have something to be wired to. */
+  if (ctx.single) {
+    return { output: { replied: true, text: 'An example reply — run the automation to wait for a real one.', from: phone || '', name: '', kind: 'text', at: new Date(now).toISOString() }, port: 'reply' };
+  }
+  if (!phone || phone.includes('@')) throw new Error('waits for one person, so it needs their phone number with a country code');
+  const until = now + Math.max(10, waitSeconds(config)) * 1000;
+  return { park: { kind: 'reply', numberId: conn.data.numberId, phone, until },
+           waitingOutput: { waitingFor: phone, until: new Date(until).toISOString() } };
 }
 
 /* ─────────────────── mail ─────────────────── */
@@ -171,4 +204,4 @@ async function ai(config, ctx) {
   return { output: wantsJson ? parseJsonReply(text) : { text }, port: 'out' };
 }
 
-export const CONNECTED_RUNNERS = { whatsapp, approval, email, email_search: emailSearch, table, agent, ai };
+export const CONNECTED_RUNNERS = { whatsapp, approval, wa_reply: waReply, email, email_search: emailSearch, table, agent, ai };

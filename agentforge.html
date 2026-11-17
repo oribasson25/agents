@@ -6419,6 +6419,7 @@ git add -A && git commit -m "…" && git push`}</Block>
             <li><strong>If</strong>, <strong>Switch</strong>, <strong>Loop</strong>, <strong>Wait</strong> — branch on a condition, pick a path by a value, repeat steps for each item of a list (up to 500), pause for seconds or days.</li>
             <li><strong>Set values</strong>, <strong>Output</strong>, <strong>Run automation</strong> — name values for later, say what the automation returns, run another automation and use its Output.</li>
             <li><strong>Send WhatsApp</strong> — from a connected number, to a phone number or a group.</li>
+            <li><strong>Wait for WhatsApp reply</strong> — parks the run until one person writes to the connected number, then goes on by <em>they replied</em> with what they wrote, or by <em>no answer</em> when the time allowed is up. It sends nothing itself: Send WhatsApp, then wait, then an If on the reply, and so on for a whole conversation.</li>
             <li><strong>Ask for approval</strong> — asks one person a yes/no question on WhatsApp and waits. The run goes on by <em>yes</em>, <em>no</em>, or <em>no answer</em> once the time allowed is up.</li>
             <li><strong>Send email</strong>, <strong>Find emails</strong> — through a connected Gmail or Microsoft 365 mailbox.</li>
             <li><strong>Table</strong> — find rows, add a row, update a row.</li>
@@ -7142,6 +7143,7 @@ npm run migrate            # run it`}</Block>
     schedule: autoSvg('M3 9h18|M8 2v4|M16 2v4', <rect x="3" y="4" width="18" height="17" rx="2" />),
     whatsapp: autoSvg('M21 11.5a8.5 8.5 0 0 1-12.6 7.4L3 21l2.2-5.2A8.5 8.5 0 1 1 21 11.5z'),
     approval: autoSvg('M9 12l2 2 4-4', <circle cx="12" cy="12" r="9" />),
+    reply: autoSvg('M9 14L4 9l5-5|M4 9h10a6 6 0 0 1 6 6v5'),
     mail: autoSvg('M3 7l9 6 9-6', <rect x="3" y="5" width="18" height="14" rx="2" />),
     search: autoSvg('M21 21l-4.3-4.3', <circle cx="11" cy="11" r="7" />),
     table: autoSvg('M3 10h18|M3 15h18|M9 5v14', <rect x="3" y="5" width="18" height="14" rx="2" />),
@@ -7173,6 +7175,8 @@ npm run migrate            # run it`}</Block>
                 note: L('What the automation returns to whoever ran it', 'מה שהאוטומציה מחזירה למי שהריץ אותה') },
       whatsapp: { label: L('Send WhatsApp', 'שליחת וואטסאפ'), icon: AutoIcons.whatsapp, tone: 'var(--success)', dim: 'rgba(22,163,74,0.10)',
                   note: L('A message from one of your linked numbers', 'הודעה מאחד המספרים המקושרים שלך') },
+      wa_reply: { label: L('Wait for WhatsApp reply', 'המתנה לתשובה בוואטסאפ'), icon: AutoIcons.reply, tone: 'var(--success)', dim: 'rgba(22,163,74,0.10)',
+                  note: L('Pause until a person answers on WhatsApp, then use what they wrote', 'עצירה עד שאדם עונה בוואטסאפ, ואז שימוש במה שכתב') },
       approval: { label: L('Ask for approval', 'בקשת אישור'), icon: AutoIcons.approval, tone: 'var(--success)', dim: 'rgba(22,163,74,0.10)',
                   note: L('Ask a person yes or no on WhatsApp, and wait for the answer', 'לשאול אדם כן או לא בוואטסאפ, ולחכות לתשובה') },
       email:    { label: L('Send email', 'שליחת מייל'), icon: AutoIcons.mail, tone: 'var(--danger)', dim: 'rgba(220,38,38,0.08)',
@@ -7208,6 +7212,7 @@ npm run migrate            # run it`}</Block>
     if (node.id === AUTO_TRIGGER) return ['out'];
     if (node.type === 'if') return ['yes', 'no'];
     if (node.type === 'approval') return ['yes', 'no', 'timeout'];
+    if (node.type === 'wa_reply') return ['reply', 'timeout'];
     if (node.type === 'loop') return ['each', 'done'];
     if (node.type === 'output') return [];
     if (node.type === 'switch') return [...((node.config || {}).cases || []).map(c => String(c.id)), 'default'];
@@ -7215,7 +7220,7 @@ npm run migrate            # run it`}</Block>
   };
   const autoPortLabel = (port) => ({
     yes: L('yes', 'כן'), no: L('no', 'לא'), each: L('each item', 'לכל פריט'), done: L('done', 'סיום'),
-    default: L('otherwise', 'אחרת'), timeout: L('no answer', 'אין תשובה'),
+    default: L('otherwise', 'אחרת'), timeout: L('no answer', 'אין תשובה'), reply: L('they replied', 'ענו'),
   }[port] || port);
 
   function autoDefaultConfig(type) {
@@ -7231,6 +7236,7 @@ npm run migrate            # run it`}</Block>
       case 'output': return { fields: [{ key: 'result', value: '' }] };
       case 'whatsapp': return { connection: '', to: '', text: '' };
       case 'approval': return { connection: '', to: '', text: '', timeoutHours: 24 };
+      case 'wa_reply': return { connection: '', from: '', amount: 1, unit: 'hours' };
       case 'email': return { connection: '', to: '', cc: '', subject: '', body: '' };
       case 'email_search': return { connection: '', query: '', limit: 10 };
       case 'table': return { table: '', action: 'find', q: '', limit: 20, rowId: '', fields: [] };
@@ -7270,6 +7276,7 @@ npm run migrate            # run it`}</Block>
       case 'call': { const t = (others || []).find(a => a.id === c.automationId); return t ? t.name : L('Pick an automation', 'בחר אוטומציה'); }
       case 'whatsapp': return c.to ? `→ ${cut(c.to, 26)}` : L('No recipient yet', 'אין עדיין נמען');
       case 'email': return c.to ? `→ ${cut(c.to, 26)}` : L('No recipient yet', 'אין עדיין נמען');
+      case 'wa_reply': return c.from ? `← ${cut(c.from, 26)}` : L('Nobody to wait for yet', 'עוד לא נבחר ממי לחכות');
       case 'email_search': return cut(c.query || L('Latest mail', 'מיילים אחרונים'));
       case 'table': return ({ find: L('Find rows', 'חיפוש שורות'), add: L('Add a row', 'הוספת שורה'), update: L('Update a row', 'עדכון שורה') })[c.action || 'find'];
       case 'agent': case 'ai': return cut(c.message || c.prompt || '');
@@ -8317,6 +8324,32 @@ npm run migrate            # run it`}</Block>
             )}
           </div>
         );
+      case 'wa_reply':
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.65, padding: '10px 12px', background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
+              {L('This step sends nothing. Put a Send WhatsApp before it to ask, and an If after it to look at the answer — then another Send and another wait, for as long as the conversation goes.',
+                 'הצעד הזה לא שולח כלום. שמים לפניו "שליחת וואטסאפ" עם השאלה, ואחריו "תנאי" שבודק את התשובה, ואז עוד שליחה ועוד המתנה, כל עוד השיחה נמשכת.')}
+            </div>
+            <AutoField label={L('On which number', 'באיזה מספר')}><AutoConnectionSelect value={c.connection} onChange={v => set({ connection: v })} kinds={['whatsapp']} /></AutoField>
+            <AutoField label={L('Whose reply', 'תשובה של מי')}
+              hint={L('One person\'s phone number, with country code. In an automation a WhatsApp message started, that is {{trigger.from}}.', 'מספר טלפון של אדם אחד, עם קידומת מדינה. באוטומציה שהתחילה מהודעת וואטסאפ זה {{trigger.from}}.')}>
+              <AutoExpr value={c.from} onChange={v => set({ from: v })} placeholder="{{trigger.from}}" />
+            </AutoField>
+            <AutoField label={L('Wait up to', 'לחכות עד')} hint={L('With no reply by then, the run leaves by "no answer". Until then nothing is held up: the run is parked and carries on by itself.', 'בלי תשובה עד אז, הריצה יוצאת דרך "אין תשובה". עד אז שום דבר לא נתקע: הריצה נשמרת בצד וממשיכה לבד.')}>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input type="number" min="1" value={c.amount ?? 1} onChange={e => set({ amount: Number(e.target.value) })} style={{ width: 110, fontSize: 12.5 }} />
+                <select value={c.unit || 'hours'} onChange={e => set({ unit: e.target.value })} style={{ width: 140, fontSize: 12.5 }}>
+                  <option value="minutes">{L('minutes', 'דקות')}</option><option value="hours">{L('hours', 'שעות')}</option><option value="days">{L('days', 'ימים')}</option>
+                </select>
+              </div>
+            </AutoField>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+              {L(`Later steps read what they wrote as {{${node.id}.text}}. While a run waits, that person's next message goes to the run — not to the number's chatbot, and it does not start another automation.`,
+                 `צעדים מאוחרים קוראים את מה שנכתב כ-{{${node.id}.text}}. כל עוד ריצה ממתינה, ההודעה הבאה של אותו אדם מגיעה לריצה: לא לצ׳טבוט של המספר, והיא לא מפעילה אוטומציה אחרת.`)}
+            </div>
+          </div>
+        );
       case 'email':
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -8780,7 +8813,7 @@ npm run migrate            # run it`}</Block>
     const meta = autoStepMeta();
     const groups = [
       [L('Do something', 'לעשות משהו'), ['http', 'code', 'set', 'call']],
-      [L('Reach people', 'להגיע לאנשים'), ['whatsapp', 'approval', 'email', 'email_search']],
+      [L('Reach people', 'להגיע לאנשים'), ['whatsapp', 'wa_reply', 'approval', 'email', 'email_search']],
       [L('Your platform', 'הפלטפורמה שלך'), ['table', 'agent', 'ai']],
       [L('Decide and repeat', 'להחליט ולחזור'), ['if', 'switch', 'loop', 'wait']],
       [L('Finish', 'לסיים'), ['output']],
@@ -9149,7 +9182,7 @@ npm run migrate            # run it`}</Block>
       else {
         paths.push({ path: s.id });
         const usual = { http: ['status', 'body', 'headers', 'ok'], loop: ['count', 'results'], if: ['result'], switch: ['case'],
-                        approval: ['answer', 'approved', 'text'], email_search: ['count', 'messages'], agent: ['text'], ai: s.config.json ? [] : ['text'],
+                        approval: ['answer', 'approved', 'text'], wa_reply: ['text', 'replied', 'from', 'name'], email_search: ['count', 'messages'], agent: ['text'], ai: s.config.json ? [] : ['text'],
                         table: (s.config.action || 'find') === 'find' ? ['rows', 'first', 'count', 'total'] : ['row', 'row.id'] }[s.type] || [];
         usual.forEach(k => paths.push({ path: `${s.id}.${k}` }));
         if (s.type === 'set') (s.config.fields || []).filter(f => f.key).forEach(f => paths.push({ path: `${s.id}.${f.key}` }));
@@ -13175,9 +13208,9 @@ npm run migrate            # run it`}</Block>
         'An automation is one trigger and steps connected by edges.',
         'trigger: { type, config }. Types: manual { fields:[{key,value}] } (value is an example) · webhook { respond:"now"|"wait" } · schedule { mode:"every", every, unit:"minutes"|"hours"|"days" } or { mode:"daily", time:"09:00", days:[0-6] } or { mode:"cron", cron } · whatsapp { connection, match:"any"|"starts"|"contains", text } · email { connection, query } · table { table:<table id> }.',
         'steps: [{ id, type, name, config }]. id is lowercase letters, digits and _. Types and their config:',
-        'code { code:"def run(**inputs): ... return {...}", inputs:[{key,value}], packages } · http { method, url, headers:[{key,value}], params, auth:{type:"none"|"bearer"|"basic"|"apikey",...}, bodyType:"none"|"json"|"form"|"text", body } · if { match:"all"|"any", conditions:[{left,op,right}] } with op eq,neq,contains,not_contains,starts,ends,gt,gte,lt,lte,empty,not_empty · switch { value, cases:[{id,value}] } · loop { items } · wait { amount, unit } · set { fields:[{key,value}] } · output { fields } · call { automationId, fields } · whatsapp { connection, to, text } · approval { connection, to, text, timeoutHours } · email { connection, to, subject, body } · email_search { connection, query, limit } · table { table:<id>, action:"find"|"add"|"update", q, rowId, fields } · agent { agentId, message } · ai { prompt, json:true|false }.',
-        'edges: [{ from, to, port }]. from is "trigger" or a step id. port is omitted for most steps; an if leaves by "yes" or "no", an approval by "yes", "no" or "timeout", a switch by a case id or "default", a loop by "each" (run for every item) or "done".',
-        'A value refers to earlier results as {{step_id.field}}, the trigger as {{trigger.field}} (webhook: {{trigger.body.field}}; whatsapp: {{trigger.text}}, {{trigger.from}}; table: {{trigger.row.column}}), a secret as {{secrets.NAME}}, and inside a loop {{item}}. What steps return: http → status, body · if → result · loop → count, results · table find → rows, first, count; add/update → row · agent → text · ai → text (or the JSON object) · approval → answer, approved · code → whatever run returns.',
+        'code { code:"def run(**inputs): ... return {...}", inputs:[{key,value}], packages } · http { method, url, headers:[{key,value}], params, auth:{type:"none"|"bearer"|"basic"|"apikey",...}, bodyType:"none"|"json"|"form"|"text", body } · if { match:"all"|"any", conditions:[{left,op,right}] } with op eq,neq,contains,not_contains,starts,ends,gt,gte,lt,lte,empty,not_empty · switch { value, cases:[{id,value}] } · loop { items } · wait { amount, unit } · set { fields:[{key,value}] } · output { fields } · call { automationId, fields } · whatsapp { connection, to, text } · approval { connection, to, text, timeoutHours } · wa_reply { connection, from:<the person\'s phone, e.g. {{trigger.from}}>, amount, unit:"minutes"|"hours"|"days" } (waits for that person\'s next WhatsApp message; sends nothing, so put a whatsapp step before it) · email { connection, to, subject, body } · email_search { connection, query, limit } · table { table:<id>, action:"find"|"add"|"update", q, rowId, fields } · agent { agentId, message } · ai { prompt, json:true|false }.',
+        'edges: [{ from, to, port }]. from is "trigger" or a step id. port is omitted for most steps; an if leaves by "yes" or "no", an approval by "yes", "no" or "timeout", a wa_reply by "reply" or "timeout", a switch by a case id or "default", a loop by "each" (run for every item) or "done".',
+        'A value refers to earlier results as {{step_id.field}}, the trigger as {{trigger.field}} (webhook: {{trigger.body.field}}; whatsapp: {{trigger.text}}, {{trigger.from}}; table: {{trigger.row.column}}), a secret as {{secrets.NAME}}, and inside a loop {{item}}. What steps return: http → status, body · if → result · loop → count, results · table find → rows, first, count; add/update → row · agent → text · ai → text (or the JSON object) · approval → answer, approved · wa_reply → text, replied · code → whatever run returns.',
         'Never put a key or password in a step: use {{secrets.NAME}} and tell the user to add the secret in the automation\'s Settings tab. A connection is referred to by its name from list_automations; if the one needed does not exist, say the organization\'s admin adds it under Connections.',
       ].join('\n'),
       input_schema: {

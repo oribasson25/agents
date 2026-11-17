@@ -648,6 +648,73 @@ await check('"mail since" gives only what is newer, oldest first', async () => {
   assert.deepEqual(fresh.map(m => m.id), ['new1', 'new2']);
 });
 
+await check('waiting for a WhatsApp reply: two ways out, never in a loop, and it says what it needs', () => {
+  const w = step('wait', 'wa_reply', { connection: 'Office', from: '{{trigger.from}}', amount: 30, unit: 'minutes' });
+  assert.deepEqual(portsOf(w), ['reply', 'timeout']);
+  assert.deepEqual(checkAutomation(auto([w], [edge('trigger', 'wait')])).errors, []);
+  const empty = checkAutomation(auto([step('wait', 'wa_reply', { connection: '', from: '', amount: 0, unit: 'minutes' })], [edge('trigger', 'wait')]));
+  assert.equal(empty.errors.length, 3);
+  assert.deepEqual(empty.structural, [], 'an unfinished one is still a draft that can be saved');
+  const looped = checkAutomation(auto([step('l', 'loop', { items: '{{trigger.x}}' }), w], [edge('trigger', 'l'), edge('l', 'wait', 'each')]));
+  assert.ok(looped.errors.some(e => e.includes('cannot sit inside a loop')));
+});
+
+await check('a reply wakes the wait with what was written; silence leaves by timeout', async () => {
+  const { CONNECTED_RUNNERS } = await import('../api/_automationConnected.js');
+  const parked = { kind: 'reply', numberId: 'n1', phone: '972500000009', until: 2_000_000 };
+  const still = await CONNECTED_RUNNERS.wa_reply({}, { parked, now: () => 1_500_000 });
+  assert.deepEqual(still, { park: parked }, 'woken early with nothing said, it goes on waiting');
+  const said = await CONNECTED_RUNNERS.wa_reply({}, { parked: { ...parked, answer: { text: 'כן, מחר ב-10', name: 'Dana', kind: 'text', at: 'T' } }, now: () => 1_500_000 });
+  assert.equal(said.port, 'reply');
+  assert.deepEqual(said.output, { replied: true, text: 'כן, מחר ב-10', from: '972500000009', name: 'Dana', kind: 'text', at: 'T' });
+  const silent = await CONNECTED_RUNNERS.wa_reply({}, { parked, now: () => 2_000_001 });
+  assert.equal(silent.port, 'timeout');
+  assert.equal(silent.output.replied, false);
+  assert.equal(silent.output.text, '', 'so an If on the text reads as empty, not as an error');
+});
+
+await check('a conversation: ask, wait, look at the answer, ask again', async () => {
+  const def = auto(
+    [step('ask1', 'set', { fields: [{ key: 'sent', value: 'Which day?' }] }),
+     step('r1', 'wa_reply', { connection: 'Office', from: '{{trigger.from}}', amount: 1, unit: 'hours' }),
+     step('is_sunday', 'if', { match: 'all', conditions: [{ left: '{{r1.text}}', op: 'contains', right: 'ראשון' }] }),
+     step('ask2', 'set', { fields: [{ key: 'sent', value: 'What time on Sunday?' }] }),
+     step('r2', 'wa_reply', { connection: 'Office', from: '{{trigger.from}}', amount: 1, unit: 'hours' }),
+     step('done', 'output', { fields: [{ key: 'day', value: '{{r1.text}}' }, { key: 'time', value: '{{r2.text}}' }] }),
+     step('other', 'output', { fields: [{ key: 'day', value: '{{r1.text}}' }] }),
+     step('gave_up', 'output', { fields: [{ key: 'gave_up', value: true }] })],
+    [edge('trigger', 'ask1'), edge('ask1', 'r1'), edge('r1', 'is_sunday', 'reply'), edge('r1', 'gave_up', 'timeout'),
+     edge('is_sunday', 'ask2', 'yes'), edge('is_sunday', 'other', 'no'), edge('ask2', 'r2'),
+     edge('r2', 'done', 'reply'), edge('r2', 'gave_up', 'timeout')]);
+  /* The real step, with the one thing it needs from the database stood in for. */
+  const { CONNECTED_RUNNERS } = await import('../api/_automationConnected.js');
+  const connected = { wa_reply: (config, ctx) => (ctx.parked
+    ? CONNECTED_RUNNERS.wa_reply(config, ctx)
+    : { park: { kind: 'reply', numberId: 'n1', phone: config.from, until: ctx.now() + 3600e3 } }) };
+  const input = { from: '972500000009' };
+  const say = (state, text) => { const s = JSON.parse(JSON.stringify(state)); s.wait.answer = { text, name: 'Dana' }; return s; };
+
+  const a = await run(def, input, { ctx: { connected } });
+  assert.equal(a.result.status, 'waiting');
+  assert.equal(a.state.wait.stepId, 'r1');
+  assert.equal(a.state.wait.phone, '972500000009');
+
+  const b = await run(def, input, { state: say(a.state, 'יום ראשון'), ctx: { connected } });
+  assert.equal(b.result.status, 'waiting', 'the second question waits for its own answer');
+  assert.equal(b.state.wait.stepId, 'r2');
+  assert.equal(b.state.wait.answer, undefined, 'the first answer is not mistaken for the second');
+  assert.deepEqual(b.log.map(l => [l.stepId, l.status, l.port]), [['r1', 'done', 'reply'], ['is_sunday', 'done', 'yes'], ['ask2', 'done', 'out'], ['r2', 'waiting', null]]);
+
+  const c = await run(def, input, { state: say(b.state, '10:00'), ctx: { connected } });
+  assert.equal(c.result.status, 'done');
+  assert.deepEqual(c.result.output, { day: 'יום ראשון', time: '10:00' });
+
+  const elsewhere = await run(def, input, { state: say(a.state, 'שלישי'), ctx: { connected } });
+  assert.deepEqual(elsewhere.result.output, { day: 'שלישי' });
+  const silent = await run(def, input, { state: JSON.parse(JSON.stringify(a.state)), start: 1_000_000 + 2 * 3600e3, ctx: { connected } });
+  assert.deepEqual(silent.result.output, { gave_up: true });
+});
+
 await check('who a WhatsApp message goes to', () => {
   assert.equal(recipientOf('+972 54-555 0118'), '972545550118');
   assert.equal(recipientOf('054-555-0118'), '972545550118', 'a leading 0 is an Israeli number');

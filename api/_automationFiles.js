@@ -229,6 +229,7 @@ step by it, so renaming one means updating every \`{{id.…}}\` that reads it.
 | \`output\` | \`fields\` — what the automation returns | (none) | the fields |
 | \`whatsapp\` | \`connection\`, \`to\` (a phone number with country code, or a group id), \`text\` | out | \`queued\`, \`to\` |
 | \`approval\` | \`connection\`, \`to\`, \`text\`, \`timeoutHours\` — asks a person on WhatsApp and waits for yes or no | yes, no, timeout | \`answer\`, \`text\` |
+| \`wa_reply\` | \`connection\`, \`from\` (the person's phone number), \`amount\`, \`unit\` (minutes/hours/days) — waits for that person's next WhatsApp message. It sends nothing: put a \`whatsapp\` step before it to ask. | reply, timeout | \`text\`, \`replied\`, \`from\`, \`name\` |
 | \`email\` | \`connection\`, \`to\`, \`subject\`, \`body\`, \`cc\` | out | \`id\` |
 | \`email_search\` | \`connection\`, \`query\`, \`limit\` | out | \`messages\` (from, subject, text, id) |
 | \`table\` | \`table\` (id), \`action\`: \`find\` (\`q\`, \`limit\`), \`add\` (\`fields\`), \`update\` (\`rowId\`, \`fields\`) | out | \`rows\` / \`row\` |

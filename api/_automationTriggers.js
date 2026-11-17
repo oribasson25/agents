@@ -35,10 +35,12 @@ function whatsappMatches(config, message) {
 /**
  * A direct message that reached a linked number.
  *
- * First, an approval: if a run is waiting for this person's yes or no on
- * this number and this is one, the run is woken with it. Otherwise, every
- * live automation listening on this number that the message matches is
- * started.
+ * First, a run that is waiting on this person. If one asked them for a yes or
+ * no on this number and this is one, it is woken with it. If one is waiting
+ * for their reply — whatever they write — it is woken with the message; when
+ * several are, the one that has waited longest. Only when no run is waiting
+ * for the message is every live automation listening on this number that it
+ * matches started.
  *
  * Returns `{ consumed }` — true when the message was the automation's and
  * the number's chatbot or Jarvis should not also answer it.
@@ -68,6 +70,26 @@ export async function onWhatsAppMessage({ numberId, message, baseUrl }) {
       `;
       if (woken) { workSoon(woken.id, host); return { consumed: true, approval: woken.id }; }
     }
+  }
+
+  const [expecting] = await sql`
+    select id from automation_runs
+    where status = 'waiting'
+      and state->'wait'->>'kind' = 'reply'
+      and state->'wait'->>'numberId' = ${numberId}
+      and state->'wait'->>'phone' = ${phone}
+      and state->'wait'->'answer' is null
+    order by started_at limit 1
+  `;
+  if (expecting) {
+    const given = { text: String(message.text || '').slice(0, 4000), name: message.senderName || '',
+                    kind: message.kind || 'text', at: new Date(message.ts || Date.now()).toISOString() };
+    const [woken] = await sql`
+      update automation_runs
+      set state = jsonb_set(state, '{wait,answer}', ${JSON.stringify(given)}::jsonb), resume_at = now()
+      where id = ${expecting.id} and status = 'waiting' returning id
+    `;
+    if (woken) { workSoon(woken.id, host); return { consumed: true, reply: woken.id }; }
   }
 
   const listening = await sql`
