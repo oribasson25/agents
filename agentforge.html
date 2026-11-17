@@ -15133,13 +15133,8 @@ npm run migrate            # run it`}</Block>
   function BrandMark({ mark = 34, text = 19 }) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-        <div style={{
-          width: mark, height: mark, borderRadius: 11, flexShrink: 0,
-          background: 'var(--primary-dim)', border: '1px solid rgba(239,159,39,0.28)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <svg viewBox="270 20 140 140" width={mark - 11} height={mark - 11} aria-hidden="true">{spiderSvgPaths}</svg>
-        </div>
+        {/* Just the spider: no tile behind it. */}
+        <svg viewBox="270 20 140 140" width={mark} height={mark} aria-hidden="true" style={{ flexShrink: 0, display: 'block' }}>{spiderSvgPaths}</svg>
         <div style={{ fontSize: text, fontWeight: 800, letterSpacing: '-0.03em' }}>
           <span style={{ color: 'var(--text)' }}>8Legs</span><span style={{ color: 'var(--primary)' }}>.ai</span>
         </div>
