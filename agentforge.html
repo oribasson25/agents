@@ -5263,7 +5263,7 @@ function markSvgString(color, size = 30) {
     { id: 'skills',        label: 'Skills',        icon: Icons.hash },
     { id: 'tools',         label: 'Tools',         icon: Icons.code },
     { id: 'knowledge',     label: 'Knowledge',     icon: Icons.database },
-    { id: 'tables',        label: 'Tables',        icon: Icons.rows },
+    { id: 'tables',        label: 'Resources',     icon: Icons.rows },
     { id: 'manual tests',  label: 'Manual tests',  icon: Icons.flask },
     { id: 'export',        label: 'Export',        icon: Icons.export },
   ];
@@ -6149,7 +6149,7 @@ def run(**kwargs):
           <Tip>The sentence explaining the table is what a chatbot reads to decide when to use it. It is worth the effort.</Tip>
 
           <H3>Who can reach it</H3>
-          <P>Every chatbot has a <strong>Tables</strong> tab of its own, where you tick which tables it may touch. Unticked means it does not exist for that chatbot, which is not given the tools at all.</P>
+          <P>Every chatbot has a <strong>Resources</strong> tab of its own, where you tick which tables it may touch. Unticked means it does not exist for that chatbot, which is not given the tools at all.</P>
 
           <H3>What it may do</H3>
           <UL>
@@ -6458,7 +6458,7 @@ git add -A && git commit -m "…" && git push`}</Block>
 
           <H3>From a chatbot, an app, or the assistant</H3>
           <UL>
-            <li><strong>A chatbot</strong> runs the automations ticked in its Tables tab, mid-conversation, and uses what they return.</li>
+            <li><strong>A chatbot</strong> runs the automations ticked in its Resources tab, mid-conversation, and uses what they return.</li>
             <li><strong>An app</strong> runs the ones it links: <Code>await legs.automation(&apos;name&apos;).run(input)</Code>.</li>
             <li><strong>The assistant</strong> writes one from a description — &ldquo;when a WhatsApp starts with &lsquo;refund&rsquo;, ask me to approve and tell the customer&rdquo; — tests it, and publishes it when you say so.</li>
           </UL>
@@ -6713,7 +6713,7 @@ npm run migrate            # run it`}</Block>
    * Rows an account keeps and its AI Chatbots read and write. A table belongs
    * to the account rather than to one chatbot, so several of them can answer
    * from the same rows; which chatbot may touch which is ticked per chatbot,
-   * in the editor's own Tables tab.
+   * in the editor's own Resources tab.
    */
 
   const COLUMN_TYPES = [
@@ -6983,7 +6983,7 @@ npm run migrate            # run it`}</Block>
             <span>
               {readers.length
                 ? <React.Fragment>{L('Read and written by', 'קוראים וכותבים')} {readers.map(a => <Chip key={a.id} tone="teal" style={{ marginInlineStart: 6 }}>{a.name}</Chip>)}</React.Fragment>
-                : L('No AI Chatbot uses this yet — tick it in a chatbot’s Tables tab.', 'שום AI Chatbot לא משתמש בה עדיין — סמן אותה בטאב Tables של אחד מהם.')}
+                : L('No AI Chatbot uses this yet — tick it in a chatbot’s Resources tab.', 'שום AI Chatbot לא משתמש בה עדיין — סמן אותה בטאב Resources של אחד מהם.')}
             </span>
             {rows.length > 0 && rows[rows.length - 1].updated_at && (
               <span style={{ marginInlineStart: 'auto' }}>
@@ -13224,12 +13224,12 @@ npm run migrate            # run it`}</Block>
     "- KNOWLEDGE is documents (pasted, PDF/DOCX upload, or crawled sites). On upload each one is rewritten by the model into short titled sections with a bilingual keyword line, then split into chunks; a question retrieves chunks by full-text search into the prompt. The search is LEXICAL, not semantic — it matches words, so a document only answers questions phrased with words it contains. You cannot upload files for the user, but you can tell them to press the tidy button on a document to have it reorganised.",
     "- AUTOPILOT is a wizard that builds a whole AI Chatbot from questions about the business: it opens by itself on an empty account, and 'new chatbot' offers Autopilot or Advanced (the editor). It writes the base prompt and skills itself, and does the API key, the site crawl, file uploads, the table, Gmail and the channel inside itself. If something the person asked for needs another company's system, it also writes a Python tool for it and walks them through fetching the credential; it proposes none otherwise. It ends in a loop: a test chat plus a notes field that rebuilds the chatbot until the person approves. You cannot run it for them; tell them to press New AI Chatbot and pick Autopilot.",
     "- The CRAWLER on the Knowledge tab takes one URL and reads the whole domain from it: every internal link, plus the site's sitemap.xml, up to the page limit chosen beside the field. It follows the redirect the URL makes, treats example.com and www.example.com as one site, and obeys robots.txt. A subdomain is a different site and needs its own URL. It does not run JavaScript, so a site rendered in the browser comes back near-empty — the screen says how many such pages there were. You cannot start a crawl for the user; tell them where the field is.",
-    "- TABLES are rows the account keeps — a price list, orders, leads — shared across its AI Chatbots rather than owned by one. Each chatbot is ticked onto the tables it may use, in its own Tables tab, and then it can read, add and update rows mid-conversation; it can never delete one or change a table's shape. You can make tables and read and write their rows yourself.",
+    "- TABLES are rows the account keeps — a price list, orders, leads — shared across its AI Chatbots rather than owned by one. Each chatbot is ticked onto the tables it may use, in its own Resources tab, and then it can read, add and update rows mid-conversation; it can never delete one or change a table's shape. You can make tables and read and write their rows yourself.",
     '- CHANNELS: the in-app test chat, an embeddable website widget (Export tab), and WhatsApp via Meta Cloud API (Whatsapp tab, needs a phone number id, access token, app secret and verify token from Meta). A WhatsApp number belongs to one AI Chatbot only.',
     '- DLP can mask credit-card and Israeli-ID numbers before they reach the model and before history is stored.',
     '- INTERACTIONS lists every conversation real end users had across channels, filterable and searchable.',
     "- MANUAL TESTS are the builder's own conversations with an AI Chatbot in the test chat, kept on the AI Chatbot's Manual tests tab and deliberately NOT in Interactions. Read them with get_test_conversations when someone reports an AI Chatbot behaving wrongly.",
-    "- AUTOMATIONS are workflows the platform runs: one trigger (a manual run, a webhook, a schedule, a WhatsApp message on a linked number, a new email, a new table row) and then steps on a canvas — Python code, an HTTP request, If / Switch / Loop / Wait, send a WhatsApp or an email, ask a person for approval on WhatsApp, read or write a Table, ask an AI Chatbot, or one AI prompt. A step reads earlier results as {{step.field}}. The canvas edits a draft; Test runs the draft for real; Publish makes it what the trigger fires. You build and change them with save_automation, try them with test_automation, and publish with publish_automation. CONNECTIONS (Gmail, Microsoft 365, a linked WhatsApp number) are added by the organization's admin on the Connections screen and used by name; you cannot add one. An AI Chatbot can run automations ticked in its Tables tab, and an App can run ones linked in app.json.",
+    "- AUTOMATIONS are workflows the platform runs: one trigger (a manual run, a webhook, a schedule, a WhatsApp message on a linked number, a new email, a new table row) and then steps on a canvas — Python code, an HTTP request, If / Switch / Loop / Wait, send a WhatsApp or an email, ask a person for approval on WhatsApp, read or write a Table, ask an AI Chatbot, or one AI prompt. A step reads earlier results as {{step.field}}. The canvas edits a draft; Test runs the draft for real; Publish makes it what the trigger fires. You build and change them with save_automation, try them with test_automation, and publish with publish_automation. CONNECTIONS (Gmail, Microsoft 365, a linked WhatsApp number) are added by the organization's admin on the Connections screen and used by name; you cannot add one. An AI Chatbot can run automations ticked in its Resources tab, and an App can run ones linked in app.json.",
     '- Everything the user edits is saved automatically; there is no save button.',
   ].join('\n');
 
@@ -13633,7 +13633,7 @@ npm run migrate            # run it`}</Block>
             columns: (input.columns || []).map(c => ({ name: c.name, type: c.type || 'text' })),
           });
           return done(`Created the table "${input.name}" with columns ${made.columns.map(c => c.name).join(', ')}. `
-            + 'It is not attached to any AI Chatbot yet — use update_agent with its tables list, or tell the user to tick it in the chatbot\'s Tables tab.');
+            + 'It is not attached to any AI Chatbot yet — use update_agent with its tables list, or tell the user to tick it in the chatbot\'s Resources tab.');
         }
 
         if (name === 'read_table' || name === 'write_table_row') {
