@@ -1,11 +1,10 @@
-import { sql } from './_db.js';
-import { resolveAgentApiConfig } from './_settings.js';
 import { getNumber } from './_waControl.js';
 import {
   actionsLastHour, callsAgent, contextWindow, getGroup, groupSettingsOf, insertGroupMessage,
-  describeClaudeError, logGroupEvent, setSeen, turnMode, upsertGroup,
+  describeClaudeError, logGroupEvent, messagesSince, resolveMentions, setSeen, turnMode, upsertGroup,
 } from './_waGroups.js';
 import { decideGroup } from './_waGroupBrain.js';
+import { createProactive, resolveSpeaker } from './_waGroupProactive.mjs';
 
 // Messages older than this (delivered after the number was offline) never trigger a turn.
 const STALE_MS = 10 * 60 * 1000;
@@ -16,8 +15,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * The groups side of one linked number (ported from the Grois group bot):
  * stores every group message, decides when a group needs a turn, merges
  * bursts, and carries out what the group brain decides — a reply (optionally
- * quoting), a reaction, or nothing. Every action, and every refusal by a
- * limit, goes to the admin's activity log.
+ * quoting), a reaction, a poll or a recap someone asked for, or nothing. It
+ * also sends what the admin scheduled (see _waGroupProactive.mjs). Every
+ * action, and every refusal by a limit, goes to the admin's activity log.
  *
  * One lives for one worker session; drain() finishes what is in flight.
  */
@@ -45,6 +45,9 @@ export function createGroupRouter(wa, numberId) {
   }
   wa.selfName = () => (number ? nameOf(groupSettingsOf(number)) : wa.state.me?.name || null);
 
+  // Scheduled messages, greetings and the welcome: what it does without being asked.
+  const proactive = createProactive(wa, numberId, { nameOf });
+
   wa.on('groups', (groups) => {
     queue = queue
       .then(async () => { for (const g of groups) await upsertGroup(numberId, g.jid, g.name); })
@@ -69,7 +72,7 @@ export function createGroupRouter(wa, numberId) {
     if (!n || !n.enabled) return;
     const group = known || (await getGroup(numberId, m.chatJid));
     const s = groupSettingsOf(n);
-    const mode = turnMode(group.mode, s);
+    const mode = turnMode(group.mode, s, new Date(), group.muted_until);
     if (mode === 'off') return;
     const addressed = !!(m.mentionsMe || m.repliesToMe || callsAgent(m.text, [nameOf(s), ...s.triggerWords]));
     if (mode === 'mention' && !addressed) return;
@@ -121,7 +124,7 @@ export function createGroupRouter(wa, numberId) {
     const group = await getGroup(numberId, jid);
     if (!n || !n.enabled || !group) return;
     const s = groupSettingsOf(n);
-    const mode = turnMode(group.mode, s);
+    const mode = turnMode(group.mode, s, new Date(), group.muted_until);
     if (mode === 'off' || (mode === 'mention' && !addressed)) return;
 
     if (s.maxActionsPerHour && (await actionsLastHour(numberId, jid)) >= s.maxActionsPerHour) {
@@ -144,15 +147,9 @@ export function createGroupRouter(wa, numberId) {
     if (!fresh.length) return;
 
     // Who answers: the group's AI Chatbot, else the number's. Only the owner's own.
-    const agentId = group.agent_id || n.agent_id;
-    const [agentRow] = agentId ? await sql`select id, data, user_id from agents where id = ${agentId} and user_id = ${n.owner_user_id}` : [];
-    if (!agentRow) {
-      await logGroupEvent(numberId, jid, 'error', { message: 'No AI Chatbot is set for this group or this number.' });
-      return;
-    }
-    const apiConfig = await resolveAgentApiConfig(agentRow);
-    if (apiConfig.provider !== 'claude' || !apiConfig.apiKey) {
-      await logGroupEvent(numberId, jid, 'error', { message: 'Groups need a Claude API key in the owner account’s Settings.' });
+    const { agentRow, apiConfig, error } = await resolveSpeaker(n, group);
+    if (error) {
+      await logGroupEvent(numberId, jid, 'error', { message: error });
       return;
     }
 
@@ -165,13 +162,34 @@ export function createGroupRouter(wa, numberId) {
     });
     await setSeen(numberId, jid, lastId);
 
-    if (decision.action === 'reply') {
+    if (decision.action === 'summary') {
+      // "What did I miss?": written from the whole stretch they asked about, not just the context window.
+      await wa.setTyping(jid, true);
+      const stretch = await messagesSince(numberId, jid, Date.now() - decision.hours * 3600_000);
+      decision.text = await proactive.compose(n, group,
+        `Someone asked what they missed. Write a recap of the last ${decision.hours} hours of the group's conversation for them: the topics, what was decided, open questions and anything someone is waiting on, with who said what where it matters. Short lines, most important first. If very little happened, say so in a line.`,
+        { rows: stretch, recap: true });
+      decision.action = 'reply';
+      decision.target = fresh.at(-1);
+    }
+
+    if (decision.action === 'poll') {
+      const waId = await wa.sendPoll(jid, decision.text, decision.options);
+      if (waId) {
+        await insertGroupMessage(numberId, {
+          chatJid: jid, waId, senderJid: wa.state.me?.id, fromMe: true, ts: Date.now(),
+          text: `[poll: ${decision.text} | ${decision.options.join(' / ')}]`,
+        });
+      }
+    } else if (decision.action === 'reply') {
       if (!addressed) {
         // Typing for a moment reads like a person, not an instant bot.
         await wa.setTyping(jid, true);
         await sleep(Math.min(800 + decision.text.length * 25, 3500));
       }
-      const waId = await wa.sendText(jid, decision.text, decision.target);
+      // "@Name" in the reply becomes a real mention.
+      const tagged = decision.text.includes('@') ? resolveMentions(decision.text, await proactive.rosterOf(jid)) : { text: decision.text, mentions: [] };
+      const waId = await wa.sendText(jid, tagged.text, decision.target, tagged.mentions);
       if (waId) {
         await insertGroupMessage(numberId, {
           chatJid: jid, waId, senderJid: wa.state.me?.id, text: decision.text, fromMe: true,
@@ -183,7 +201,7 @@ export function createGroupRouter(wa, numberId) {
     }
 
     await logGroupEvent(numberId, jid, decision.action, {
-      text: decision.text || undefined,
+      text: (decision.action === 'poll' ? `${decision.text}\n${decision.options.map((o) => `▫️ ${o}`).join('\n')}` : decision.text) || undefined,
       emoji: decision.emoji || undefined,
       trigger: fresh.at(-1).text.slice(0, 160),
       triggerFrom: fresh.at(-1).sender_name || undefined,
@@ -208,6 +226,6 @@ export function createGroupRouter(wa, numberId) {
     while ((inflight.size || rerun.size) && Date.now() < deadline) await Promise.race([...inflight, sleep(500)]);
   }
 
-  return { handle, drain };
+  return { handle, drain, runDue: proactive.runDue };
 }
 

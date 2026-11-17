@@ -25,7 +25,7 @@ const logger = pino({ level: process.env.WA_LOG_LEVEL || 'info' });
  *
  * Emits 'state' when the connection state changes, 'message' for every parsed
  * message (`isGroup` tells which kind), and 'groups' with { jid, name } of
- * groups the number is in. `fatal` is set when the session must end (another
+ * groups the number is in, and 'joined' when people are added to one. `fatal` is set when the session must end (another
  * connection replaced this one).
  */
 export class WhatsApp extends EventEmitter {
@@ -114,7 +114,16 @@ export class WhatsApp extends EventEmitter {
       this.emit('groups', groups.map((g) => ({ jid: g.id, name: g.subject || null })));
     });
     sock.ev.on('groups.update', (updates) => updates.forEach((u) => u.id && this.refreshGroup(u.id)));
-    sock.ev.on('group-participants.update', (ev) => ev?.id && this.refreshGroup(ev.id));
+    sock.ev.on('group-participants.update', (ev) => {
+      if (!ev?.id) return;
+      this.refreshGroup(ev.id);
+      // Who joined, for the group's welcome message. Entries are jids, or { id, phoneNumber } on newer Baileys.
+      if (ev.action === 'add') {
+        const joined = (ev.participants || []).map((p) => (typeof p === 'string' ? { jid: p } : { jid: p.id, pn: p.phoneNumber || null }))
+          .filter((p) => p.jid && !this.isMe(p.jid) && !(p.pn && this.isMe(p.pn)));
+        if (joined.length) this.emit('joined', { chatJid: ev.id, joined });
+      }
+    });
 
     sock.ev.on('messages.upsert', ({ messages, type }) => {
       for (const raw of messages) {
@@ -151,18 +160,38 @@ export class WhatsApp extends EventEmitter {
 
   /**
    * Sends text, split to WhatsApp's length limit. `quotedRow` (a stored group
-   * message) makes the first part a reply to it. Returns the id of the last
-   * message sent.
+   * message) makes the first part a reply to it; `mentions` are the jids the
+   * text tags (each written in it as "@<number>", or all of them for
+   * "@everyone"). Returns the id of the last message sent.
    */
-  async sendText(jid, text, quotedRow = null) {
+  async sendText(jid, text, quotedRow = null, mentions = []) {
     let id = null;
     let quoted = quotedRow ? toWAMessage(jid, quotedRow) : null;
     for (const chunk of splitMessage(text)) {
-      const sent = await this.sock.sendMessage(jid, { text: chunk }, quoted ? { quoted } : undefined);
+      const sent = await this.sock.sendMessage(jid, { text: chunk, ...(mentions.length && { mentions }) }, quoted ? { quoted } : undefined);
       id = sent?.key?.id || id;
       quoted = null;
     }
     return id;
+  }
+
+  /** Sends a WhatsApp poll; `multi` lets people choose several answers. */
+  async sendPoll(jid, question, options, multi = false) {
+    const sent = await this.sock.sendMessage(jid, { poll: { name: question, values: options, selectableCount: multi ? options.length : 1 } });
+    return sent?.key?.id || null;
+  }
+
+  /** The members of a group: [{ jid, phone, name }]. `jid` is how WhatsApp addresses them there. */
+  async groupMembers(jid) {
+    let meta = this.groupCache.get(jid);
+    if (!meta?.participants) {
+      await this.refreshGroup(jid);
+      meta = this.groupCache.get(jid);
+    }
+    return (meta?.participants || []).filter((p) => !this.isMe(p.id) && !this.isMe(p.phoneNumber || p.lid || '')).map((p) => {
+      const pn = [p.phoneNumber, p.id, p.jid].find((j) => j && isPnUser(j));
+      return { jid: p.id, phone: pn ? userOf(pn) : null, name: this.names.get(userOf(p.id)) || (pn && this.names.get(userOf(pn))) || null };
+    });
   }
 
   /** Reacts to a stored group message with one emoji. */

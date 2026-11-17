@@ -326,7 +326,13 @@ export function createRouter(wa, numberId, { baseUrl }) {
     await groupsDone;
   }
 
-  return { drain, sendDueReminders, sendOutbox };
+  /** Everything that came due on this number: people's reminders, and what its groups have scheduled. */
+  async function runDue() {
+    await sendDueReminders().catch((err) => console.warn(`[wa ${numberId}] reminders failed:`, err.message));
+    await groups.runDue().catch((err) => console.warn(`[wa ${numberId}] group schedules failed:`, err.message));
+  }
+
+  return { drain, sendDueReminders, sendOutbox, runDue };
 }
 
 // Claude requires strict user/assistant alternation; merge consecutive turns of one role.

@@ -67,9 +67,11 @@ export async function runSession({ numberId, deadline, baseUrl, host = null }) {
           break;
         }
       }
-      if (Date.now() - lastReminders >= REMINDER_POLL_MS) {
+      // Nothing new starts in the last minute: the next session picks it up instead of this one dropping it half-sent.
+      if (Date.now() - lastReminders >= REMINDER_POLL_MS && deadline - Date.now() > 60_000) {
         lastReminders = Date.now();
-        await router.sendDueReminders().catch((err) => console.warn(`[wa ${numberId}] reminders failed:`, err.message));
+        // Not awaited: a scheduled message may take a model call, and the lease must keep renewing.
+        router.runDue().catch((err) => console.warn(`[wa ${numberId}] due jobs failed:`, err.message));
       }
       if (Date.now() - lastRenew >= RENEW_MS) {
         lastRenew = Date.now();
