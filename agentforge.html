@@ -6546,7 +6546,7 @@ git add -A && git commit -m "…" && git push`}</Block>
           <H3>Who is who</H3>
           <UL>
             <li><strong>The platform admin</strong> creates organizations, each with its first admin, under <strong>Admin → Organizations</strong>, and can open the people of any of them.</li>
-            <li><strong>An organization&rsquo;s admin</strong> sees and changes everything in it, adds and removes its people under <strong>Team</strong>, sets the model key in Settings, and runs the organization&rsquo;s own <strong>Jarvis</strong> — its WhatsApp numbers and the people and groups on them, and no one else&rsquo;s.</li>
+            <li><strong>An organization&rsquo;s admin</strong> sees and changes everything in it, adds and removes its people under <strong>Team</strong>, sets the model key in Settings, and runs the organization&rsquo;s own <strong>WhatsApp agent</strong> — its WhatsApp numbers and the people and groups on them, and no one else&rsquo;s.</li>
             <li><strong>A member</strong> sees what they were given, and nothing else in the platform tells them more exists.</li>
           </UL>
 
@@ -6642,7 +6642,7 @@ git add -A && git commit -m "…" && git push`}</Block>
           <P>A connection is an account your automations act through: a Gmail mailbox, a Microsoft 365 mailbox, a linked WhatsApp number. The organization&rsquo;s admin connects it once on the <strong>Connections</strong> screen and names it; steps then pick it by name. The sign-in behind it is stored encrypted and never shown, copied into a file or written to a run.</P>
 
           <H3>WhatsApp number</H3>
-          <P>Any number linked under Jarvis (by scanning a QR code) can be connected. Automations can then send from it, ask for approvals on it, and start on messages it receives. Its chatbot and Jarvis keep working. Sending is paced — one message at a time, at most 120 an hour per number — because a linked number that sends in bulk is how a number gets banned.</P>
+          <P>Any number linked under WhatsApp agent (by scanning a QR code) can be connected. Automations can then send from it, ask for approvals on it, and start on messages it receives. Its chatbot and Jarvis keep working. Sending is paced — one message at a time, at most 120 an hour per number — because a linked number that sends in bulk is how a number gets banned.</P>
 
           <H3>Gmail</H3>
           <P><strong>Sign in to Gmail</strong> asks Google for permission to send mail and to read the mailbox. While the Google Cloud project is in &ldquo;Testing&rdquo;, only addresses on its test-user list can connect and the permission expires after 7 days — the connection then shows <em>Connect again</em>.</P>
@@ -8419,8 +8419,8 @@ npm run migrate            # run it`}</Block>
                     <div style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.7 }}>
                       {(data.numbers || []).length
                         ? L('Every linked number is already connected.', 'כל המספרים המקושרים כבר מחוברים.')
-                        : L('There is no linked WhatsApp number yet. Link one under Jarvis — by scanning a QR code with the phone — and it will appear here.', 'עוד אין מספר וואטסאפ מקושר. מקשרים מספר תחת Jarvis, בסריקת קוד QR מהטלפון, והוא יופיע כאן.')}
-                      {onOpenJarvis && <span> <button onClick={onOpenJarvis} style={{ background: 'transparent', color: 'var(--primary)', fontWeight: 650, cursor: 'pointer', fontSize: 12.5 }}>{L('Open Jarvis', 'פתח את Jarvis')}</button></span>}
+                        : L('There is no linked WhatsApp number yet. Link one under WhatsApp agent — by scanning a QR code with the phone — and it will appear here.', 'עוד אין מספר וואטסאפ מקושר. מקשרים מספר תחת WhatsApp agent, בסריקת קוד QR מהטלפון, והוא יופיע כאן.')}
+                      {onOpenJarvis && <span> <button onClick={onOpenJarvis} style={{ background: 'transparent', color: 'var(--primary)', fontWeight: 650, cursor: 'pointer', fontSize: 12.5 }}>{L('Open WhatsApp agent', 'פתח את WhatsApp agent')}</button></span>}
                     </div>
                   ) : (
                     <AutoField label={L('Which number', 'איזה מספר')} hint={L('Automations will be able to send from it — at most 120 messages an hour, one at a time. Its chatbot and Jarvis keep working as they do.', 'אוטומציות יוכלו לשלוח ממנו: עד 120 הודעות בשעה, אחת אחרי השנייה. הצ׳טבוט וה-Jarvis שלו ממשיכים לעבוד כרגיל.')}>
@@ -15181,25 +15181,23 @@ npm run migrate            # run it`}</Block>
   }
 
   function Sidebar({ activeNav, onNav, user, onLogout, settings, recents, activeSessionId, onPickRecent, onNewChat, language }) {
+    /* An organization's admin runs its people (Team) and its WhatsApp agent;
+       the platform admin also has Admin, where every organization is. */
+    const orgAdmin = isOrgAdminNow();
+    const platformAdmin = !!(user && user.isAdmin);
     const items = [
-      { id: 'home',         label: 'Home',          icon: Icons.home },
-      { id: 'agents',       label: 'AI Chatbots', icon: Icons.agents },
-      { id: 'tables',       label: 'Tables',        icon: Icons.rows },
-      { id: 'apps',         label: 'Apps',          icon: Icons.apps },
-      { id: 'automations',  label: 'Automations',   icon: Icons.automations, badge: 'NEW' },
-      { id: 'connections',  label: 'Connections',   icon: Icons.connections },
-      { id: 'interactions', label: 'Interactions',  icon: Icons.interactions },
-      { id: 'docs',         label: 'Documentation', icon: Icons.docs },
-      { id: 'settings',     label: 'Settings',      icon: Icons.settings },
-      /* An organization's admin runs its people and its own Jarvis; the
-         platform admin also has Admin, where every organization is. */
-      ...(isOrgAdminNow() ? [
-        { id: 'team', label: 'Team', icon: Icons.users },
-        { id: 'jarvis', label: 'Jarvis', icon: Icons.jarvis, badge: 'NEW' },
-      ] : []),
-      ...(user && user.isAdmin ? [
-        { id: 'admin', label: 'Admin', icon: Icons.admin },
-      ] : []),
+      { id: 'home',         label: 'Home',           icon: Icons.home },
+      { id: 'agents',       label: 'AI Chatbots',    icon: Icons.agents },
+      ...(orgAdmin ? [{ id: 'jarvis', label: 'WhatsApp agent', icon: Icons.jarvis, badge: 'NEW' }] : []),
+      { id: 'apps',         label: 'Apps',           icon: Icons.apps },
+      { id: 'automations',  label: 'Automations',    icon: Icons.automations, badge: 'NEW' },
+      { id: 'connections',  label: 'Connections',    icon: Icons.connections },
+      { id: 'interactions', label: 'Interactions',   icon: Icons.interactions },
+      { id: 'tables',       label: 'Tables',         icon: Icons.rows },
+      ...(orgAdmin ? [{ id: 'team', label: 'Team', icon: Icons.users }] : []),
+      { id: 'settings',     label: 'Settings',       icon: Icons.settings },
+      ...(platformAdmin ? [{ id: 'admin', label: 'Admin', icon: Icons.admin }] : []),
+      { id: 'docs',         label: 'Documentation',  icon: Icons.docs },
     ];
     const en = (language || uiLang()) !== 'he';
 
@@ -16744,7 +16742,7 @@ npm run migrate            # run it`}</Block>
       <div>
         <PageHeader
           eyebrow="WhatsApp · admins only"
-          title="Jarvis"
+          title="WhatsApp agent"
           subtitle="WhatsApp numbers linked as a device. Each number answers with an AI Chatbot by default, and with a private Jarvis for the people you put on its list."
           actions={<Btn variant="primary" icon={Icons.plus} onClick={onLink}>Link a number</Btn>}
         />
@@ -17002,7 +17000,7 @@ npm run migrate            # run it`}</Block>
       catch (err) { setError(err.message); setConfirm(null); }
     }
 
-    if (!n) return <div><JvBack label="Jarvis" onClick={onBack} />{error ? <JvError error={error} /> : <div style={{ color: 'var(--text-2)' }}>Loading…</div>}</div>;
+    if (!n) return <div><JvBack label="WhatsApp agent" onClick={onBack} />{error ? <JvError error={error} /> : <div style={{ color: 'var(--text-2)' }}>Loading…</div>}</div>;
 
     const st = jvStatus({ ...n, status: n.state.status });
     const agentName = (n.agents.find(a => a.id === n.agent_id) || {}).name;
@@ -17035,7 +17033,7 @@ npm run migrate            # run it`}</Block>
 
     return (
       <div>
-        <JvBack label="Jarvis" onClick={onBack} />
+        <JvBack label="WhatsApp agent" onClick={onBack} />
         <PageHeader
           eyebrow="Number"
           size={32}
@@ -19611,14 +19609,14 @@ npm run migrate            # run it`}</Block>
         <div style={{ marginBottom: 6 }}>
           <RuntimeCard settings={accountApi()} onOpenSettings={() => onOpen('settings')} />
         </div>
-        <Row icon={Icons.rows} label="Tables" hint={L('Shared rows your AI Chatbots read and write', 'שורות משותפות שה-AI Chatbots קוראים וכותבים')} onClick={() => onOpen('tables')} />
+        {isOrgAdminNow() && <Row icon={Icons.jarvis} label="WhatsApp agent" hint={L('WhatsApp numbers and private assistants', 'מספרי וואטסאפ ועוזרים אישיים')} onClick={() => onOpen('jarvis')} />}
         <Row icon={Icons.apps} label="Apps" hint={L('Your own interfaces, hosted here', 'ממשקים משלך, מתארחים כאן')} onClick={() => onOpen('apps')} />
         <Row icon={Icons.automations} label="Automations" hint={L('Workflows the platform runs for you', 'תהליכים שהפלטפורמה מריצה בשבילך')} onClick={() => onOpen('automations')} />
         <Row icon={Icons.connections} label="Connections" hint={L('Mailboxes and WhatsApp numbers your automations use', 'תיבות מייל ומספרי וואטסאפ שהאוטומציות משתמשות בהם')} onClick={() => onOpen('connections')} />
-        <Row icon={Icons.docs} label="Documentation" hint={L('How every part of this works', 'איך כל חלק במערכת עובד')} onClick={() => onOpen('docs')} />
+        <Row icon={Icons.rows} label="Tables" hint={L('Shared rows your AI Chatbots read and write', 'שורות משותפות שה-AI Chatbots קוראים וכותבים')} onClick={() => onOpen('tables')} />
         {isOrgAdminNow() && <Row icon={Icons.users} label="Team" hint={L('Who is in the organization, and what each may do', 'מי בארגון, ומה כל אחד רשאי')} onClick={() => onOpen('team')} />}
-        {isOrgAdminNow() && <Row icon={Icons.jarvis} label="Jarvis" hint={L('WhatsApp numbers and private assistants', 'מספרי וואטסאפ ועוזרים אישיים')} onClick={() => onOpen('jarvis')} />}
         {user.isAdmin && <Row icon={Icons.admin} label="Admin" hint={L('Users and the template AI Chatbots', 'משתמשים וAI Chatbots של התבנית')} onClick={() => onOpen('admin')} />}
+        <Row icon={Icons.docs} label="Documentation" hint={L('How every part of this works', 'איך כל חלק במערכת עובד')} onClick={() => onOpen('docs')} />
         <div style={{ height: 6 }} />
         <Row icon={Icons.logout} label="Log out" onClick={onLogout} danger />
       </div>
@@ -20115,7 +20113,7 @@ npm run migrate            # run it`}</Block>
     } else if (nav === 'jarvis' && isOrgAdminNow()) {
       screen = (
         <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-          <MobileTopBar title="Jarvis" onBack={() => go('home')} />
+          <MobileTopBar title="WhatsApp agent" onBack={() => go('home')} />
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px 16px 24px' }}>
             <JarvisView />
           </div>
@@ -20586,7 +20584,7 @@ npm run migrate            # run it`}</Block>
       interactions: ['Workspace', 'Interactions'],
       docs: ['Workspace', 'Documentation'],
       settings: ['Workspace', 'Settings'],
-      jarvis: ['Workspace', 'Jarvis'],
+      jarvis: ['Workspace', 'WhatsApp agent'],
       team: ['Workspace', 'Team'],
       admin: ['Workspace', 'Admin'],
     };
