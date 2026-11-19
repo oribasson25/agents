@@ -15,6 +15,7 @@ import crypto from 'crypto';
 import { sql } from './_db.js';
 import { agentVersion } from './_agentFiles.js';
 import { accessTo, allows, ReadOnlyError } from './_access.js';
+import { findPhoneNumberConflict, PHONE_CONFLICT_MESSAGE } from './_whatsappClaim.js';
 
 export const MAIN = 'main';
 
@@ -69,9 +70,20 @@ export async function loadAgent({ agentId, user, branch = MAIN }) {
 }
 
 /** Writes the agent back to whichever branch it came from. */
-export async function saveAgent({ agentId, user, branch = MAIN, data }) {
+export async function saveAgent({ agentId, user, branch = MAIN, data: given }) {
   const owned = await ownedAgent(agentId, user, 'edit');
   if (!owned) return null;
+  /* The stored id is always the row's own. The browser builds request paths
+     from `data.id`, so an id like "../org/members/<me>#" planted by one editor
+     would send the next editor's autosave to another endpoint with their
+     token. Whatever arrives, the agent's id is the one it is stored under. */
+  const data = { ...(given || {}), id: agentId };
+  /* One number, one agent, platform-wide — checked here so that every way in
+     (the editor, a CLI push, a git push) is held to it, not only the editor. */
+  const phoneNumberId = data.whatsapp && data.whatsapp.phoneNumberId;
+  if (phoneNumberId && await findPhoneNumberConflict(phoneNumberId, agentId)) {
+    throw Object.assign(new Error(PHONE_CONFLICT_MESSAGE), { code: 'PHONE_CONFLICT' });
+  }
   if (isMain(branch)) {
     await sql`
       update agents set data = ${JSON.stringify(data)}::jsonb, updated_at = now()
@@ -137,6 +149,28 @@ export async function createBranch({ agentId, user, name, from = MAIN, kind = 'b
   return { id, name: clean, kind, version: source.version, from: source.branch };
 }
 
+/**
+ * Every id ticked under `key` ('tables', 'automations') on the agent, live or
+ * on any open branch. The test chat may be testing a draft whose list differs
+ * from main's, so it may name any of these — and nothing else: a list sent by
+ * the browser is cut down to this before anything runs.
+ */
+export async function listedOnAgent(agentId, key) {
+  const [row] = await sql`
+    select a.data as main,
+           coalesce((select jsonb_agg(b.data) from agent_branches b
+                      where b.agent_id = a.id and b.merged_at is null), '[]'::jsonb) as branches
+    from agents a where a.id = ${agentId}
+  `;
+  const out = new Set();
+  if (!row) return out;
+  for (const data of [row.main, ...(Array.isArray(row.branches) ? row.branches : [])]) {
+    const list = data && data[key];
+    if (Array.isArray(list)) list.forEach(x => out.add(String(x)));
+  }
+  return out;
+}
+
 /** The interface's working copy, made on first edit rather than up front. */
 export async function getOrCreateDraft(agentId, user) {
   if (!(await ownedAgent(agentId, user, 'edit'))) return null;
@@ -185,7 +219,7 @@ export async function mergeBranch({ agentId, user, branch }) {
   const row = await findBranch(agentId, branch);
   if (!row) throw Object.assign(new Error(`No branch called "${branch}"`), { code: 'NO_BRANCH' });
 
-  const merged = mergeInto(owned.data, row.data);
+  const merged = { ...mergeInto(owned.data, row.data), id: agentId };
   await sql`
     update agents set data = ${JSON.stringify(merged)}::jsonb, updated_at = now()
     where id = ${agentId}

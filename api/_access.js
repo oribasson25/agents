@@ -34,7 +34,38 @@ export class ReadOnlyError extends Error {
   }
 }
 
-/** The person behind a request, as the database knows them now. */
+/**
+ * One account as the database holds it now, or null. The same statement serves
+ * member() and the session check in _auth.js (requireSession), so a token and
+ * the person behind it are judged against one read.
+ */
+export async function personRow(userId) {
+  const [row] = await sql`
+    select u.id, u.username, u.is_admin, u.org_id, u.org_role, u.org_access,
+           u.must_change_password, o.name as org_name, u.token_version
+    from users u left join organizations o on o.id = u.org_id
+    where u.id = ${userId}
+  `;
+  return row || null;
+}
+
+/*
+ * `user` is a verified session token when checkAuth marked it (viaSession) or it
+ * carries `exp`/`tv`, a personal access token when `viaToken`, and otherwise an id the
+ * platform looked up itself (sessionInfo, a webhook, a cron).
+ */
+const fromSessionToken = (user) => !!user.viaSession || user.exp !== undefined || user.tv !== undefined;
+
+/**
+ * The person behind a request, as the database knows them now.
+ *
+ * For a request's own token it also decides whether that token still stands:
+ * one signed before the account's token_version was raised (a password reset
+ * or change) is no one, and so is anyone still holding a temporary password,
+ * who may do nothing but replace it (/api/me, which does not come through
+ * here with a token). Handlers answer null with 401/404, which is right for
+ * both.
+ */
 export async function member(user) {
   /* The platform acting on its own behalf — a git push arriving through the
      webhook, which GitHub has already authorised. It may touch any item. */
@@ -43,13 +74,10 @@ export async function member(user) {
              orgName: '', orgRole: 'admin', orgAccess: 'edit', mustChangePassword: false };
   }
   if (!user || !user.userId) return null;
-  const [row] = await sql`
-    select u.id, u.username, u.is_admin, u.org_id, u.org_role, u.org_access,
-           u.must_change_password, o.name as org_name
-    from users u left join organizations o on o.id = u.org_id
-    where u.id = ${user.userId}
-  `;
+  const row = await personRow(user.userId);
   if (!row) return null;
+  if (fromSessionToken(user) && (Number(row.token_version) || 0) !== (Number(user.tv) || 0)) return null;
+  if ((fromSessionToken(user) || user.viaToken) && row.must_change_password) return null;
   return {
     userId: row.id,
     username: row.username,

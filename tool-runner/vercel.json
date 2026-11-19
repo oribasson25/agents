@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "api/run_tool.py": {
+      "maxDuration": 120
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/run-tool",
+      "destination": "/api/run_tool.py"
+    }
+  ]
+}

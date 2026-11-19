@@ -1,10 +1,10 @@
-import { checkAuth } from './_auth.js';
+import { requireSession } from './_auth.js';
 import { recentErrors } from './_errorLog.js';
 import { member, grantsOf, levelFor } from './_access.js';
 
 /** Recent failures across the caller's agents, newest first. */
 export default async function handler(req, res) {
-  const user = checkAuth(req, res);
+  const user = await requireSession(req, res);
   if (!user) return;
   if (req.method !== 'GET') return res.status(405).end();
 

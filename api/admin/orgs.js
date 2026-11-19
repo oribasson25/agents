@@ -1,4 +1,4 @@
-import { checkAdmin } from '../_auth.js';
+import { requireAdmin } from '../_auth.js';
 import { sql } from '../_db.js';
 import { listOrgs, createOrg, errorReply } from '../_orgs.js';
 import { topUpOrg } from '../_llm.js';
@@ -12,7 +12,7 @@ import { topUpOrg } from '../_llm.js';
  *           temporary password comes back once.
  */
 export default async function handler(req, res) {
-  const admin = checkAdmin(req, res);
+  const admin = await requireAdmin(req, res);
   if (!admin) return;
   try {
     if (req.method === 'GET') return res.json({ orgs: await listOrgs() });

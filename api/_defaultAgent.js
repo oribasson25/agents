@@ -146,7 +146,7 @@ async function copyStarter(userId, starter) {
       values (${copyId}, ${agent.id}, ${doc.skill_id || null}, ${doc.title}, ${doc.content},
               ${doc.normalized === true}, ${doc.source_type || 'manual'}, ${doc.source_url || null})
     `;
-    await rechunk(copyId, agent.id, doc.skill_id, doc.title, doc.content);
+    await rechunk(copyId, agent.id, doc.skill_id, doc.title, doc.content, { fresh: true });
   }
 
   console.log(`[seed] user=${userId} got a copy of "${starter.name}" (${docs.length} documents)`);

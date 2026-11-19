@@ -1,4 +1,4 @@
-import { checkAdmin } from '../../_auth.js';
+import { requireAdmin } from '../../_auth.js';
 import { member } from '../../_access.js';
 import { getOrg, deleteOrg, errorReply } from '../../_orgs.js';
 
@@ -8,7 +8,7 @@ import { getOrg, deleteOrg, errorReply } from '../../_orgs.js';
  * People in it are managed through /api/org/members?org=<id>.
  */
 export default async function handler(req, res) {
-  const admin = checkAdmin(req, res);
+  const admin = await requireAdmin(req, res);
   if (!admin) return;
   if (req.method !== 'DELETE') return res.status(405).end();
   try {

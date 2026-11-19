@@ -24,14 +24,34 @@ let settingsRow = null;
 let balanceRow = null;   // org_billing.balance_usd for the org under test; null: no limit
 let limits = { item: null, member: null };   // usage_limits for the item and member under test
 let used = { item: 0, member: 0 };           // what they were charged this month
+const releases = [];
 globalThis.__db = (text, params) => {
-  if (/select openrouter_key, default_model, monthly_ceiling_usd/.test(text)) return platformRow ? [platformRow] : [];
-  if (/as balance,\s+\(select monthly_usd from usage_limits/.test(text)) {
-    return [{ balance: balanceRow === null ? null : String(balanceRow), item_limit: limits.item, member_limit: limits.member }];
+  if (/select \* from platform_billing/.test(text)) return platformRow ? [platformRow] : [];
+  /* The hold (api/_llm.js reserve): one statement that holds on every counter
+     with a cap and on the balance. Its SQL is checked against a real Postgres
+     separately; here it answers as that statement would for the state below:
+     a counter holds while what it has spent is under its cap, and the balance
+     gives what it has left, up to the estimate, while it is above zero. */
+  if (/with want as \(/.test(text)) {
+    const [ceiling, publicKey, , publicDefault, itemKey, , , , memberKey, , , est] = params;
+    const wanted = [{ scope: 'platform', key: '', amt: est }];
+    const held = [];
+    if (spent < Number(ceiling)) held.push('platform');
+    if (publicKey && publicDefault !== null) { wanted.push({ scope: 'org-public', key: publicKey, amt: est }); held.push('org-public'); }
+    if (itemKey && limits.item !== null) {
+      wanted.push({ scope: 'item', key: itemKey, amt: est });
+      if (Number(limits.item) > 0 && used.item < Number(limits.item)) held.push('item');
+    }
+    if (memberKey && limits.member !== null) {
+      wanted.push({ scope: 'member', key: memberKey, amt: est });
+      if (Number(limits.member) > 0 && used.member < Number(limits.member)) held.push('member');
+    }
+    const hold = balanceRow !== null && balanceRow > 0 ? Math.min(Number(est), balanceRow) : null;
+    return [{ balance: balanceRow === null ? null : String(balanceRow), balance_hold: hold, wanted, held }];
   }
+  if (/update llm_month_spend s set held_usd = greatest/.test(text)) { releases.push(params); return []; }
+  if (/select spent_usd as usd from llm_month_spend/.test(text)) return [{ usd: String(spent) }];
   if (/select balance_usd from org_billing/.test(text)) return balanceRow === null ? [] : [{ balance_usd: String(balanceRow) }];
-  if (/sum\(charged_usd\) filter/.test(text)) return [{ item: String(used.item), member: String(used.member) }];
-  if (/select coalesce\(sum\(cost_usd\), 0\) as usd from llm_usage/.test(text)) return [{ usd: String(spent) }];
   if (/insert into llm_usage/.test(text)) { writes.push(params); return []; }
   if (/insert into error_log/.test(text)) { errors.push(params); return []; }
   if (/select org_id from users/.test(text)) return [{ org_id: 'org-from-user' }];
@@ -68,28 +88,49 @@ await check('a call goes to OpenRouter with the platform key, on the organizatio
   assert.equal(calls[0].headers.Authorization, 'Bearer sk-or-v1-PLATFORM');
   assert.equal(calls[0].body.model, 'anthropic/claude-sonnet-4.5', 'a member cannot pick a pricier model by editing the request');
   assert.ok(!JSON.stringify(calls[0].body).includes('sk-or'), 'the key is never in the body');
+  assert.equal(calls[0].body.stream, false, 'never streamed: a stream cannot be counted');
+  assert.deepEqual(calls[0].body.usage, { include: true }, 'and OpenRouter is asked for the cost');
 });
 
 await check('the call is written to llm_usage with the tokens and the cost OpenRouter reported', async () => {
   const row = writes[0];
   assert.ok(row, 'a row was written');
-  // The statement first reads the markup and takes the charge from the balance, then writes the row.
-  const [markupOrg, chargeCost, balanceOrg, org, user, source, itemType, itemId, model, input, output, read, write, cost] = row;
-  assert.deepEqual([markupOrg, chargeCost, balanceOrg], ['org-1', 0.00213, 'org-1'], 'charged to the same organization, on OpenRouter\'s cost');
+  // The statement first reads the markup and charges the balance, moves the counters, then writes the row.
+  const [markupOrg, chargeCost] = row;
+  assert.deepEqual([markupOrg, chargeCost], ['org-1', 0.00213], 'charged to the same organization, on OpenRouter\'s cost');
+  const [org, user, source, itemType, itemId, model, input, output, read, write, cost] = row.slice(-11);
   assert.deepEqual([org, user, source, itemType, itemId], ['org-1', 'u1', 'test-chat', 'agent', 'a1']);
   assert.equal(model, 'anthropic/claude-sonnet-4.5');
   assert.deepEqual([input, output, read, write], [1200, 80, 1000, 0]);
   assert.equal(cost, 0.00213);
 });
 
-await check('a 200 with an error inside is not a success and is not counted', async () => {
-  writes.length = 0;
+await check('a 200 with an error inside is not a success and is not counted; what was held is given back', async () => {
+  writes.length = 0; releases.length = 0;
   const { llmFetch } = await fresh();
   const { fetchImpl } = recorder({ json: { error: { message: 'upstream failed', code: 502 } } });
   const out = await llmFetch({ cfg: CFG, body: { messages: [] }, fetchImpl });
   assert.equal(out.ok, false);
   assert.equal(out.status, 502);
   assert.equal(writes.length, 0);
+  assert.equal(releases.length, 1, 'the hold on the platform\'s counter is released');
+});
+
+await check('a failed call that OpenRouter still charged for is counted', async () => {
+  writes.length = 0;
+  const { llmFetch } = await fresh();
+  const { fetchImpl } = recorder({ json: { error: { message: 'cut off' }, usage: { prompt_tokens: 10, completion_tokens: 900, cost: 0.02 } } });
+  const out = await llmFetch({ cfg: CFG, body: { messages: [] }, fetchImpl });
+  assert.equal(out.ok, false);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].slice(-1)[0], 0.02);
+});
+
+await check('a call that cannot reach OpenRouter gives its hold back', async () => {
+  releases.length = 0;
+  const { llmFetch } = await fresh();
+  await assert.rejects(() => llmFetch({ cfg: CFG, body: { messages: [] }, fetchImpl: async () => { throw new Error('ECONNRESET'); } }), /ECONNRESET/);
+  assert.equal(releases.length, 1);
 });
 
 await check('OpenRouter refusing the platform\'s account says so in OpenRouter\'s words, and is logged', async () => {
@@ -171,14 +212,71 @@ await check('an item runs on the model it chose only while the organization\'s l
   assert.equal(resolveApiConfig(s, { model: 'org/default' }).model, 'org/default', 'the default is always allowed');
 });
 
-await check('a ceiling of 0 means no ceiling', async () => {
+await check('a ceiling of 0 stops every call, as a limit of 0 does (migration 037 turned old zeros into 100000)', async () => {
   platformRow = { ...platformRow, monthly_ceiling_usd: '0' };
-  spent = 999;
   const { llmFetch } = await fresh();
-  const { fetchImpl } = recorder(chatAnswer());
-  assert.equal((await llmFetch({ cfg: CFG, body: { messages: [] }, fetchImpl })).ok, true);
+  const { fetchImpl, calls } = recorder(chatAnswer());
+  await assert.rejects(() => llmFetch({ cfg: CFG, body: { messages: [] }, fetchImpl }), (e) => e.code === 'BUDGET');
+  assert.equal(calls.length, 0);
   platformRow = { ...platformRow, monthly_ceiling_usd: '50' };
-  spent = 0;
+});
+
+await check('strangers on an organization that used its share of the ceiling get the stop message; its members do not', async () => {
+  const { llmFetch, isStopped } = await fresh();
+  const { fetchImpl } = recorder(chatAnswer());
+  const realDb = globalThis.__db;
+  globalThis.__db = (text, params) => {
+    if (/with want as \(/.test(text)) {
+      const [, publicKey, , , , , , , , , , est] = params;
+      const wanted = [{ scope: 'platform', key: '', amt: est }];
+      if (publicKey) wanted.push({ scope: 'org-public', key: publicKey, amt: est });
+      return [{ balance: null, balance_hold: null, wanted, held: ['platform'] }];
+    }
+    return realDb(text, params);
+  };
+  try {
+    await assert.rejects(() => llmFetch({ cfg: CFG, body: { messages: [] }, meta: { source: 'agents', public: true }, fetchImpl }),
+      (e) => e.code === 'ORG_PUBLIC_CAP' && isStopped(e));
+    assert.equal((await llmFetch({ cfg: CFG, body: { messages: [] }, meta: { source: 'test-chat', userId: 'u1' }, fetchImpl })).ok, true);
+  } finally {
+    globalThis.__db = realDb;
+  }
+});
+
+await check('a database that cannot be read refuses the call (money fails closed)', async () => {
+  const { llmFetch } = await fresh();
+  const { fetchImpl, calls } = recorder(chatAnswer());
+  const realDb = globalThis.__db;
+  globalThis.__db = (text, params) => {
+    if (/with want as \(/.test(text)) throw Object.assign(new Error('connection reset'), { code: '08006' });
+    return realDb(text, params);
+  };
+  try {
+    await assert.rejects(() => llmFetch({ cfg: CFG, body: { messages: [] }, fetchImpl }), (e) => e.code === 'BILLING_UNAVAILABLE' && e.status === 503);
+    assert.equal(calls.length, 0);
+  } finally {
+    globalThis.__db = realDb;
+  }
+});
+
+await check('the estimate held grows with what the answer may cost', async () => {
+  const { estimateCostUsd } = await fresh();
+  const small = estimateCostUsd('nobody/knows', { messages: [{ role: 'user', content: 'hi' }], max_tokens: 100 });
+  const big = estimateCostUsd('nobody/knows', { messages: [{ role: 'user', content: 'hi' }], max_tokens: 8000 });
+  assert.ok(small > 0 && big > small * 10, `${small} → ${big}`);
+  const picture = estimateCostUsd('nobody/knows', { messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,' + 'A'.repeat(2_000_000) } }] }], max_tokens: 100 });
+  assert.ok(picture < 0.05, 'a picture counts as about 1,500 tokens, not as its base64');
+});
+
+await check('/api/llm passes on only what the screens use, and never a stream', async () => {
+  const { allowedBody } = await import('../api/llm.js');
+  for (const k of ['stream', 'models', 'provider', 'plugins', 'transforms', 'route']) {
+    assert.ok(allowedBody({ messages: [], [k]: k === 'stream' ? true : ['x'] }).error, k);
+  }
+  const ok = allowedBody({ messages: [{ role: 'user', content: 'x' }], max_tokens: 100000, tools: [{ type: 'function', function: { name: 'f' } }], temperature: 0.3, model: 'whatever', foo: 1 });
+  assert.equal(ok.body.max_tokens, 8192, 'capped');
+  assert.deepEqual(Object.keys(ok.body).sort(), ['max_tokens', 'messages', 'temperature', 'tools']);
+  assert.ok(allowedBody({ messages: [{ role: 'developer', content: 'x' }] }).error, 'an unknown role is refused');
 });
 
 await check('no platform key, or no model → refused before anything is sent', async () => {
@@ -197,8 +295,9 @@ await check('an SDK-free caller with no org in meta is counted against the owner
   const { llmFetch } = await fresh();
   const { fetchImpl } = recorder(chatAnswer());
   await llmFetch({ cfg: { ...CFG, orgId: null }, body: { messages: [] }, meta: { ownerId: 'owner-1', source: 'jarvis', itemType: 'number', itemId: 'n1' }, fetchImpl });
-  assert.equal(writes[0][3], 'org-from-user');
-  assert.equal(writes[0][4], null, 'the owner paid; nobody in the browser set it off');
+  const [org, user] = writes[0].slice(-11);
+  assert.equal(org, 'org-from-user');
+  assert.equal(user, null, 'the owner paid; nobody in the browser set it off');
 });
 
 await check('web search: OpenRouter\'s web plugin on the organization\'s model, with the sources back', async () => {

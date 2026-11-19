@@ -28,6 +28,9 @@ check('a Hebrew agent name still makes a legal repo name',
       /^[a-z0-9-]+$/.test(GH.repoName({ id: '804fe690-c8b6', name: 'ביטוח רכב' })));
 check('two agents with the same name get different repos',
       GH.repoName({ id: 'aaaaaaaa-1', name: 'Support' }) !== GH.repoName({ id: 'bbbbbbbb-2', name: 'Support' }));
+check('even when their ids start the same: the whole id is in the name',
+      GH.repoName({ id: 'aaaaaaaa-1111-4111-8111-111111111111', name: 'Support' })
+        !== GH.repoName({ id: 'aaaaaaaa-2222-4222-8222-222222222222', name: 'Support' }));
 
 const body = Buffer.from(JSON.stringify({ hello: 'world' }));
 const good = 'sha256=' + crypto.createHmac('sha256', 'test-secret').update(body).digest('hex');
@@ -172,7 +175,7 @@ check('an unlinked repository is refused', r.statusCode === 404);
   const prevDb = globalThis.__db, prevFetch = globalThis.fetch;
   globalThis.__db = (text, p) => {
     const t = text.replace(/\s+/g, ' ').trim();
-    if (t.startsWith('select owner, repo, webhook_id from agent_repos')) return [repoRow];
+    if (t.startsWith('select owner, repo, webhook_id') && t.includes('from agent_repos')) return [repoRow];
     if (t.startsWith('update agent_repos set webhook_id')) { repoRow.webhook_id = p[0]; return []; }
     return prevDb(text, p);
   };
@@ -203,8 +206,11 @@ check('an unlinked repository is refused', r.statusCode === 404);
   const prevDb = globalThis.__db, prevFetch = globalThis.fetch;
   globalThis.__db = (text, p) => {
     const t = text.replace(/\s+/g, ' ').trim();
-    if (t.startsWith('select owner, repo, webhook_id from agent_repos')) return [];
-    if (t.startsWith('insert into agent_repos')) { inserted = p; return []; }
+    if (t.startsWith('select owner, repo, webhook_id') && t.includes('from agent_repos')) return [];
+    if (t.startsWith('select 1 as held from agent_repos')) return [];
+    if (t.startsWith('insert into agent_repos')) { inserted = [...p]; return [{ agent_id: p[0] }]; }
+    if (t.startsWith('update agent_repos set webhook_id')) return [];
+    if (t.startsWith('update agent_repos set last_push_sha')) { inserted.push(p[0]); return []; }
     return prevDb(text, p);
   };
   globalThis.fetch = async (url, opts = {}) => {
@@ -231,6 +237,30 @@ check('an unlinked repository is refused', r.statusCode === 404);
         readme > -1 && readme < firstGit, calls.join('\n    '));
   check('and then the agent goes in on top of it, and the link is kept',
         link?.cloneUrl && inserted && inserted.includes('first-real-commit'), JSON.stringify({ link, inserted }));
+  check('the repository is claimed before anything is pushed into it',
+        inserted && inserted[4] === null, JSON.stringify(inserted));
+  check('and the files go inside the tree, not one blob request each',
+        !calls.some(c => /POST \/repos\/[^/]+\/[^/]+\/git\/blobs$/.test(c)), calls.join('\n    '));
+  globalThis.__db = prevDb;
+  globalThis.fetch = prevFetch;
+}
+
+/* ── a repository linked to something else is never pushed into ──────────── */
+{
+  const calls = [];
+  const prevDb = globalThis.__db, prevFetch = globalThis.fetch;
+  globalThis.__db = (text, p) => {
+    const t = text.replace(/\s+/g, ' ').trim();
+    if (t.startsWith('select owner, repo, webhook_id') && t.includes('from agent_repos')) return [];
+    if (t.startsWith('select 1 as held from agent_repos')) return [{ held: 1 }];   /* someone else's */
+    if (t.startsWith('insert into agent_repos')) throw new Error('must not claim');
+    if (t.includes('error_log')) return [];
+    return prevDb(text, p);
+  };
+  globalThis.fetch = async (url, opts = {}) => { calls.push(`${opts.method || 'GET'} ${url}`); return { ok: true, status: 200, text: async () => '{}' }; };
+  const link = await GH.ensureAgentRepo({ agent: AGENT, files: { 'prompt.md': 'x' }, appUrl: 'https://www.8legs.world' });
+  check('a repository name already linked elsewhere is refused, with no call to GitHub',
+        link === null && !calls.some(c => /\/git\/|\/contents\//.test(c)), calls.join('\n    '));
   globalThis.__db = prevDb;
   globalThis.fetch = prevFetch;
 }

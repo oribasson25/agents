@@ -39,13 +39,19 @@ globalThis.__db = (text, params) => {
 /* ── the site this crawl reads ── */
 let site = {};
 const hits = [];
-globalThis.fetch = async (url) => {
+/* The crawler fetches through _netGuard.safeFetch, which follows redirects
+   itself (each one checked), so this site answers like fetch with
+   redirect:'manual': a redirect is a 302 and a Location. */
+const transport = async (raw) => {
+  const u = new URL(raw);
+  const url = u.pathname === '/' && !u.search ? raw.replace(/\/$/, '') : raw;
   hits.push(url);
   const page = site[url];
   if (!page) return reply(url, 404, 'text/html', '<html><body><h1>Not found</h1><p>No such page here at all.</p></body></html>');
-  if (page.redirect) return reply(page.redirect, 200, 'text/html', site[page.redirect]?.html ?? '', url);
+  if (page.redirect) return { ok: false, status: 302, url, headers: { get: k => (k.toLowerCase() === 'location' ? page.redirect : null) }, arrayBuffer: async () => new ArrayBuffer(0) };
   return reply(url, page.status ?? 200, page.type ?? 'text/html; charset=utf-8', page.html ?? '', null, page.bytes);
 };
+globalThis.fetch = transport;
 function reply(finalUrl, status, type, html, _from, bytes) {
   const body = bytes || Buffer.from(html, 'utf8');
   return {
@@ -56,6 +62,9 @@ function reply(finalUrl, status, type, html, _from, bytes) {
   };
 }
 
+const { netGuardTesting } = await import(`${ROOT}/api/_netGuard.js`);
+netGuardTesting.transport = transport;
+netGuardTesting.allowPrivate = true;     /* made-up hosts with no DNS */
 const C = await import(`${ROOT}/api/_crawlSite.js`);
 const crawl = (startUrl, opts = {}) =>
   C.crawlSite({ startUrl, agentId: 'a-1', maxPages: 50, budgetMs: 20000, ...opts });
@@ -238,6 +247,35 @@ ok(r.stoppedEarly === true, 'and the crawl says it stopped short');
 
 r = await crawl('https://big.com', { maxPages: 99999 });
 ok(r.pagesCrawled <= 500, 'a page limit from the client cannot ask for the world', `${r.pagesCrawled}`);
+
+/* ─────────── addresses inside the platform's network ─────────── */
+netGuardTesting.allowPrivate = false;
+for (const inside of ['http://127.0.0.1/', 'http://169.254.169.254/latest/meta-data', 'http://[::ffff:127.0.0.1]/', 'http://10.0.0.5/']) {
+  hits.length = 0;
+  site = { [inside.replace(/\/$/, '')]: page('Inside', `<p>${filler}</p>`) };
+  docs.length = 0;
+  r = await crawl(inside);
+  ok(r.failed === true && docs.length === 0 && hits.length === 0,
+     `a crawl of ${inside} is refused before anything is fetched`, `${r.errors.join('; ')} / ${hits.length} hits`);
+}
+/* A public page that redirects inside is refused at the redirect. */
+site = { 'http://8.8.8.8': { redirect: 'http://169.254.169.254/latest' }, 'http://169.254.169.254/latest': page('Metadata', `<p>${filler}</p>`) };
+hits.length = 0;
+docs.length = 0;
+r = await crawl('http://8.8.8.8');
+ok(r.failed === true && !hits.includes('http://169.254.169.254/latest') && docs.length === 0,
+   'a redirect into the platform\'s network is not followed', `${r.errors.join('; ')} / ${hits.join(' ')}`);
+netGuardTesting.allowPrivate = true;
+
+/* ─────────── a huge page is cut, not read whole ─────────── */
+site = {
+  'https://huge.com': { html: `<html><head><title>Huge</title></head><body><p>${'word '.repeat(1_000_000)}</p></body></html>` },
+  'https://huge.com/robots.txt': { status: 404, type: 'text/plain' },
+  'https://huge.com/sitemap.xml': { status: 404, type: 'application/xml' },
+};
+docs.length = 0;
+r = await crawl('https://huge.com');
+ok(docs.length === 1 && docs[0].content.length <= 60100, 'a 5 MB page is read only up to the cap and stored cut', `${docs[0]?.content.length}`);
 
 console.log(`\n${failed ? `${failed} FAILURE(S)` : 'all green'}`);
 process.exit(failed ? 1 : 0);

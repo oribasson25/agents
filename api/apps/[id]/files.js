@@ -46,7 +46,7 @@ export default async function handler(req, res) {
 
     const { app: next, errors } = filesToApp(files, app);
     if (errors.length) return res.status(422).json({ error: 'Invalid app files', errors });
-    const problems = await linkProblems(next, loaded.ownerId);
+    const problems = await linkProblems(next, loaded.ownerId, user, loaded.app);
     if (problems.length) return res.status(422).json({ error: 'Invalid app files', errors: problems });
 
     const saved = await saveApp({ appId: app.id, user, data: next, source: 'cli',

@@ -145,19 +145,19 @@ function call(body) {
   return register({ method: 'POST', body }, res).then(() => res);
 }
 
-let r = await call({ username: 'dana', password: 'pw', phone: '050' });
+let r = await call({ username: 'dana', password: 'password-1', phone: '050' });
 ok(r.code === 403, 'no code, no account', `got ${r.code}`);
 ok(db.users.length === 0, 'and nothing was written');
 
-r = await call({ username: 'dana', password: 'pw', phone: '050', inviteCode: 'ZZZZ-ZZZZ-ZZZZ' });
+r = await call({ username: 'dana', password: 'password-1', phone: '050', inviteCode: 'ZZZZ-ZZZZ-ZZZZ' });
 ok(r.code === 403, 'a code that was never minted is refused', `got ${r.code}`);
 
-r = await call({ username: 'dana', password: 'pw', phone: '050', inviteCode: made.code.toLowerCase() });
+r = await call({ username: 'dana', password: 'password-1', phone: '050', inviteCode: made.code.toLowerCase() });
 ok(r.code === 201, 'the real code, typed in lower case, opens an account', `got ${r.code} ${JSON.stringify(r.body)}`);
 ok(!!r.body.token, 'and hands back a session');
 ok(db.invites[0].used_by === db.users[0].id, 'the code records who spent it');
 
-r = await call({ username: 'noa', password: 'pw', phone: '051', inviteCode: made.code });
+r = await call({ username: 'noa', password: 'password-1', phone: '051', inviteCode: made.code });
 ok(r.code === 403, 'the same code cannot be spent twice', `got ${r.code}`);
 ok(/already been used/i.test(r.body.error), 'and says which of the four reasons it is', r.body.error);
 ok(db.users.length === 1, 'still one account');
@@ -165,12 +165,12 @@ ok(db.users.length === 1, 'still one account');
 /* ─────────────── a failed registration hands the code back ─────────────── */
 
 const second = await createInvite('admin-1');
-r = await call({ username: 'dana', password: 'pw', phone: '052', inviteCode: second.code });
+r = await call({ username: 'dana', password: 'password-1', phone: '052', inviteCode: second.code });
 ok(r.code === 409, 'a name already taken is refused', `got ${r.code}`);
 const stillOpen = await checkInvite(second.code);
 ok(stillOpen.ok, 'and the code it came with is still good — a taken username must not cost somebody their invitation');
 
-r = await call({ username: 'noa', password: 'pw', phone: '052', inviteCode: second.code });
+r = await call({ username: 'noa', password: 'password-1', phone: '052', inviteCode: second.code });
 ok(r.code === 201, 'so the second attempt gets in on it', `got ${r.code}`);
 
 /* ─────────────── revoked, and expired ─────────────── */
@@ -185,15 +185,15 @@ const fourth = await createInvite('admin-1', 14);
 db.invites.find(i => i.id === fourth.invite.id).expires_at = new Date(Date.now() - 1000);
 check = await checkInvite(fourth.code);
 ok(!check.ok && /expired/i.test(check.reason), 'an expired code says so', check.reason);
-r = await call({ username: 'yoni', password: 'pw', phone: '053', inviteCode: fourth.code });
+r = await call({ username: 'yoni', password: 'password-1', phone: '053', inviteCode: fourth.code });
 ok(r.code === 403, 'and cannot be claimed either', `got ${r.code}`);
 
 /* ─────────────── two people, one code, at the same instant ─────────────── */
 
 const shared = await createInvite('admin-1');
 const race = await Promise.all([
-  call({ username: 'racer-a', password: 'pw', phone: '054', inviteCode: shared.code }),
-  call({ username: 'racer-b', password: 'pw', phone: '055', inviteCode: shared.code }),
+  call({ username: 'racer-a', password: 'password-1', phone: '054', inviteCode: shared.code }),
+  call({ username: 'racer-b', password: 'password-1', phone: '055', inviteCode: shared.code }),
 ]);
 ok(race.filter(x => x.code === 201).length === 1, 'exactly one of two racers gets in',
    race.map(x => x.code).join('/'));

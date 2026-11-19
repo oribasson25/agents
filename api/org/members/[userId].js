@@ -19,18 +19,20 @@ export default async function handler(req, res) {
   try {
     if (req.method === 'GET') return res.json(await accessMap(orgId, userId));
     if (req.method === 'PUT') {
-      if (userId === me.userId && (req.body || {}).orgRole === 'member') {
+      const { orgRole, orgAccess } = req.body || {};
+      /* Anything but 'admin' is a demotion (updateMember reads any other value
+         as member), so the guard looks at what it is not, not at one spelling. */
+      if (userId === me.userId && orgRole !== undefined && orgRole !== 'admin') {
         return res.status(409).json({ error: 'You cannot take away your own admin role.', code: 'SELF' });
       }
-      const { orgRole, orgAccess } = req.body || {};
-      return res.json(await updateMember({ orgId, userId, orgRole, orgAccess }));
+      return res.json(await updateMember({ orgId, userId, orgRole, orgAccess, actor: me }));
     }
     if (req.method === 'PATCH') {
       const { kind, itemId, level } = req.body || {};
       return res.json(await setGrant({ orgId, userId, kind, itemId, level: level ?? null, grantedBy: me.userId }));
     }
     if (req.method === 'POST' && (req.body || {}).action === 'reset-password') {
-      return res.json(await resetPassword({ orgId, userId }));
+      return res.json(await resetPassword({ orgId, userId, actor: me }));
     }
     if (req.method === 'DELETE') {
       if (userId === me.userId) return res.status(409).json({ error: 'You cannot remove yourself.', code: 'SELF' });

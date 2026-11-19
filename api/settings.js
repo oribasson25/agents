@@ -1,4 +1,4 @@
-import { checkAuth } from './_auth.js';
+import { requireSession } from './_auth.js';
 import { sql } from './_db.js';
 import { getUserSettings, saveUserSettings, emptySettings, configUsable, resolveApiConfig } from './_settings.js';
 
@@ -16,7 +16,7 @@ import { getUserSettings, saveUserSettings, emptySettings, configUsable, resolve
  * reaches the organization's admins.
  */
 export default async function handler(req, res) {
-  const user = checkAuth(req, res);
+  const user = await requireSession(req, res, { allowPasswordChange: req.method === 'GET' });   // the language, read while a temporary password is being changed
   if (!user) return;
 
   if (req.method === 'GET') {

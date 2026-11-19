@@ -1,8 +1,12 @@
 import { sql } from '../../_db.js';
-import { checkAuth } from '../../_auth.js';
+import { requireSession } from '../../_auth.js';
 import { findPhoneNumberConflict, PHONE_CONFLICT_MESSAGE } from '../../_whatsappClaim.js';
 import { loadAgent, saveAgent, getOrCreateDraft, MAIN } from '../../_branches.js';
 import { accessTo, allows, refuse } from '../../_access.js';
+import { redactAgentSecrets } from '../../_agentFiles.js';
+
+/* Someone who may only look does not get the chatbot's credentials. */
+const shown = (data, level) => (level === 'edit' ? data : redactAgentSecrets(data));
 
 /**
  * Reading and writing one agent.
@@ -18,7 +22,7 @@ import { accessTo, allows, refuse } from '../../_access.js';
  * at so the interface can say so too.
  */
 export default async function handler(req, res) {
-  const user = checkAuth(req, res);
+  const user = await requireSession(req, res);
   if (!user) return;
 
   const { id } = req.query;
@@ -29,7 +33,7 @@ export default async function handler(req, res) {
       if (asked) {
         const loaded = await loadAgent({ agentId: id, user, branch: asked });
         if (!loaded) return res.status(404).end();
-        return res.json({ ...loaded.agent, _branch: loaded.branch, _access: loaded.access });
+        return res.json({ ...shown(loaded.agent, loaded.access), id, _branch: loaded.branch, _access: loaded.access });
       }
       const { level } = await accessTo(user, 'agent', id);
       if (!allows(level, 'view')) return res.status(404).end();
@@ -44,12 +48,13 @@ export default async function handler(req, res) {
       `;
       if (!row) return res.status(404).end();
       return res.json(row.draft
-        ? { ...row.draft, _branch: 'draft', _draftOf: id, _access: level }
-        : { ...row.data, _branch: MAIN, _access: level });
+        ? { ...shown(row.draft, level), id, _branch: 'draft', _draftOf: id, _access: level }
+        : { ...shown(row.data, level), id, _branch: MAIN, _access: level });
     }
 
     if (req.method === 'PUT') {
-      const agent = req.body;
+      /* saveAgent stores it under this row's id, whatever the body says. */
+      const agent = { ...(req.body && typeof req.body === 'object' ? req.body : {}), id };
 
       /* A number may be claimed by one agent platform-wide, and a draft that
          claimed one would hold it hostage without ever going live. */
@@ -84,6 +89,7 @@ export default async function handler(req, res) {
   } catch (e) {
     if (e.code === 'NO_BRANCH') return res.status(404).json({ error: e.message });
     if (e.code === 'READ_ONLY') return res.status(403).json({ error: e.message, code: e.code });
+    if (e.code === 'PHONE_CONFLICT') return res.status(409).json({ error: e.message });
     throw e;
   }
 

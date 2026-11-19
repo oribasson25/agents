@@ -5,6 +5,8 @@ import { resolveAgentApiConfig } from '../_settings.js';
 import { logError } from '../_errorLog.js';
 import { isStopped, stopMessage } from '../_llm.js';
 import { branchForSession, loadForConversation } from '../_branches.js';
+import { appendExchange, normalizeHistory, recentMessages } from '../_waHistory.js';
+import { clientIp, isLocked, recordFailure } from '../_throttle.js';
 
 const GRAPH = 'https://graph.facebook.com/v20.0';
 
@@ -52,20 +54,37 @@ export default async function handler(req, res) {
   return handleInbound(req, res);
 }
 
+/*
+ * Meta's subscription handshake. The challenge is echoed back, so it is only
+ * ever echoed as plain text and only when it is what Meta sends (digits): an
+ * echo as HTML was a script on the platform's own domain for anyone who set a
+ * verify token of their own. Wrong tokens count against the caller's address,
+ * so tokens of other chatbots cannot be guessed at speed.
+ */
 async function handleVerify(req, res) {
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'no-store');
   const mode = req.query['hub.mode'];
-  const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
+  const token = String(req.query['hub.verify_token'] || '');
+  const challenge = String(req.query['hub.challenge'] || '');
 
-  if (mode !== 'subscribe' || !token) return res.status(400).send('Bad request');
+  if (mode !== 'subscribe' || !token || !/^\d{1,64}$/.test(challenge)) return res.status(400).send('Bad request');
+
+  const bucket = `wa-verify:${clientIp(req)}`;
+  if (await isLocked(bucket)) return res.status(429).send('Too many attempts');
 
   const [hit] = await sql`
     select 1 from agents
     where data->'whatsapp'->>'verifyToken' = ${token}
       and coalesce(data->'whatsapp'->>'verifyToken', '') <> ''
+      and data->'whatsapp'->>'enabled' = 'true'
     limit 1
   `;
-  if (!hit) return res.status(403).send('Verification failed');
+  if (!hit) {
+    await recordFailure(bucket);
+    return res.status(403).send('Verification failed');
+  }
   return res.status(200).send(challenge);
 }
 
@@ -94,6 +113,10 @@ async function handleInbound(req, res) {
 
   let knownNumber = false;
   let verifiedAny = false;
+  // A message that failed, or that another invocation is still answering, makes
+  // the whole delivery fail, so Meta sends it again. What was answered meanwhile
+  // is recognised by its claim and not answered twice.
+  let retry = false;
 
   for (const group of groups) {
     const candidates = await sql`
@@ -127,15 +150,17 @@ async function handleInbound(req, res) {
 
     for (const msg of group.messages) {
       try {
-        await handleMessage(owner.id, agent, agent.whatsapp || {}, msg, baseUrl);
+        if ((await handleMessage(owner.id, agent, agent.whatsapp || {}, msg, baseUrl)) === 'busy') retry = true;
       } catch (err) {
+        retry = true;
         console.error(`[whatsapp webhook] agentId=${owner.id} handleMessage error:`, err.message);
-        await logError({ agentId: owner.id, source: 'whatsapp', message: err.message, context: { messageId: msg?.id || null } });
+        await logError({ agentId: owner.id, source: 'whatsapp', message: err.message, context: { messageId: msg?.id || null } }).catch(() => {});
       }
     }
   }
 
   if (knownNumber && !verifiedAny) return res.status(401).send('Invalid signature');
+  if (retry) return res.status(500).end();
   return res.status(200).end();
 }
 
@@ -164,13 +189,19 @@ function verifySignature(bodyVariants, signature, appSecret) {
   });
 }
 
+/**
+ * Answers one message once. Returns 'done' (answered now, or already),
+ * 'busy' (another invocation holds it and has not finished), or throws.
+ */
 async function handleMessage(agentId, agent, wa, msg, baseUrl) {
-  if (!msg?.id) return;
+  if (!msg?.id) return 'done';
 
   // Two-phase idempotency: claim the message now, confirm it only once the
-  // reply is out. An invocation that throws releases its claim immediately; one
-  // that is killed (maxDuration) leaves a stale claim that a later Meta retry
-  // takes over after CLAIM_TTL. Either way the message still gets answered.
+  // reply is out. An invocation that throws releases its claim and the delivery
+  // answers 500, so Meta sends it again. A retry that finds the claim still held
+  // answers 500 too rather than 200: if the invocation holding it is killed
+  // (maxDuration), Meta keeps retrying, and once the claim is older than
+  // CLAIM_TTL a retry takes it over. Only a confirmed message is acked.
   const [claim] = await sql`
     insert into whatsapp_messages (message_id, agent_id)
     values (${msg.id}, ${agentId})
@@ -181,7 +212,10 @@ async function handleMessage(agentId, agent, wa, msg, baseUrl) {
         and whatsapp_messages.created_at < now() - ${CLAIM_TTL}::interval
     returning message_id
   `;
-  if (!claim) return; // already answered, or another invocation is still on it
+  if (!claim) {
+    const [seen] = await sql`select processed_at from whatsapp_messages where message_id = ${msg.id}`;
+    return seen && !seen.processed_at ? 'busy' : 'done';
+  }
 
   try {
     await respond(agentId, agent, wa, msg, baseUrl);
@@ -194,6 +228,7 @@ async function handleMessage(agentId, agent, wa, msg, baseUrl) {
   }
 
   await sql`update whatsapp_messages set processed_at = now() where message_id = ${msg.id}`;
+  return 'done';
 }
 
 async function respond(agentId, agent, wa, msg, baseUrl) {
@@ -221,9 +256,8 @@ async function respond(agentId, agent, wa, msg, baseUrl) {
   }
   const userMsg = { role: 'user', content: text };
 
-  const [sess] = await sql`select messages from chat_sessions where id = ${sessionId}`;
-  const stored = Array.isArray(sess?.messages) ? sess.messages : [];
-  const context = normalizeHistory([...stored, userMsg].slice(-20));
+  const stored = await recentMessages(sessionId, agentId);
+  const context = normalizeHistory([...stored, userMsg]);
 
   let reply;
   try {
@@ -247,41 +281,16 @@ async function respond(agentId, agent, wa, msg, baseUrl) {
   }
 
   // Persist the DLP-masked user turn, like the widget path does, so masked PII
-  // never reaches chat_sessions or the admin viewer. Append in one statement:
-  // a read-modify-write would lose an exchange when the same sender has two
-  // invocations in flight.
+  // never reaches chat_sessions or the admin viewer.
   const turn = [
     ...dlpMessages([userMsg], agent.dlp || {}),
     { role: 'assistant', content: reply },
   ];
-  await sql`
-    insert into chat_sessions (id, agent_id, source, messages, branch_id, started_at, updated_at)
-    values (${sessionId}, ${agentId}, 'whatsapp', ${JSON.stringify(turn)}, ${branchId}, now(), now())
-    on conflict (id) do update
-      set messages   = chat_sessions.messages || excluded.messages,
-          updated_at = now()
-  `;
+  if (!(await appendExchange({ sessionId, agentId, branchId, exchange: turn }))) {
+    await logError({ agentId, source: 'whatsapp', message: 'A conversation with this id belongs to something else; this exchange was not stored', context: { sessionId } });
+  }
 
   await sendText(wa, from, reply, agentId);
-}
-
-// Claude requires strict user/assistant role alternation. WhatsApp users can
-// send several messages before a reply goes out, which would otherwise
-// produce consecutive 'user' turns — merge them into one.
-function normalizeHistory(messages) {
-  const start = messages.findIndex(m => m.role === 'user');
-  if (start === -1) return [];
-
-  const merged = [];
-  for (const m of messages.slice(start)) {
-    const last = merged[merged.length - 1];
-    if (last && last.role === m.role) {
-      last.content = `${last.content}\n${m.content}`;
-    } else {
-      merged.push({ role: m.role, content: m.content });
-    }
-  }
-  return merged;
 }
 
 async function sendText(wa, to, text, agentId = null) {

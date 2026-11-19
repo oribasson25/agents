@@ -48,13 +48,19 @@ export function repoName(agent) {
   const base = String(agent?.name || '')
     .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
   /* The id is always in the name: agent names are often Hebrew, are not
-     unique, and can be renamed — none of which a repository name may be. */
-  return `${base ? base + '-' : 'agent-'}${String(agent.id).slice(0, 8)}`;
+     unique, and can be renamed — none of which a repository name may be. The
+     whole id, not its first eight characters: anyone choosing an id with the
+     same start and the same name would otherwise get the same repository —
+     and, before the claim below, push into it. */
+  const id = String(agent.id || '').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+  return `${base ? base + '-' : 'agent-'}${id}`.slice(0, 100);
 }
 
 /** Makes the repository if it is not there yet. Safe to call twice. */
 export async function ensureRepo({ agent, appUrl, webhookSecret, what = 'agent' }) {
-  const name = repoName(agent);
+  /* An existing link names its repository (made before names carried the
+     whole id); a new one is named here. */
+  const name = agent.repoName || repoName(agent);
   const owner = ORG();
   let repo;
   try {
@@ -131,13 +137,11 @@ export async function ensureNotEmpty({ owner, repo, name }) {
  * is exactly the assumption that breaks when someone edits on GitHub.
  */
 export async function pushTree({ owner, repo, branch = 'main', files, message, parentSha }) {
-  const blobs = await Promise.all(Object.entries(files).map(async ([path, content]) => {
-    const blob = await gh(`/repos/${owner}/${repo}/git/blobs`, {
-      method: 'POST',
-      body: { content: Buffer.from(String(content), 'utf8').toString('base64'), encoding: 'base64' },
-    });
-    return { path, mode: '100644', type: 'blob', sha: blob.sha };
-  }));
+  /* The contents go inside the tree itself — one call, where a blob per file
+     used to be one call each, all at once, which ran an app of 300 files into
+     GitHub's secondary rate limits. */
+  const entries = Object.entries(files).map(([path, content]) => (
+    { path, mode: '100644', type: 'blob', content: String(content) }));
 
   let parent = parentSha;
   if (parent === undefined) {
@@ -149,7 +153,7 @@ export async function pushTree({ owner, repo, branch = 'main', files, message, p
 
   /* No base_tree: the commit is the complete set of files, so a file deleted
      in the platform disappears from git instead of lingering forever. */
-  const tree = await gh(`/repos/${owner}/${repo}/git/trees`, { method: 'POST', body: { tree: blobs } });
+  const tree = await gh(`/repos/${owner}/${repo}/git/trees`, { method: 'POST', body: { tree: entries } });
   const commit = await gh(`/repos/${owner}/${repo}/git/commits`, {
     method: 'POST',
     body: { message, tree: tree.sha, parents: parent ? [parent] : [] },
@@ -162,6 +166,9 @@ export async function pushTree({ owner, repo, branch = 'main', files, message, p
   return { sha: commit.sha };
 }
 
+/* At most this many requests to GitHub at once when reading a tree. */
+const READ_CONCURRENCY = 8;
+
 /** Every file at a commit, as { path: content }. */
 export async function readTree({ owner, repo, sha }) {
   const tree = await gh(`/repos/${owner}/${repo}/git/trees/${sha}?recursive=1`);
@@ -169,10 +176,16 @@ export async function readTree({ owner, repo, sha }) {
     throw Object.assign(new Error('That commit has too many files for one read'), { code: 'TRUNCATED' });
   }
   const files = {};
-  await Promise.all(tree.tree.filter(n => n.type === 'blob').map(async node => {
-    const blob = await gh(`/repos/${owner}/${repo}/git/blobs/${node.sha}`);
-    files[node.path] = Buffer.from(blob.content, blob.encoding === 'base64' ? 'base64' : 'utf8').toString('utf8');
-  }));
+  const nodes = tree.tree.filter(n => n.type === 'blob');
+  let next = 0;
+  const worker = async () => {
+    while (next < nodes.length) {
+      const node = nodes[next++];
+      const blob = await gh(`/repos/${owner}/${repo}/git/blobs/${node.sha}`);
+      files[node.path] = Buffer.from(blob.content, blob.encoding === 'base64' ? 'base64' : 'utf8').toString('utf8');
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(READ_CONCURRENCY, nodes.length) }, worker));
   return files;
 }
 
@@ -206,32 +219,35 @@ export function verifyWebhook(rawBody, signature, secret) {
  */
 function repoStore(kind, sql) {
   if (kind === 'automation') return {
-    get: (id) => sql`select owner, repo, webhook_id from automation_repos where automation_id = ${id}`,
+    get: (id) => sql`select owner, repo, webhook_id, last_push_sha from automation_repos where automation_id = ${id}`,
     setHook: (id, hook) => sql`update automation_repos set webhook_id = ${hook} where automation_id = ${id}`,
     insert: (id, m, sha) => sql`
       insert into automation_repos (automation_id, owner, repo, webhook_id, last_push_sha)
       values (${id}, ${m.owner}, ${m.repo}, ${m.webhookId}, ${sha})
       on conflict (automation_id) do nothing
+      returning automation_id
     `,
     setSha: (id, sha) => sql`update automation_repos set last_push_sha = ${sha} where automation_id = ${id}`,
   };
   if (kind === 'app') return {
-    get: (id) => sql`select owner, repo, webhook_id from app_repos where app_id = ${id}`,
+    get: (id) => sql`select owner, repo, webhook_id, last_push_sha from app_repos where app_id = ${id}`,
     setHook: (id, hook) => sql`update app_repos set webhook_id = ${hook} where app_id = ${id}`,
     insert: (id, m, sha) => sql`
       insert into app_repos (app_id, owner, repo, webhook_id, last_push_sha)
       values (${id}, ${m.owner}, ${m.repo}, ${m.webhookId}, ${sha})
       on conflict (app_id) do nothing
+      returning app_id
     `,
     setSha: (id, sha) => sql`update app_repos set last_push_sha = ${sha} where app_id = ${id}`,
   };
   return {
-    get: (id) => sql`select owner, repo, webhook_id from agent_repos where agent_id = ${id}`,
+    get: (id) => sql`select owner, repo, webhook_id, last_push_sha from agent_repos where agent_id = ${id}`,
     setHook: (id, hook) => sql`update agent_repos set webhook_id = ${hook} where agent_id = ${id}`,
     insert: (id, m, sha) => sql`
       insert into agent_repos (agent_id, owner, repo, webhook_id, last_push_sha)
       values (${id}, ${m.owner}, ${m.repo}, ${m.webhookId}, ${sha})
       on conflict (agent_id) do nothing
+      returning agent_id
     `,
     setSha: (id, sha) => sql`update agent_repos set last_push_sha = ${sha} where agent_id = ${id}`,
   };
@@ -260,24 +276,53 @@ export async function ensureLinkedRepo({ kind, subject, files, appUrl }) {
          hook, and without one a `git push` reaches nothing. Returning early
          would leave it that way for good, so a later pull installs it. */
       if (!existing.webhook_id && process.env.GITHUB_WEBHOOK_SECRET && appUrl) {
-        const fixed = await ensureRepo({ agent: subject, appUrl, what: kind,
+        const fixed = await ensureRepo({ agent: { ...subject, repoName: existing.repo }, appUrl, what: kind,
                                          webhookSecret: process.env.GITHUB_WEBHOOK_SECRET });
         if (fixed.webhookId) await store.setHook(subject.id, fixed.webhookId);
         if (fixed.hookProblem) await report(kind, subject.id, fixed.hookProblem, fixed);
+      }
+      /* Claimed, but the first push never landed (GitHub failed half-way):
+         it lands now, into the repository this subject already holds. */
+      if (existing.last_push_sha === null && files && Object.keys(files).length) {
+        await ensureNotEmpty({ owner: existing.owner, repo: existing.repo, name: subject.name });
+        const { sha } = await pushTree({ owner: existing.owner, repo: existing.repo, branch: 'main', files,
+                                         message: `Initial import of ${subject.name || subject.id}` });
+        await store.setSha(subject.id, sha);
       }
       return { owner: existing.owner, repo: existing.repo,
                cloneUrl: `https://github.com/${existing.owner}/${existing.repo}.git` };
     }
 
-    const made = await ensureRepo({ agent: subject, appUrl, what: kind,
+    /* Claim the name before anything is pushed. A repository already linked
+       to anything else — an agent, an app or an automation, in any
+       organization — is never written to: its webhook would carry the push
+       straight into the thing it belongs to. */
+    const owner = ORG();
+    const name = repoName(subject);
+    const held = await sql`
+      select 1 as held from agent_repos where owner = ${owner} and repo = ${name}
+      union all select 1 from app_repos where owner = ${owner} and repo = ${name}
+      union all select 1 from automation_repos where owner = ${owner} and repo = ${name}
+      limit 1
+    `;
+    if (held.length) throw Object.assign(new Error(`the repository ${name} already belongs to something else`), { code: 'REPO_TAKEN' });
+    const [claimed] = await store.insert(subject.id, { owner, repo: name, webhookId: null }, null);
+    if (!claimed) {
+      /* Another pull claimed it a moment ago; that one does the first push. */
+      const [now] = await store.get(subject.id);
+      return now ? { owner: now.owner, repo: now.repo, cloneUrl: `https://github.com/${now.owner}/${now.repo}.git` } : null;
+    }
+
+    const made = await ensureRepo({ agent: { ...subject, repoName: name }, appUrl, what: kind,
                                     webhookSecret: process.env.GITHUB_WEBHOOK_SECRET });
+    if (made.webhookId) await store.setHook(subject.id, made.webhookId);
     if (made.hookProblem) await report(kind, subject.id, made.hookProblem, made);
     await ensureNotEmpty({ owner: made.owner, repo: made.repo, name: subject.name });
     const { sha } = await pushTree({
       owner: made.owner, repo: made.repo, branch: 'main', files,
       message: `Initial import of ${subject.name || subject.id}`,
     });
-    await store.insert(subject.id, made, sha);
+    await store.setSha(subject.id, sha);
     return { owner: made.owner, repo: made.repo,
              cloneUrl: `https://github.com/${made.owner}/${made.repo}.git` };
   } catch (err) {

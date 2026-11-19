@@ -11,8 +11,16 @@ import crypto from 'crypto';
  */
 const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
 if (!process.env.JWT_SECRET) {
-  console.warn('[auth] JWT_SECRET is not set — using a random per-process secret. Sessions will not verify across instances until it is set.');
+  /* In production this is an outage waiting to be noticed (and the Python
+     runner refuses every call without it), so it is an error there, not a
+     warning. It does not throw: nineteen files import this one, and a crash at
+     import would take down endpoints that never sign anything. */
+  const say = process.env.VERCEL_ENV === 'production' ? console.error : console.warn;
+  say('[auth] JWT_SECRET is not set — using a random per-process secret. Sessions will not verify across instances until it is set.');
 }
+
+/** How long a session token lasts. */
+export const SESSION_SECONDS = 60 * 60 * 24 * 7;
 
 /** The one place anything outside this file may read the signing key. */
 export function jwtSecret() {
@@ -49,11 +57,12 @@ export function isInternalCall(req) {
  *
  * Returns a truthy value and lets the request through when it is either an
  * internal server-to-server call or an authenticated user; otherwise it has
- * already answered 401 and returns false, exactly like checkAuth.
+ * already answered 401/403 and returns false, like requireSession (a session is
+ * checked against the database, so a revoked token is refused here too).
  */
-export function checkInternalOrAuth(req, res) {
+export async function checkInternalOrAuth(req, res) {
   if (isInternalCall(req)) return { internal: true };
-  return checkAuth(req, res);
+  return requireSession(req, res);
 }
 
 function base64url(input) {
@@ -70,6 +79,13 @@ export function signJWT(payload) {
   return `${header}.${body}.${sig}`;
 }
 
+/** Equal strings, compared in time that does not depend on where they differ. */
+function sameString(a, b) {
+  const x = Buffer.from(String(a));
+  const y = Buffer.from(String(b));
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+}
+
 export function verifyJWT(token) {
   try {
     const [header, body, sig] = token.split('.');
@@ -78,7 +94,7 @@ export function verifyJWT(token) {
       .createHmac('sha256', JWT_SECRET)
       .update(`${header}.${body}`)
       .digest('base64url');
-    if (sig !== expected) return null;
+    if (!sameString(sig, expected)) return null;
     const payload = JSON.parse(Buffer.from(body, 'base64url').toString());
     if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null;
     return payload;
@@ -94,9 +110,37 @@ export function hashPassword(password) {
 }
 
 export function verifyPassword(password, stored) {
-  const [salt, hash] = stored.split(':');
-  const candidate = crypto.scryptSync(password, salt, 64).toString('hex');
-  return candidate === hash;
+  const [salt, hash] = String(stored || '').split(':');
+  if (!salt || !hash) return false;
+  const candidate = crypto.scryptSync(String(password), salt, 64).toString('hex');
+  return sameString(candidate, hash);
+}
+
+/*
+ * A hash nobody's password matches, checked when the username does not exist,
+ * so "no such user" takes as long as "wrong password" and the time of the
+ * answer does not say which names are taken. Made on first use: scrypt is
+ * slow on purpose and most cold starts never need it.
+ */
+let DUMMY_HASH = null;
+export function verifyAgainstNothing(password) {
+  if (!DUMMY_HASH) DUMMY_HASH = hashPassword(crypto.randomBytes(16).toString('hex'));
+  verifyPassword(password, DUMMY_HASH);
+  return false;
+}
+
+/**
+ * The token a person signs in with. `tv` is their users.token_version: raising
+ * it (a password reset or change) ends every token signed before.
+ */
+export function sessionToken(user) {
+  return signJWT({
+    userId: user.id,
+    username: user.username,
+    isAdmin: !!user.is_admin,
+    tv: Number(user.token_version) || 0,
+    exp: Math.floor(Date.now() / 1000) + SESSION_SECONDS,
+  });
 }
 
 /* ─────────────────── personal access tokens ─────────────────── */
@@ -133,23 +177,87 @@ export async function checkAuthOrToken(req, res) {
     return false;
   }
   const credential = header.slice(7);
-  if (!looksLikeToken(credential)) return checkAuth(req, res);
+  if (!looksLikeToken(credential)) return requireSession(req, res);
 
   /* Imported here, not at the top: _auth.js is pulled in by nineteen files and
      _db.js needs DATABASE_URL the moment it loads. Only this path needs it. */
   const { sql } = await import('./_db.js');
   const [row] = await sql`
-    select t.id, t.user_id, u.username, u.is_admin
+    select t.id, t.user_id, u.username, u.is_admin, u.must_change_password
     from api_tokens t join users u on u.id = t.user_id
     where t.token_hash = ${hashToken(credential)} and t.revoked_at is null
+      and (t.expires_at is null or t.expires_at > now())
   `;
   if (!row) {
     res.status(401).json({ error: 'invalid token' });
     return false;
   }
+  if (row.must_change_password) {
+    res.status(403).json({ error: MUST_CHANGE_MESSAGE, code: 'MUST_CHANGE_PASSWORD' });
+    return false;
+  }
   /* Best-effort: a failed bookkeeping write must not fail the request. */
   sql`update api_tokens set last_used_at = now() where id = ${row.id}`.catch(() => {});
   return { userId: row.user_id, username: row.username, isAdmin: !!row.is_admin, viaToken: true };
+}
+
+const MUST_CHANGE_MESSAGE = 'Replace your temporary password first.';
+
+/*
+ * What the database says about a signed-in person now. A token is a claim
+ * made when it was signed; this is what decides whether it still stands:
+ * the account must exist, its token_version must be the one the token was
+ * signed with, and is_admin is read here, never from the token.
+ */
+async function sessionState(user) {
+  const { personRow } = await import('./_access.js');
+  const row = await personRow(user.userId);
+  if (!row) return null;
+  if ((Number(row.token_version) || 0) !== (Number(user.tv) || 0)) return null;
+  return { isAdmin: !!row.is_admin, mustChangePassword: !!row.must_change_password };
+}
+
+/**
+ * checkAuth, checked against the database: a token signed before a password
+ * reset or change, or for an account that is gone, is refused; so is every
+ * request but the password change while a temporary password is in place
+ * (`allowPasswordChange` lets /api/me through). isAdmin comes from the
+ * database. Answers 401/403 itself and returns false, like checkAuth.
+ *
+ * Prefer this to checkAuth in every handler (it is async; checkAuth is not,
+ * which is why it cannot do this).
+ */
+export async function requireSession(req, res, { allowPasswordChange = false } = {}) {
+  const user = checkAuth(req, res);
+  if (!user) return false;
+  let state;
+  try {
+    state = await sessionState(user);
+  } catch (err) {
+    console.error('[auth] could not check the session:', err.message);
+    res.status(503).json({ error: 'Could not check your session. Try again.' });
+    return false;
+  }
+  if (!state) {
+    res.status(401).json({ error: 'invalid token' });
+    return false;
+  }
+  if (state.mustChangePassword && !allowPasswordChange) {
+    res.status(403).json({ error: MUST_CHANGE_MESSAGE, code: 'MUST_CHANGE_PASSWORD' });
+    return false;
+  }
+  return { ...user, isAdmin: state.isAdmin, mustChangePassword: state.mustChangePassword };
+}
+
+/** requireSession, and the platform admin as the database knows them now. */
+export async function requireAdmin(req, res) {
+  const user = await requireSession(req, res);
+  if (!user) return false;
+  if (!user.isAdmin) {
+    res.status(403).json({ error: 'forbidden' });
+    return false;
+  }
+  return user;
 }
 
 // Returns the decoded JWT payload or responds 401
@@ -158,7 +266,9 @@ export function checkAuth(req, res) {
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.slice(7);
     const payload = verifyJWT(token);
-    if (payload) return payload; // { userId, username, isAdmin }
+    /* { userId, username, isAdmin, tv, exp }, marked as a session so member()
+       knows to hold it to the account's token_version. */
+    if (payload) return { ...payload, viaSession: true };
     res.status(401).json({ error: 'invalid token' });
     return false;
   }
@@ -166,7 +276,12 @@ export function checkAuth(req, res) {
   return false;
 }
 
-// Same as checkAuth but also requires is_admin === true
+/*
+ * Same as checkAuth but also requires isAdmin — as the TOKEN says it, for up
+ * to seven days after it stopped being true. Kept only because it is
+ * synchronous and some handlers still call it that way; use
+ * `await requireAdmin(req, res)`, which asks the database.
+ */
 export function checkAdmin(req, res) {
   const user = checkAuth(req, res);
   if (!user) return false;

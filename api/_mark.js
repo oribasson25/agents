@@ -14,7 +14,7 @@ export const MARK_COLORS = [
  * stays the same colour every time rather than changing on each render.
  */
 export function markColor(value) {
-  const v = (value || '').trim();
+  const v = String(value || '').trim();
   if (/^#[0-9a-f]{6}$/i.test(v)) return v;
   if (!v) return MARK_COLORS[0];
   let h = 0;
@@ -23,7 +23,8 @@ export function markColor(value) {
 }
 
 export function markSvg(color, size = 30) {
-  const c = /^#[0-9a-f]{6}$/i.test((color || '').trim()) ? color.trim() : '#EF9F27';
+  const c = /^#[0-9a-f]{6}$/i.test(String(color || '').trim()) ? String(color).trim() : '#EF9F27';
+  size = Math.max(8, Math.min(512, Number(size) || 30));
   const dark = (hex, amount) => {
     const n = parseInt(hex.slice(1), 16);
     const mix = v => Math.round(v * (1 + amount));

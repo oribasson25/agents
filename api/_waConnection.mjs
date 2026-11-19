@@ -17,6 +17,33 @@ import { clearAuth, usePostgresAuthState } from './_waAuth.mjs';
 
 const logger = pino({ level: process.env.WA_LOG_LEVEL || 'info' });
 
+/* The WhatsApp Web version to announce, looked up on GitHub once in a while
+   rather than on every connect (a session reconnects often, and a slow or
+   failing GitHub stalled each one). Without it Baileys uses its bundled one. */
+const VERSION_TTL_MS = 6 * 60 * 60 * 1000;
+let versionCache = { version: null, at: 0 };
+async function waVersion(log) {
+  if (Date.now() - versionCache.at < VERSION_TTL_MS) return versionCache.version;
+  try {
+    const { version } = await Promise.race([
+      fetchLatestBaileysVersion(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timed out')), 5000).unref?.()),
+    ]);
+    versionCache = { version: version || null, at: Date.now() };
+  } catch (err) {
+    log.warn({ err: err.message }, 'could not fetch the latest WA version, using the bundled one');
+    // Ask again in a few minutes, not on the very next connect.
+    versionCache = { version: versionCache.version, at: Date.now() - VERSION_TTL_MS + 5 * 60 * 1000 };
+  }
+  return versionCache.version;
+}
+
+/* WhatsApp's answers that no reconnect can fix. */
+const FORBIDDEN = DisconnectReason.forbidden ?? 403;
+const MULTIDEVICE_MISMATCH = DisconnectReason.multideviceMismatch ?? 411;
+const RECONNECT_MS = 2000;
+const RECONNECT_MAX_MS = 60_000;
+
 /**
  * One linked-device connection to WhatsApp for one number (like WhatsApp Web).
  *
@@ -36,6 +63,7 @@ export class WhatsApp extends EventEmitter {
   groupCache = new Map(); // group jid -> metadata, which Baileys reuses when sending to a group
   #auth = null;
   #stopping = false;
+  #closes = 0; // closes in a row without the connection opening in between
 
   /** @param {{ numberId: string, selfName?: () => string }} opts  selfName: how the number is shown when someone tags it */
   constructor({ numberId, selfName = () => null }) {
@@ -48,16 +76,16 @@ export class WhatsApp extends EventEmitter {
   async start() {
     this.#stopping = false;
     await this.#auth?.flush(); // a reconnect must read the keys the previous socket wrote
-    this.#auth = await usePostgresAuthState(this.numberId);
-    const { state, saveCreds } = this.#auth;
+    // stop() may be called while any of these waits: never open a socket after it.
+    if (this.#stopping) return;
+    const auth = await usePostgresAuthState(this.numberId);
+    if (this.#stopping) return;
+    this.#auth = auth;
+    const { state, saveCreds } = auth;
     const baileysLogger = logger.child({ module: 'baileys' }, { level: process.env.BAILEYS_LOG_LEVEL || 'warn' });
 
-    let version;
-    try {
-      ({ version } = await fetchLatestBaileysVersion());
-    } catch (err) {
-      this.log.warn({ err: err.message }, 'could not fetch the latest WA version, using the bundled one');
-    }
+    const version = await waVersion(this.log);
+    if (this.#stopping) return;
 
     const sock = makeWASocket({
       ...(version && { version }),
@@ -84,6 +112,7 @@ export class WhatsApp extends EventEmitter {
           lid: sock.user.lid ? jidNormalizedUser(sock.user.lid) : null,
           name: sock.user.name || sock.user.notify || null,
         };
+        this.#closes = 0;
         this.#setState({ status: 'open', qr: null, me, error: null });
         this.log.info({ me }, 'connected');
         this.refreshGroups().catch((err) => this.log.warn({ err: err.message }, 'could not list groups'));
@@ -96,16 +125,28 @@ export class WhatsApp extends EventEmitter {
           this.fatal = 'replaced';
           return;
         }
-        if (code === DisconnectReason.loggedOut) {
-          this.log.warn('logged out from the phone — clearing the session, a new QR will be needed');
-          this.#setState({ status: 'logged_out', me: null, error: 'The phone unlinked this device' });
-          await clearAuth(this.numberId);
+        if (code === DisconnectReason.loggedOut || code === MULTIDEVICE_MISMATCH) {
+          const why = code === MULTIDEVICE_MISMATCH
+            ? 'WhatsApp needs this device linked again (multi-device mismatch). Scan a new QR code.'
+            : 'The phone unlinked this device';
+          this.log.warn({ code }, 'the device is no longer linked — clearing the session, a new QR will be needed');
+          this.#setState({ status: 'logged_out', me: null, error: why });
+          await this.#forgetKeys();
           this.fatal = 'logout';
           return;
         }
-        this.log.warn({ code, err: lastDisconnect?.error?.message }, 'connection closed, reconnecting');
+        if (code === FORBIDDEN) {
+          // Reconnecting to a refusal only makes WhatsApp surer this is abuse. Stop, and tell the admin.
+          this.log.error({ code }, 'WhatsApp refused this device — not reconnecting');
+          this.#setState({ status: 'blocked', error: 'WhatsApp refused this number\'s connection (403). Check the phone for a ban or a warning, then open the QR code to link it again.' });
+          this.fatal = 'blocked';
+          return;
+        }
+        this.#closes++;
+        const delay = Math.min(RECONNECT_MS * 2 ** (this.#closes - 1), RECONNECT_MAX_MS);
+        this.log.warn({ code, err: lastDisconnect?.error?.message, delay }, 'connection closed, reconnecting');
         this.#setState({ status: 'connecting', error: lastDisconnect?.error?.message || null });
-        this.#reconnect(2000);
+        this.#reconnect(delay);
       }
     });
 
@@ -137,6 +178,8 @@ export class WhatsApp extends EventEmitter {
   /** Closes the socket and waits until the keys are saved, so the next session can resume. */
   async stop() {
     this.#stopping = true;
+    // Not published: the next session reports its own state. Senders read it and stop.
+    if (this.state.status === 'open') this.state = { ...this.state, status: 'closing' };
     this.sock?.end(undefined);
     await this.#auth?.flush();
   }
@@ -149,9 +192,15 @@ export class WhatsApp extends EventEmitter {
     } catch {
       this.sock?.end(undefined);
     }
+    await this.#forgetKeys();
+    this.#setState({ status: 'logged_out', me: null, qr: null });
+  }
+
+  /* Every pending key write lands before the keys are deleted, and none after. */
+  async #forgetKeys() {
+    this.#auth?.close?.();
     await this.#auth?.flush();
     await clearAuth(this.numberId);
-    this.#setState({ status: 'logged_out', me: null, qr: null });
   }
 
   get linked() {

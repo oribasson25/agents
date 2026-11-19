@@ -7,8 +7,11 @@ import { listConnections, createWhatsAppConnection, KINDS } from './_connections
  * The organization's connections.
  *
  *   GET   everyone in the organization: the names, kinds and accounts (never a
- *         token) — an automation's editor needs them to offer a choice. The
- *         admin also gets what can still be connected.
+ *         token) of the connections they may use — an automation's editor
+ *         needs them to offer a choice. The admin sees every one, with
+ *         `shared` (usable by everyone, or only by whoever added it and the
+ *         admins; PUT /api/connections/:id { shared } changes it), and what
+ *         can still be connected.
  *   POST  the admin: { kind: 'whatsapp', numberId, name } lets automations
  *         send from a linked number. Mailboxes are connected by a sign-in,
  *         which starts at /api/connections/connect.
@@ -22,7 +25,7 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
-      const connections = await listConnections(me.orgId);
+      const connections = await listConnections(me.orgId, { me });
       if (!admin) return res.json({ connections, canManage: false });
       const numbers = await sql`
         select n.id, n.label, n.phone from wa_numbers n join users u on u.id = n.owner_user_id

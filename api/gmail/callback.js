@@ -1,22 +1,8 @@
-import crypto from 'crypto';
 import { sql } from '../_db.js';
-import { jwtSecret } from '../_auth.js';
-import { appBaseUrl } from '../_gmail.js';
+import { appBaseUrl, userOwnsAgent } from '../_gmail.js';
 import { logError } from '../_errorLog.js';
-import { readState } from '../_connections.js';
+import { readState, nonceMatches, clearNonce } from '../_connections.js';
 import { finishConnection } from '../connections/callback.js';
-
-// Same key the rest of the app signs with — never a hard-coded fallback.
-const JWT_SECRET = jwtSecret();
-
-function verifyState(state) {
-  try {
-    const [payload, sig] = state.split('.');
-    const expected = crypto.createHmac('sha256', JWT_SECRET).update(payload).digest('base64url');
-    if (sig !== expected) return null;
-    return JSON.parse(Buffer.from(payload, 'base64url').toString());
-  } catch { return null; }
-}
 
 export default async function handler(req, res) {
   // Anything that throws in here strands the user on a blank 500 halfway
@@ -43,14 +29,25 @@ async function connect(req, res) {
     return res.redirect(302, `${appUrl}/?gmail_error=${encodeURIComponent(error)}`);
   }
 
-  const stateData = verifyState(state || '');
+  /* Signed here for this flow, under ten minutes old, started in this
+     browser (the nonce cookie), and by someone who may still edit the
+     chatbot — otherwise a consent link someone else started could put your
+     mailbox behind their chatbot. */
+  const stateData = readState(state, 'gmail-agent');
+  if (stateData) res.setHeader('Set-Cookie', clearNonce(stateData));
   if (!stateData) {
     return res.redirect(302, `${appUrl}/?gmail_error=invalid_state`);
+  }
+  if (!nonceMatches(req, stateData)) {
+    return res.redirect(302, `${appUrl}/?gmail_error=${encodeURIComponent('The sign-in did not start in this browser. Start it again from the chatbot.')}`);
   }
 
   const { agentId } = stateData;
   if (!agentId) {
     return res.redirect(302, `${appUrl}/?gmail_error=missing_agent`);
+  }
+  if (!(await userOwnsAgent(agentId, { userId: stateData.userId }, 'edit'))) {
+    return res.redirect(302, `${appUrl}/?gmail_error=${encodeURIComponent('You can no longer change this chatbot.')}`);
   }
   const redirectUri = `${appUrl}/api/gmail/callback`;
 
@@ -65,6 +62,7 @@ async function connect(req, res) {
       redirect_uri: redirectUri,
       grant_type: 'authorization_code',
     }),
+    signal: AbortSignal.timeout(20000),
   });
 
   const tokens = await tokenRes.json();
@@ -75,6 +73,7 @@ async function connect(req, res) {
   // Get Gmail address
   const profileRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
     headers: { Authorization: `Bearer ${tokens.access_token}` },
+    signal: AbortSignal.timeout(20000),
   });
   const profile = await profileRes.json();
   const gmailEmail = profile.email || '';

@@ -68,7 +68,13 @@ export default async function handler(req, res) {
     /* Nothing may move the agent's identity or its owner. */
     next.id = agent.id;
 
-    const saved = await saveAgent({ agentId: id, user, branch, data: next });
+    let saved;
+    try {
+      saved = await saveAgent({ agentId: id, user, branch, data: next });
+    } catch (e) {
+      if (e.code === 'PHONE_CONFLICT') return res.status(409).json({ error: e.message });
+      throw e;
+    }
     if (!saved) return res.status(404).json({ error: 'Agent not found' });
 
     /* Mirror it, so `git log` on the repository is the whole history and not

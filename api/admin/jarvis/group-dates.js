@@ -45,17 +45,25 @@ export default async function handler(req, res) {
       if (!clean.length) return res.status(400).json({ error: 'No row could be read: each needs a name and a date.', skipped });
       const existing = body.replace ? [] : await listDates(numberId, jid);
       if (existing.length + clean.length > MAX_DATES) return res.status(400).json({ error: `A group can hold up to ${MAX_DATES} dates.` });
-      if (body.replace) await sql`delete from wa_group_dates where number_id = ${numberId} and jid = ${jid}`;
       // The same person and day twice (a file uploaded again) is kept once.
       const key = (d) => `${d.name.toLowerCase()}|${d.day}|${d.month}|${d.kind}`;
       const have = new Set(existing.map(key));
-      let added = 0;
-      for (const d of clean) {
-        if (have.has(key(d))) continue;
-        have.add(key(d));
-        await insertDate(numberId, jid, d);
-        added++;
-      }
+      const fresh = clean.filter((d) => !have.has(key(d)) && have.add(key(d)));
+      /* One statement: emptying the list (replace) and adding the new rows
+         happen together or not at all, so a cut-off import never leaves the
+         old list gone and the new one half there. */
+      const col = (k) => fresh.map((d) => d[k]);
+      await sql`
+        with emptied as (
+          delete from wa_group_dates where number_id = ${numberId} and jid = ${jid} and ${!!body.replace}::boolean
+        )
+        insert into wa_group_dates (number_id, jid, name, phone, kind, label, day, month, year, hebrew, note)
+        select ${numberId}, ${jid}, t.name, t.phone, t.kind, t.label, t.day, t.month, t.year, t.hebrew, t.note
+        from unnest(${col('name')}::text[], ${col('phone')}::text[], ${col('kind')}::text[], ${col('label')}::text[],
+                    ${col('day')}::int[], ${col('month')}::int[], ${col('year')}::int[], ${col('hebrew')}::boolean[],
+                    ${col('note')}::text[]) as t(name, phone, kind, label, day, month, year, hebrew, note)
+      `;
+      const added = fresh.length;
       await recheckToday();
       return res.status(201).json(await list({ added, duplicates: clean.length - added, skipped }));
     }

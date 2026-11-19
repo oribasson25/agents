@@ -1,6 +1,6 @@
 import { sql } from '../_db.js';
-import { signJWT, hashPassword, verifyPassword } from '../_auth.js';
-import { clientIp, anyLocked, recordFailure, clearThrottle, LOCKED_MESSAGE } from '../_throttle.js';
+import { sessionToken, hashPassword, verifyPassword, verifyAgainstNothing } from '../_auth.js';
+import { clientIp, isLocked, hitLocked, refund, recordFailure, clearThrottle, LOCKED_MESSAGE } from '../_throttle.js';
 import crypto from 'crypto';
 import { sessionInfo } from '../_session.js';
 
@@ -35,31 +35,38 @@ export default async function handler(req, res) {
 
   await ensureAdminExists();
 
-  /* A soft brake on guessing: too many recent failures for this username or
-     from this address, and the door is shut for a few minutes. It fails open
-     (a brake that cannot be read is off) and a correct password clears it, so
-     it cannot lock out a person who simply mistyped. */
-  const buckets = [`user:${username}`, `ip:${clientIp(req)}`];
-  if (await anyLocked(buckets)) {
+  /* Brakes on guessing, two of them, neither of which can shut a person out
+     of their own account:
+       - per address: every attempt is counted before the password is looked
+         at, so parallel guesses all count; past the limit the address is
+         refused for a few minutes. A correct password gives its own attempt
+         back but does not wipe the record, so signing in to an account of your
+         own cannot launder guesses at other people's.
+       - per username: failures are recorded, but a hot username is never
+         refused — anyone could do that to anyone, admin included. Its answers
+         just slow down, which costs a guesser spread over many addresses far
+         more than it costs the person, whose right password still gets in. */
+  const name = String(username);
+  const userBucket = `user:${name}`;
+  const ipBucket = `ip:${clientIp(req)}`;
+  if (await hitLocked(ipBucket)) {
     return res.status(429).json({ error: LOCKED_MESSAGE });
   }
+  if (await isLocked(userBucket)) await new Promise(r => setTimeout(r, 2000));
 
-  const [user] = await sql`select * from users where username = ${username}`;
-  if (!user || !verifyPassword(password, user.password_hash)) {
-    await recordFailure(buckets[0]);
-    await recordFailure(buckets[1]);
+  const [user] = await sql`select * from users where username = ${name}`;
+  /* An unknown name costs the same scrypt as a wrong password, so the time of
+     the answer does not say which names exist. */
+  const good = user ? verifyPassword(String(password), user.password_hash) : verifyAgainstNothing(String(password));
+  if (!good) {
+    await recordFailure(userBucket);
     return res.status(401).json({ error: 'invalid credentials' });
   }
 
-  await clearThrottle(buckets);
+  await clearThrottle([userBucket]);
+  await refund(ipBucket);
   await sql`update users set last_login_at = now() where id = ${user.id}`;
 
-  const token = signJWT({
-    userId: user.id,
-    username: user.username,
-    isAdmin: user.is_admin,
-    exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7, // 7 days
-  });
-
+  const token = sessionToken(user);
   return res.json({ token, username: user.username, isAdmin: user.is_admin, ...(await sessionInfo(user.id)) });
 }

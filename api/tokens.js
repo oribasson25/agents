@@ -1,20 +1,26 @@
 import crypto from 'crypto';
 import { sql } from './_db.js';
-import { checkAuth, createToken } from './_auth.js';
+import { requireSession, createToken } from './_auth.js';
 
 /**
  * Personal access tokens for the CLI.
  *
  * Only a JWT reaches this endpoint — a token cannot mint another token, so a
- * leaked one cannot extend its own life or outlive a revocation.
+ * leaked one cannot extend its own life or outlive a revocation. A token ends
+ * a year after it is made (TOKEN_DAYS), and every one of them is revoked when
+ * an admin resets the account's password.
  */
+const TOKEN_DAYS = 365;
+
 export default async function handler(req, res) {
-  const user = checkAuth(req, res);
+  /* requireSession, not checkAuth alone: a session ended by a password reset
+     must not be able to mint the CLI a way back in. */
+  const user = await requireSession(req, res);
   if (!user) return;
 
   if (req.method === 'GET') {
     const rows = await sql`
-      select id, name, token_prefix, created_at, last_used_at
+      select id, name, token_prefix, created_at, last_used_at, expires_at
       from api_tokens
       where user_id = ${user.userId} and revoked_at is null
       order by created_at desc
@@ -26,11 +32,13 @@ export default async function handler(req, res) {
     const name = String((req.body || {}).name || '').slice(0, 80).trim() || 'CLI';
     const { token, hash, prefix } = createToken();
     await sql`
-      insert into api_tokens (id, user_id, name, token_hash, token_prefix)
-      values (${crypto.randomUUID()}, ${user.userId}, ${name}, ${hash}, ${prefix})
+      insert into api_tokens (id, user_id, name, token_hash, token_prefix, expires_at)
+      values (${crypto.randomUUID()}, ${user.userId}, ${name}, ${hash}, ${prefix},
+              now() + ${TOKEN_DAYS}::int * interval '1 day')
     `;
     /* The only time the token itself is ever sent anywhere. */
-    return res.status(201).json({ token, name, prefix });
+    const expiresAt = new Date(Date.now() + TOKEN_DAYS * 86400000).toISOString();
+    return res.status(201).json({ token, name, prefix, expiresAt });
   }
 
   if (req.method === 'DELETE') {

@@ -18,7 +18,7 @@
  *   access     who may open it; a push must not be able to publish an app
  *   createdAt  set once
  */
-import { agentVersion, extrasOf, compact, json, parseJson } from './_agentFiles.js';
+import { agentVersion, extrasOf, compact, json, parseJson, safeExtras } from './_agentFiles.js';
 
 const SERVER_OWNED = ['slug', 'access', 'createdAt'];
 const MAPPED = new Set(['id', 'name', 'description', 'entry', 'agents', 'tables', 'automations', 'ai', 'files', ...SERVER_OWNED]);
@@ -37,7 +37,11 @@ export function badPath(path) {
   if (parts.some(p => !p || p === '.' || p === '..')) return 'is not a usable path';
   /* `~` opens a private link's token segment in the app's URL. */
   if (parts[0].startsWith('~')) return 'may not start with ~';
-  if (parts[0] === '.8legs' || parts[0] === '.git') return 'is reserved';
+  /* .git and .8legs anywhere (any case) would be written into a checkout's
+     own git or CLI state; and a dotfile is never served — a public app must
+     not hand out a `.env` pushed by mistake. */
+  if (parts.some(p => /^\.(git|8legs)$/i.test(p))) return 'is reserved';
+  if (parts.some(p => p.startsWith('.'))) return 'starts with a dot; files and folders like that are not part of an app';
   return null;
 }
 
@@ -127,6 +131,10 @@ export function filesToApp(files, existing = {}) {
     if (GENERATED.has(path)) continue;
     /* The CLI's bookkeeping, if somebody committed it. Not the app's. */
     if (path.startsWith('.8legs/')) continue;
+    /* Dotfiles (.env, .github/, .vscode/) are left behind rather than failing
+       the push: they are a checkout's, never the app's, and are not served.
+       .git and .8legs further in are refused by badPath below. */
+    if (path.split('/').some(p => p.startsWith('.') && p !== '.' && p !== '..' && !/^\.(git|8legs)$/i.test(p))) continue;
     const why = badPath(path);
     if (why) { errors.push(`${path} ${why}`); continue; }
     if (typeof content !== 'string') { errors.push(`${path} is not text`); continue; }
@@ -145,6 +153,9 @@ export function filesToApp(files, existing = {}) {
   if (errors.length) return { app: null, errors };
 
   const app = compact({
+    /* First, so nothing below it — the checked files above all — can be
+       replaced from extras. */
+    ...safeExtras(config.extras, MAPPED),
     id: config.id,
     name: config.name || '',
     description: config.description || '',
@@ -154,7 +165,6 @@ export function filesToApp(files, existing = {}) {
     ...(Object.keys(automations).length ? { automations } : {}),
     ...(aiOf(config.ai) ? { ai: aiOf(config.ai) } : {}),
     files: own,
-    ...(config.extras || {}),
   });
   for (const key of SERVER_OWNED) if (existing[key] !== undefined) app[key] = existing[key];
   return { app, errors: [] };

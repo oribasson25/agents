@@ -1,5 +1,5 @@
 import { sql } from '../_db.js';
-import { checkAuth } from '../_auth.js';
+import { requireSession } from '../_auth.js';
 import { getUserSettings, resolveApiConfig } from '../_settings.js';
 import { accessTo, allows, refuse } from '../_access.js';
 import { rechunk, normalizeDocument } from '../_knowledge.js';
@@ -16,7 +16,7 @@ async function ownedDoc(docId, user) {
 }
 
 export default async function handler(req, res) {
-  const user = checkAuth(req, res);
+  const user = await requireSession(req, res);
   if (!user) return;
 
   const { docId } = req.query;

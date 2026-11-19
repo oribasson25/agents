@@ -16,15 +16,18 @@ export const GROUP_DEFAULTS = {
   timezone: 'Asia/Jerusalem',
   quietFrom: '',             // "23:30"; empty: no quiet hours
   quietTo: '',
-  maxActionsPerHour: 20,     // replies and reactions, per group
+  maxActionsPerHour: 20,     // replies and reactions, per group (at least 1: there is no "no limit")
+  maxDecisionsPerHour: 60,   // model calls nobody asked for, silent ones included, per group
   unsolicitedPerHour: 12,    // "decides by itself": turns nobody asked for, per group (0 = no limit)
   quietGap: 2,               // "decides by itself": messages by others since it last spoke
   debounceSeconds: 4,        // a quick burst of messages becomes one turn
   contextMessages: 60,       // how much of the conversation it reads
+  automationsSeeJarvis: false, // automations' WhatsApp triggers also see what Jarvis people write
 };
 
 const NUMBER_LIMITS = {
-  maxActionsPerHour: [0, 200],
+  maxActionsPerHour: [1, 200],
+  maxDecisionsPerHour: [1, 500],
   unsolicitedPerHour: [0, 100],
   quietGap: [0, 50],
   debounceSeconds: [1, 30],
@@ -32,7 +35,12 @@ const NUMBER_LIMITS = {
 };
 
 export function groupSettingsOf(number) {
-  return { ...GROUP_DEFAULTS, ...((number && number.group_settings) || {}) };
+  const s = { ...GROUP_DEFAULTS, ...((number && number.group_settings) || {}) };
+  // 0 used to mean "no limit". A limit is the point, so a stored 0 reads as the default.
+  for (const k of ['maxActionsPerHour', 'maxDecisionsPerHour']) {
+    if (!(Number(s[k]) >= 1)) s[k] = GROUP_DEFAULTS[k];
+  }
+  return s;
 }
 
 const HHMM = /^([01]?\d|2[0-3]):([0-5]\d)$/;
@@ -59,6 +67,7 @@ export function sanitizeGroupSettings(patch = {}, current = {}) {
     if (v && !HHMM.test(v)) return { error: 'Quiet hours are times like 23:30.' };
     next[k] = v;
   }
+  if (patch.automationsSeeJarvis !== undefined) next.automationsSeeJarvis = patch.automationsSeeJarvis === true;
   for (const [k, [min, max]] of Object.entries(NUMBER_LIMITS)) {
     if (patch[k] === undefined) continue;
     const n = Number(patch[k]);
@@ -202,6 +211,48 @@ export async function actionsLastHour(numberId, jid, { unsolicited = false } = {
   return row.n;
 }
 
+/** Every decision made in the last hour without being asked, a silent one included: each was a model call. */
+export async function decisionsLastHour(numberId, jid) {
+  const [row] = await sql`
+    select count(*)::int as n from wa_group_events
+    where number_id = ${numberId} and jid = ${jid} and action in ('reply', 'react', 'poll', 'silent')
+      and at > now() - interval '1 hour' and not coalesce((details->>'addressed')::boolean, false)
+  `;
+  return row.n;
+}
+
+const memberOf = (jid) => String(jid || '').split('@')[0].split(':')[0];
+
+/** Who just joined a group, by every id WhatsApp gave for them (migration 038). */
+export async function recordJoins(numberId, jid, joined) {
+  const members = [...new Set((joined || []).flatMap((p) => [memberOf(p.jid), memberOf(p.pn)]).filter(Boolean))];
+  if (!members.length) return;
+  await sql`
+    insert into wa_group_joins (number_id, jid, member, joined_at)
+    select ${numberId}, ${jid}, m, now() from unnest(${members}::text[]) as t(m)
+    on conflict (number_id, jid, member) do update set joined_at = excluded.joined_at
+  `;
+}
+
+/**
+ * Where a recap someone asked for may start: when they joined the group, if
+ * the number saw it, else the first message the group has from them. A
+ * newcomer asking "what did I miss?" must not be read what was said before
+ * they were there. `since` when neither is known.
+ */
+export async function recapStartFor(numberId, jid, senderJid, since) {
+  const who = memberOf(senderJid);
+  if (!who) return since;
+  const [row] = await sql`
+    select (select max(joined_at) from wa_group_joins where number_id = ${numberId} and jid = ${jid} and member = ${who}) as joined,
+           (select min(ts) from wa_group_messages
+             where number_id = ${numberId} and jid = ${jid} and not from_me
+               and split_part(split_part(sender_jid, '@', 1), ':', 1) = ${who}) as first_seen
+  `;
+  const at = row?.joined || row?.first_seen;
+  return at ? new Date(at).getTime() : since;
+}
+
 export async function setSeen(numberId, jid, id) {
   await sql`update wa_groups set seen_message_id = ${id} where number_id = ${numberId} and jid = ${jid}`;
 }
@@ -210,6 +261,7 @@ export async function setSeen(numberId, jid, id) {
 export async function pruneGroups() {
   await sql`delete from wa_group_messages where ts < now() - interval '30 days'`;
   await sql`delete from wa_group_events where at < now() - interval '30 days'`;
+  await sql`delete from wa_group_joins where joined_at < now() - interval '90 days'`;
   // One-time messages that went out (or were missed) long ago.
   await sql`delete from wa_group_schedules where repeat = 'once' and next_run_at is null and created_at < now() - interval '30 days' and coalesce(last_run_at, created_at) < now() - interval '30 days'`;
 }

@@ -96,6 +96,8 @@ globalThis.__db = (text, p) => {
     stale.forEach(s => { s.branch_id = null; });
     return stale.map(s => ({ id: s.id }));
   }
+  /* The one-number-one-agent claim, which every save now checks: free here. */
+  if (t.startsWith("select id from agents where data->'whatsapp'->>'phoneNumberId'")) return [];
   throw new Error('unrouted query: ' + t.slice(0, 90));
 };
 

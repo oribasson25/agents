@@ -8,7 +8,8 @@ import { getNumber } from './_waControl.js';
 import { runJarvisTurn, capabilityOn, recordAssistantMessage } from './_jarvis.js';
 import { createGroupRouter } from './_waGroupRouter.mjs';
 import { onWhatsAppMessage } from './_automationTriggers.js';
-import { claim, markSent, markFailed, requeueStuck, jidOfRecipient, SEND_GAP_MS } from './_waOutbox.js';
+import { claim, markSent, markFailed, requeue, requeueStuck, retryableSendError, jidOfRecipient, SEND_GAP_MS } from './_waOutbox.js';
+import { appendExchange, normalizeHistory, likePrefix, HISTORY_TURNS } from './_waHistory.js';
 
 // Messages older than this (delivered after the number was offline) never trigger a turn.
 const STALE_MS = 10 * 60 * 1000;
@@ -18,6 +19,20 @@ const DEBOUNCE_MS = 2500;
 const MAX_MEDIA_BYTES = 5 * 1024 * 1024;
 // A conversation with the number's AI Chatbot ends after this much silence.
 const SESSION_IDLE_MS = 30 * 60 * 1000;
+// How long the number's settings are trusted before they are read again.
+const NUMBER_TTL_MS = 60_000;
+/* Brakes on private chats. A linked number is somebody's real WhatsApp
+   account: one that answers without end gets banned, and two bots answering
+   each other run up model costs all night. */
+const CHAT_REPLIES_MAX = 15;          // replies to one chat in CHAT_WINDOW_MIN minutes
+const CHAT_WINDOW_MIN = 10;
+const NUMBER_REPLIES_PER_HOUR = 300;  // replies in private chats, the whole number
+// The other side answering this fast this many times in a row is a bot, not a person.
+const LOOP_REPLY_MS = 5000;
+const LOOP_STREAK = 4;
+const LOOP_PAUSE_MS = 30 * 60 * 1000;
+// No new outbox batch this close to the session's end: the next session sends it.
+const OUTBOX_END_MS = 60_000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const jidOf = (phone) => `${phone}@s.whatsapp.net`;
@@ -32,17 +47,18 @@ const jidOf = (phone) => `${phone}@s.whatsapp.net`;
  * One router lives for one worker session; drain() finishes what is in flight
  * before the session hands the connection over.
  */
-export function createRouter(wa, numberId, { baseUrl }) {
+export function createRouter(wa, numberId, { baseUrl, deadline = null }) {
   const pending = new Map(); // chatJid -> { timer, msgs, route }
   const busy = new Set();
   const rerun = new Map();
   const inflight = new Set();
+  const pace = new Map();    // chatJid -> { repliedAt, awaiting, streak, pausedUntil }
   let number = null;
   let numberAt = 0;
   let draining = false;
 
   async function currentNumber() {
-    if (!number || Date.now() - numberAt > 10_000) {
+    if (!number || Date.now() - numberAt > NUMBER_TTL_MS) {
       number = await getNumber(numberId);
       numberAt = Date.now();
     }
@@ -50,7 +66,7 @@ export function createRouter(wa, numberId, { baseUrl }) {
   }
 
   // Groups have their own rules: modes, limits, a decision per turn (see _waGroupRouter.mjs).
-  const groups = createGroupRouter(wa, numberId);
+  const groups = createGroupRouter(wa, numberId, { currentNumber });
 
   wa.on('message', (m) => {
     if (m.isGroup) return void groups.handle(m);
@@ -72,19 +88,27 @@ export function createRouter(wa, numberId, { baseUrl }) {
     const n = await currentNumber();
     if (!n || !n.enabled) return;
 
+    const [person] = await sql`
+      select * from jarvis_people
+      where number_id = ${numberId} and phone = ${m.senderPhone} and active
+    `;
+
     /* An automation may be waiting for exactly this message — an answer to
        an approval it asked for, or the thing its trigger listens for. When it
-       takes the message, nobody else answers it. */
-    const taken = await onWhatsAppMessage({ numberId, message: m, baseUrl }).catch((err) => {
+       takes the message, nobody else answers it. A person on the Jarvis list
+       talks to their own private Jarvis: an automation that asked them
+       something still gets the answer, but a trigger listening to every
+       message on the number does not see theirs, unless an admin chose that
+       for the number (group_settings.automationsSeeJarvis). */
+    const triggers = !person || n.group_settings?.automationsSeeJarvis === true;
+    const taken = await onWhatsAppMessage({ numberId, message: m, baseUrl, triggers }).catch((err) => {
       console.error(`[wa ${numberId}] automations could not look at a message:`, err.message);
       return null;
     });
     if (taken && taken.consumed) return;
 
-    const [person] = await sql`
-      select * from jarvis_people
-      where number_id = ${numberId} and phone = ${m.senderPhone} and active
-    `;
+    if (loopSuspected(m)) return;
+
     let route;
     if (person) route = { kind: 'jarvis', personId: person.id };
     else if (n.mode === 'agent' && n.agent_id) route = { kind: 'agent', agentId: n.agent_id };
@@ -140,8 +164,70 @@ export function createRouter(wa, numberId, { baseUrl }) {
     job.finally(() => inflight.delete(job));
   }
 
+  /**
+   * Whether this message looks like the far side is a bot answering ours.
+   * Only the first message after each reply counts, so a person sending a
+   * quick burst is not mistaken for one. A suspected loop pauses the chat.
+   */
+  function loopSuspected(m) {
+    const p = pace.get(m.chatJid);
+    if (!p) return false;
+    if (p.pausedUntil > Date.now()) return true;
+    if (!p.awaiting) return false;
+    // Written before our reply reached them (timestamps are whole seconds): not an answer to it.
+    const after = m.ts - p.repliedAt;
+    if (after < -1000) return false;
+    p.awaiting = false;
+    p.streak = after < LOOP_REPLY_MS ? p.streak + 1 : 0;
+    if (p.streak < LOOP_STREAK) return false;
+    p.streak = 0;
+    p.pausedUntil = Date.now() + LOOP_PAUSE_MS;
+    console.warn(`[wa ${numberId}] ${m.chatJid} answers every reply within seconds — pausing that chat`);
+    logError({
+      agentId: null, source: 'whatsapp-linked',
+      message: `A private chat answered every reply within ${LOOP_REPLY_MS / 1000} seconds, ${LOOP_STREAK} times in a row, like another bot. The number stopped answering that chat for ${LOOP_PAUSE_MS / 60000} minutes.`,
+      context: { numberId, chat: m.senderPhone },
+    }).catch(() => {});
+    return true;
+  }
+
+  /** Whether one more reply may go to this chat, by the chat's and the number's limits. */
+  async function mayReply(chatJid, route) {
+    const [row] = await sql`
+      select count(*) filter (where chat = ${chatJid} and at > now() - ${`${CHAT_WINDOW_MIN} minutes`}::interval)::int as chat,
+             count(*)::int as number
+      from wa_dm_replies
+      where number_id = ${numberId} and at > now() - interval '1 hour'
+    `;
+    const reason = row.chat >= CHAT_REPLIES_MAX
+      ? `${CHAT_REPLIES_MAX} replies to one chat in ${CHAT_WINDOW_MIN} minutes`
+      : row.number >= NUMBER_REPLIES_PER_HOUR ? `${NUMBER_REPLIES_PER_HOUR} replies in private chats in an hour` : null;
+    if (!reason) return true;
+    const p = pace.get(chatJid) || {};
+    if (!p.limitedLogged || Date.now() - p.limitedLogged > 10 * 60 * 1000) {
+      p.limitedLogged = Date.now();
+      pace.set(chatJid, p);
+      await logError({
+        agentId: route.kind === 'agent' ? route.agentId : null, source: 'whatsapp-linked',
+        message: `The number reached its limit of ${reason} and is not answering for now.`,
+        context: { numberId },
+      }).catch(() => {});
+    }
+    return false;
+  }
+
+  async function noteReply(chatJid) {
+    const p = pace.get(chatJid) || { streak: 0, pausedUntil: 0 };
+    p.repliedAt = Date.now();
+    p.awaiting = true;
+    pace.set(chatJid, p);
+    await sql`insert into wa_dm_replies (number_id, chat) values (${numberId}, ${chatJid})`
+      .catch((err) => console.warn(`[wa ${numberId}] could not count a reply:`, err.message));
+  }
+
   async function turn(chatJid, { msgs, route }) {
     if (wa.state.status !== 'open') return;
+    if (!(await mayReply(chatJid, route))) return;
     await wa.markRead(msgs.at(-1).raw);
     await wa.setTyping(chatJid, true);
 
@@ -160,7 +246,10 @@ export function createRouter(wa, numberId, { baseUrl }) {
     } else {
       reply = await agentTurn(route.agentId, msgs);
     }
-    if (reply) await wa.sendText(chatJid, reply);
+    if (reply) {
+      await wa.sendText(chatJid, reply);
+      await noteReply(chatJid);
+    }
   }
 
   /** Images and PDFs, read as the model's own input when this person's Jarvis may read them. */
@@ -204,7 +293,7 @@ export function createRouter(wa, numberId, { baseUrl }) {
     }
     agent.canEndConversation = true;
 
-    const context = normalizeHistory([...stored, userMsg].slice(-20));
+    const context = normalizeHistory([...stored, userMsg]);
 
     let reply;
     let ended = false;
@@ -231,13 +320,9 @@ export function createRouter(wa, numberId, { baseUrl }) {
       ...dlpMessages([userMsg], agent.dlp || {}),
       { role: 'assistant', content: reply, ...(ended ? { ended: true } : {}) },
     ];
-    await sql`
-      insert into chat_sessions (id, agent_id, source, messages, branch_id, started_at, updated_at)
-      values (${sessionId}, ${agentId}, 'whatsapp', ${JSON.stringify(exchange)}, ${branchId}, now(), now())
-      on conflict (id) do update
-        set messages   = chat_sessions.messages || excluded.messages,
-            updated_at = now()
-    `;
+    if (!(await appendExchange({ sessionId, agentId, branchId, exchange }))) {
+      await logError({ agentId, source: 'whatsapp-linked', message: 'A conversation with this id belongs to something else; this exchange was not stored', context: { numberId, sessionId } });
+    }
     return reply;
   }
 
@@ -250,15 +335,25 @@ export function createRouter(wa, numberId, { baseUrl }) {
    */
   async function currentSession(agentId, phone) {
     const prefix = `wal_${numberId}_${agentId}_${phone}`;
+    /* Only the last HISTORY_TURNS messages leave the database, and the LIKE on
+       (agent_id, id text_pattern_ops) — migration 038 — finds this person's
+       sessions without reading every conversation of the chatbot. */
     const [last] = await sql`
-      select id, messages, updated_at > now() - ${`${SESSION_IDLE_MS} milliseconds`}::interval as recent
+      select id,
+             updated_at > now() - ${`${SESSION_IDLE_MS} milliseconds`}::interval as recent,
+             coalesce(((messages -> -1) ->> 'ended')::boolean, false) as ended,
+             case when jsonb_typeof(messages) = 'array' then coalesce((
+               select jsonb_agg(t.e order by t.i)
+               from jsonb_array_elements(messages) with ordinality as t(e, i)
+               where t.i > jsonb_array_length(messages) - ${HISTORY_TURNS}
+             ), '[]'::jsonb) else '[]'::jsonb end as tail
       from chat_sessions
-      where agent_id = ${agentId} and (id = ${prefix} or starts_with(id, ${`${prefix}_`}))
+      where agent_id = ${agentId} and source = 'whatsapp'
+        and (id = ${prefix} or id like ${likePrefix(`${prefix}_`)})
       order by started_at desc
       limit 1
     `;
-    const messages = Array.isArray(last?.messages) ? last.messages : [];
-    if (last && last.recent && !messages.at(-1)?.ended) return { sessionId: last.id, stored: messages };
+    if (last && last.recent && !last.ended) return { sessionId: last.id, stored: Array.isArray(last.tail) ? last.tail : [] };
     return { sessionId: `${prefix}_${Date.now()}`, stored: [] };
   }
 
@@ -292,27 +387,44 @@ export function createRouter(wa, numberId, { baseUrl }) {
    * a pause between: a number that fires off a burst is a number that gets
    * banned.
    */
-  let sendingOutbox = false;
+  let outboxJob = null;
   let lastRequeue = 0;
-  async function sendOutbox() {
-    if (wa.state.status !== 'open' || sendingOutbox || draining) return;
-    sendingOutbox = true;
-    try {
-      if (Date.now() - lastRequeue > 60_000) { lastRequeue = Date.now(); await requeueStuck(numberId); }
-      const rows = await claim(numberId, 5);
-      for (const r of rows) {
-        try {
-          await wa.sendText(jidOfRecipient(r.recipient), r.body);
-          await markSent(r.id);
-        } catch (err) {
-          console.error(`[wa ${numberId}] outbox ${r.id} not sent:`, err.message);
-          await markFailed(r.id, err.message).catch(() => {});
-        }
-        await sleep(SEND_GAP_MS);
+  const maySend = () => wa.state.status === 'open' && !draining && !(deadline && deadline - Date.now() < OUTBOX_END_MS);
+
+  /** Sends one batch; resolves with how many messages it claimed (0: nothing to do, or not now). */
+  function sendOutbox() {
+    if (outboxJob) return Promise.resolve(0);
+    outboxJob = sendBatch().finally(() => { outboxJob = null; });
+    return outboxJob;
+  }
+
+  async function sendBatch() {
+    if (!maySend()) return 0;
+    if (Date.now() - lastRequeue > 60_000) { lastRequeue = Date.now(); await requeueStuck(numberId); }
+    const rows = await claim(numberId, 5);
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      /* The session is ending or the socket went away: what is left goes back
+         to the queue for the next session, instead of failing for good. */
+      if (!maySend()) {
+        await requeue(rows.slice(i).map((x) => x.id)).catch(() => {});
+        break;
       }
-    } finally {
-      sendingOutbox = false;
+      try {
+        await wa.sendText(jidOfRecipient(r.recipient), r.body);
+      } catch (err) {
+        console.error(`[wa ${numberId}] outbox ${r.id} not sent:`, err.message);
+        if (retryableSendError(err) || wa.state.status !== 'open') {
+          await requeue(rows.slice(i).map((x) => x.id)).catch(() => {});
+          break;
+        }
+        await markFailed(r.id, err.message).catch(() => {});
+        continue;
+      }
+      await markSent(r.id).catch((err) => console.warn(`[wa ${numberId}] outbox ${r.id} sent, not marked:`, err.message));
+      if (i < rows.length - 1) await sleep(SEND_GAP_MS);
     }
+    return rows.length;
   }
 
   /** End of session: run debounced turns now and wait up to `timeoutMs` for running ones. */
@@ -324,8 +436,10 @@ export function createRouter(wa, numberId, { baseUrl }) {
       pending.delete(jid);
       runTurn(jid, p);
     }
-    const deadline = Date.now() + timeoutMs;
-    while ((inflight.size || rerun.size) && Date.now() < deadline) await Promise.race([...inflight, sleep(500)]);
+    const until = Date.now() + timeoutMs;
+    while ((inflight.size || rerun.size) && Date.now() < until) await Promise.race([...inflight, sleep(500)]);
+    // A batch already sending finishes its current message and puts the rest back.
+    if (outboxJob) await Promise.race([outboxJob.catch(() => {}), sleep(Math.max(0, until - Date.now()))]);
     await groupsDone;
   }
 
@@ -336,17 +450,4 @@ export function createRouter(wa, numberId, { baseUrl }) {
   }
 
   return { drain, sendDueReminders, sendOutbox, runDue };
-}
-
-// Claude requires strict user/assistant alternation; merge consecutive turns of one role.
-function normalizeHistory(messages) {
-  const start = messages.findIndex((m) => m.role === 'user');
-  if (start === -1) return [];
-  const merged = [];
-  for (const m of messages.slice(start)) {
-    const last = merged[merged.length - 1];
-    if (last && last.role === m.role) last.content = `${last.content}\n${m.content}`;
-    else merged.push({ role: m.role, content: m.content });
-  }
-  return merged;
 }

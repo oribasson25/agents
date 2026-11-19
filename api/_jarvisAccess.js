@@ -11,12 +11,12 @@
  * else in Jarvis hangs off a number, so checking the number is the whole gate.
  */
 import { sql } from './_db.js';
-import { checkAuth } from './_auth.js';
+import { requireSession } from './_auth.js';
 import { member, isOrgAdmin } from './_access.js';
 
 /** The caller, if they may use Jarvis at all; otherwise answers 401/403 and returns null. */
 export async function jarvisGate(req, res) {
-  const user = checkAuth(req, res);
+  const user = await requireSession(req, res);
   if (!user) return null;
   const me = await member(user);
   if (!me) { res.status(401).json({ error: 'unauthorized' }); return null; }

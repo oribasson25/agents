@@ -70,8 +70,17 @@ export async function runAgentAutomationTool({ toolName, inputs = {}, agent, own
   if (!row.enabled) return `"${row.published.name}" is switched off, so it cannot be run.`;
 
   const input = inputs.input && typeof inputs.input === 'object' && !Array.isArray(inputs.input) ? inputs.input : {};
-  const runId = await startRun({ row, mode: 'live', source: 'agent', input, host });
-  const run = await workRun(runId, { host, budgetMs: 45 * 1000 });
+  /* When the chatbot was itself asked by an automation's step, this run is
+     one deeper than that one (startRun reads it from runScope), so an
+     automation that asks a chatbot that runs the automation stops in time. */
+  let runId;
+  try {
+    runId = await startRun({ row, mode: 'live', source: 'agent', input, host });
+  } catch (err) {
+    if (err.code === 'TOO_DEEP' || err.code === 'NOT_PUBLISHED' || err.code === 'INVALID') return `The automation could not be started: ${err.message}`;
+    throw err;
+  }
+  const run = await workRun(runId, { host, budgetMs: 45 * 1000, hardBudgetMs: 60 * 1000 });
   if (!run) return 'The automation was started.';
   if (run.status === 'done') return run.output === null || run.output === undefined ? 'Done.' : JSON.stringify(run.output);
   if (run.status === 'failed') return `The automation failed: ${run.error}`;

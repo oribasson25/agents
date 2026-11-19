@@ -231,21 +231,25 @@ export async function listRows(tableId, { q = '', limit = 100, offset = 0 } = {}
   const lim = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500);
   const off = Math.max(parseInt(offset, 10) || 0, 0);
   const term = (q || '').trim();
-  const rows = term
-    ? await sql`
-        select id, data, written_by, created_at, updated_at
-        from data_table_rows
-        where table_id = ${tableId} and data::text ilike '%' || ${term} || '%'
-        order by created_at limit ${lim} offset ${off}`
-    : await sql`
-        select id, data, written_by, created_at, updated_at
-        from data_table_rows
-        where table_id = ${tableId}
-        order by created_at limit ${lim} offset ${off}`;
-  const [{ total }] = term
-    ? await sql`select count(*)::int as total from data_table_rows
-                 where table_id = ${tableId} and data::text ilike '%' || ${term} || '%'`
-    : await sql`select count(*)::int as total from data_table_rows where table_id = ${tableId}`;
+  /* The page and the count are independent; they used to run one after the
+     other, each a full scan of data::text when there is a search term. */
+  const [rows, [{ total }]] = await Promise.all([
+    term
+      ? sql`
+          select id, data, written_by, created_at, updated_at
+          from data_table_rows
+          where table_id = ${tableId} and data::text ilike '%' || ${term} || '%'
+          order by created_at limit ${lim} offset ${off}`
+      : sql`
+          select id, data, written_by, created_at, updated_at
+          from data_table_rows
+          where table_id = ${tableId}
+          order by created_at limit ${lim} offset ${off}`,
+    term
+      ? sql`select count(*)::int as total from data_table_rows
+             where table_id = ${tableId} and data::text ilike '%' || ${term} || '%'`
+      : sql`select count(*)::int as total from data_table_rows where table_id = ${tableId}`,
+  ]);
   return { rows, total };
 }
 
@@ -314,10 +318,24 @@ export async function deleteRow(tableId, rowId) {
  * by the list ticked on the chatbot itself. Two gates, not one — ticking an id
  * that belongs to somebody else must not open it.
  */
-export async function tablesForAgent(agent, ownerId) {
-  const allowed = Array.isArray(agent && agent.tables) ? agent.tables : [];
+export async function tablesForAgent(agent, ownerId, { withCounts = false } = {}) {
+  const allowed = (Array.isArray(agent && agent.tables) ? agent.tables : []).map(String).filter(Boolean);
   if (!allowed.length || !ownerId) return [];
-  const rows = await listTables(ownerId);
+  /* Only the ticked tables are read, and rows are counted only when the
+     answer shows the count (table_list): every other tool call used to count
+     every row of every table in the organization before doing anything. */
+  const rows = withCounts
+    ? await sql`
+        select t.id, t.org_id, t.name, t.description, t.columns, t.created_at, t.updated_at,
+               (select count(*)::int from data_table_rows r where r.table_id = t.id) as row_count
+        from data_tables t
+        where t.org_id = (select org_id from users where id = ${ownerId}) and t.id = any(${allowed})
+        order by t.updated_at desc`
+    : await sql`
+        select t.id, t.org_id, t.name, t.description, t.columns, t.created_at, t.updated_at
+        from data_tables t
+        where t.org_id = (select org_id from users where id = ${ownerId}) and t.id = any(${allowed})
+        order by t.updated_at desc`;
   return rows.filter(t => allowed.includes(t.id));
 }
 
@@ -398,7 +416,7 @@ function trouble(table, result) {
 
 /** A tool's answer to the model is text, including when it went wrong. */
 export async function runAgentTableTool({ toolName, inputs = {}, agent, ownerId, writtenBy = 'agent' }) {
-  const tables = await tablesForAgent(agent, ownerId);
+  const tables = await tablesForAgent(agent, ownerId, { withCounts: toolName === 'table_list' });
   if (!tables.length) return 'No tables are enabled for this AI Chatbot.';
 
   if (toolName === 'table_list') {

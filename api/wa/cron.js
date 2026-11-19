@@ -19,18 +19,25 @@ export default async function handler(req, res) {
   if (!workerAuthorized(req)) return res.status(401).json({ error: 'unauthorized' });
   if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).end();
 
+  // A number WhatsApp refused (403) is left for an admin: reconnecting to a refusal only deepens it.
   const rows = await sql`
     select id from wa_numbers
     where enabled
       and (phone is not null or qr_wanted_until > now())
       and (lease_until is null or lease_until < now())
+      and (coalesce(state->>'status', '') <> 'blocked' or qr_wanted_until > now())
   `;
   const kicked = await Promise.all(rows.map(async (r) => ({ id: r.id, ok: await kickWorker(r.id, { via: req.headers.host }) })));
 
   // Only the last few days matter for spotting a redelivered message.
   await sql`delete from wa_seen where created_at < now() - interval '3 days'`.catch(() => {});
   // Group messages and the activity log are kept for 30 days; once an hour is enough.
-  if (new Date().getUTCMinutes() === 0) await pruneGroups().catch(() => {});
+  if (new Date().getUTCMinutes() === 0) {
+    await pruneGroups().catch(() => {});
+    // Cloud API message claims only matter while Meta may redeliver; reply counts for an hour.
+    await sql`delete from whatsapp_messages where created_at < now() - interval '30 days'`.catch(() => {});
+    await sql`delete from wa_dm_replies where at < now() - interval '1 day'`.catch(() => {});
+  }
 
   return res.json({ kicked });
 }

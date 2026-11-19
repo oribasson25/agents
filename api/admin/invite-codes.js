@@ -1,4 +1,4 @@
-import { checkAdmin } from '../_auth.js';
+import { requireAdmin } from '../_auth.js';
 import { createInvite, listInvites, inviteState, DEFAULT_DAYS } from '../_invites.js';
 
 /**
@@ -9,7 +9,7 @@ import { createInvite, listInvites, inviteState, DEFAULT_DAYS } from '../_invite
  * about reading it back.
  */
 export default async function handler(req, res) {
-  const admin = checkAdmin(req, res);
+  const admin = await requireAdmin(req, res);
   if (!admin) return;
 
   if (req.method === 'GET') {

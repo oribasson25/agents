@@ -8,11 +8,86 @@ import { AUTOMATION_TOOLS, runAgentAutomationTool } from './_automationTools.js'
 import { internalSecret } from './_auth.js';
 import { llmFetch, replyText } from './_llm.js';
 import { configUsable } from './_settings.js';
+import { runToolCode } from './_toolRunner.js';
 
 /* This runs server-side with no logged-in user, so it proves it is the
-   platform to the tool runner and the scraper with the internal secret
-   instead of a session token. */
+   platform to the scraper with the internal secret instead of a session
+   token (and to the tool runner through api/_toolRunner.js). */
 const INTERNAL_HEADERS = { 'Content-Type': 'application/json', 'x-internal-secret': internalSecret() };
+
+/**
+ * Where this deployment answers, for the calls it makes to itself (the
+ * scraper, the tool runner, automation code steps). APP_URL when it is set,
+ * so the address never depends on headers a caller could shape; otherwise the
+ * address this request came in on.
+ */
+export function appBaseUrl(req) {
+  const fixed = String(process.env.APP_URL || '').trim().replace(/\/+$/, '');
+  if (fixed) return fixed;
+  const proto = String((req && req.headers && req.headers['x-forwarded-proto']) || 'https').split(',')[0].trim() === 'http' ? 'http' : 'https';
+  return `${proto}://${req && req.headers ? req.headers.host : ''}`;
+}
+
+/* ─────────────────── what a stranger may send ─────────────────── */
+
+/* The widget, apps and WhatsApp are open to anyone, and every turn is paid
+   for by the chatbot's organization. A turn reads the last PUBLIC_TURNS
+   messages; a person's message may be up to PUBLIC_USER_CHARS long, and the
+   chatbot's own earlier answers are cut at PUBLIC_ASSISTANT_CHARS. */
+export const PUBLIC_TURNS = 20;
+export const PUBLIC_USER_CHARS = 4000;
+export const PUBLIC_ASSISTANT_CHARS = 8000;
+const MAX_INCOMING = 500;
+
+/**
+ * The history a stranger sent, as a turn may use it: only `user` and
+ * `assistant` messages with text, the last PUBLIC_TURNS of them, starting
+ * with the person. Returns `{ messages }` or `{ error }` (for a 400).
+ *
+ * A `system` or `tool` message, or an `assistant` one carrying tool calls,
+ * is the platform's to write, never the visitor's: they are dropped.
+ */
+export function publicHistory(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) return { error: 'messages array required' };
+  if (messages.length > MAX_INCOMING) return { error: 'Too many messages in one request' };
+  const kept = [];
+  for (const m of messages) {
+    if (!m || typeof m !== 'object') return { error: 'Every message must be an object with a role and text content' };
+    if (m.role !== 'user' && m.role !== 'assistant') continue;
+    if (typeof m.content !== 'string') return { error: 'Message content must be text' };
+    if (m.role === 'user' && m.content.length > PUBLIC_USER_CHARS) {
+      return { error: `A message can be at most ${PUBLIC_USER_CHARS} characters long` };
+    }
+    kept.push({ role: m.role, content: m.role === 'assistant' ? m.content.slice(0, PUBLIC_ASSISTANT_CHARS) : m.content });
+  }
+  let recent = kept.slice(-PUBLIC_TURNS);
+  const first = recent.findIndex((m) => m.role === 'user');
+  recent = first === -1 ? [] : recent.slice(first);
+  if (!recent.length || recent[recent.length - 1].role !== 'user' || !recent[recent.length - 1].content.trim()) {
+    return { error: 'The last message must be the person\'s, with some text' };
+  }
+  return { messages: recent };
+}
+
+/* What any channel hands a turn: text turns of a person and the chatbot, nothing else. */
+function turnHistory(messages) {
+  return (Array.isArray(messages) ? messages : [])
+    .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+    .map((m) => ({ role: m.role, content: m.content }))
+    .slice(-60);
+}
+
+/* Conversation ids WhatsApp stores under (wa_<agent>_<phone>, wal_…). A
+   widget or app visitor must not be able to create one first: that row would
+   then belong to the widget, and the phone's real history could no longer be
+   stored. */
+export const RESERVED_SESSION_PREFIX = /^wal?_/i;
+
+/** A conversation id a client may choose: short, plain characters only, and not WhatsApp's. */
+export function validSessionId(id) {
+  return typeof id === 'string' && id.length > 0 && id.length <= 120 && /^[A-Za-z0-9_.:+-]+$/.test(id)
+    && !RESERVED_SESSION_PREFIX.test(id);
+}
 
 function applyDlp(text, dlp) {
   if (!dlp || typeof text !== 'string') return text;
@@ -30,12 +105,14 @@ export function dlpMessages(messages, dlp) {
   });
 }
 
-function buildSystemPrompt(agent, ragChunks = []) {
-  // Every chatbot is told the date, whatever else it is told.
-  let system = `${nowBlock()}\n\n${agent.basePrompt || ''}`;
-  if (ragChunks.length > 0) {
-    system += '\n\n## Relevant Context\n' + ragChunks.map(c => `--- ${c.title}\n${c.content}`).join('\n\n');
-  }
+/*
+ * Ordered from what never changes to what changes every turn, so a provider's
+ * prompt cache can keep the long, fixed start (the prompt and the skills)
+ * from one turn and one tool round to the next. Every chatbot is told the
+ * date, whatever else it is told — last, because it changes every minute.
+ */
+export function buildSystemPrompt(agent, ragChunks = [], at = new Date()) {
+  let system = String(agent.basePrompt || '');
   if (agent.skills && agent.skills.length > 0) {
     system += '\n\n' + agent.skills.map(s =>
       `## Skill: ${s.name}\n${s.description ? s.description + '\n' : ''}${s.prompt}`
@@ -45,20 +122,53 @@ function buildSystemPrompt(agent, ragChunks = []) {
   if (dlp.creditCard || dlp.israeliId) {
     system += '\n\n[SECURITY NOTICE] Never process, repeat, or store personal identifiable information (PII). If the user provides sensitive data such as credit card numbers or ID numbers, refuse to repeat it and treat it as [MASKED].';
   }
+  if (ragChunks.length > 0) {
+    system += '\n\n## Relevant Context\n' + ragChunks.map(c => `--- ${c.title}\n${c.content}`).join('\n\n');
+  }
+  system += `\n\n${nowBlock(at)}`;
   return system.trim();
 }
 
+/**
+ * Whether a conversation id may be used by this chatbot on this channel:
+ * free, or already this chatbot's conversation on this channel. Also says
+ * which branch an existing conversation is on, so the caller need not ask
+ * again. `{ ok, exists, branchId }`.
+ */
+export async function claimSession(sessionId, agentId, source) {
+  if (!sessionId) return { ok: true, exists: false, branchId: null };
+  const [row] = await sql`select agent_id, source, branch_id from chat_sessions where id = ${sessionId}`;
+  if (!row) return { ok: true, exists: false, branchId: null };
+  return { ok: row.agent_id === agentId && row.source === source, exists: true, branchId: row.branch_id || null };
+}
+
+/**
+ * Stores a conversation under its id. A conversation already stored under
+ * that id is replaced only when it is this chatbot's, on this channel:
+ * conversation ids are chosen by the client (and a WhatsApp one can be
+ * guessed), so without that anyone could overwrite anyone's conversation —
+ * the history a chatbot reads back on its next answer. Returns false when the
+ * id belongs to someone else, or nothing could be written.
+ */
 export async function saveSession(sessionId, agentId, allMessages, source = 'widget', branchId = null) {
-  if (!sessionId) return;
+  if (!sessionId) return false;
+  if (!validSessionId(sessionId)) return false;
   try {
-    await sql`
+    const rows = await sql`
       insert into chat_sessions (id, agent_id, source, messages, branch_id, started_at, updated_at)
       values (${sessionId}, ${agentId}, ${source}, ${JSON.stringify(allMessages)}, ${branchId}, now(), now())
       on conflict (id) do update
         set messages   = excluded.messages,
             updated_at = now()
+        where chat_sessions.agent_id = excluded.agent_id
+          and chat_sessions.source = excluded.source
+      returning id
     `;
-  } catch (_) {}
+    return rows.length > 0;
+  } catch (err) {
+    console.warn('[chat session] could not store a conversation:', err.message);
+    return false;
+  }
 }
 
 /**
@@ -144,6 +254,17 @@ function buildOpenAITools(agent) {
   return tools;
 }
 
+/* One address, nothing around it. */
+const ADDRESS = /^[^\s@<>(),;:"\\]+@[^\s@<>(),;:"\\]+\.[^\s@<>(),;:"\\]+$/;
+
+/** "a@x.com, b@y.org" → the same, checked; null if any part is not a plain address. */
+export function emailRecipients(value) {
+  if (typeof value !== 'string' || /[\r\n]/.test(value)) return null;
+  const list = value.split(/[,;]/).map((x) => x.trim()).filter(Boolean);
+  if (!list.length || list.length > 20 || !list.every((x) => x.length <= 254 && ADDRESS.test(x))) return null;
+  return list.join(', ');
+}
+
 async function executeTool(toolName, inputs, agent, baseUrl, agentId) {
   if (toolName === 'switch_skill') return 'OK';
 
@@ -173,11 +294,15 @@ async function executeTool(toolName, inputs, agent, baseUrl, agentId) {
 
   if (toolName === 'send_email') {
     if (!agent.emailEnabled) return 'The send_email tool is disabled for this agent.';
+    /* The address comes from the model, which a stranger talks to: a line
+       break in it would add headers (Bcc:) to the message. */
+    const to = emailRecipients(inputs.to);
+    if (!to) return 'Error: "to" must be one or more plain email addresses, separated by commas.';
     try {
       const { message } = await sendGmail({
         agentId,
-        to: inputs.to,
-        subject: inputs.subject,
+        to,
+        subject: String(inputs.subject ?? '').replace(/[\r\n]+/g, ' '),
         body: inputs.body,
       });
       return message;
@@ -219,12 +344,12 @@ async function executeTool(toolName, inputs, agent, baseUrl, agentId) {
   const packages = (tool.packages || '').split(',').map(s => s.trim()).filter(Boolean);
   const envVars = Object.fromEntries((tool.envVars || []).filter(e => e.key).map(e => [e.key, e.value]));
 
-  const resp = await fetch(`${baseUrl}/api/run-tool`, {
-    method: 'POST',
-    headers: INTERNAL_HEADERS,
-    body: JSON.stringify({ code: tool.code || '', inputs, packages, env_vars: envVars }),
-  });
-  const data = await resp.json();
+  let data;
+  try {
+    data = await runToolCode({ code: tool.code || '', inputs, packages, envVars, baseUrl });
+  } catch (err) {
+    data = { error: err.message };
+  }
 
   // A tool that fails mid-conversation is the failure an assistant most needs
   // to see, and nobody is watching the logs when it happens.
@@ -243,20 +368,26 @@ async function executeTool(toolName, inputs, agent, baseUrl, agentId) {
  * Throws on failure; throws with `err.code === 'NO_API_KEY'` when the agent
  * has no key configured (and isn't using Ollama).
  */
-export async function runAgentTurn({ agent, agentId, messages, baseUrl }) {
-  const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || '';
-  const ragChunks = lastUserMsg.trim() ? await retrieveRagChunks(agentId, lastUserMsg) : [];
-  const systemPrompt = buildSystemPrompt(agent, ragChunks);
+export async function runAgentTurn({ agent, agentId, messages, baseUrl, audience = 'public' }) {
+  /* Whatever a channel passes, a turn reads only the person's and the
+     chatbot's own text: a `system` or `tool` message in a stored or sent
+     history would be the platform speaking, and it is not. */
+  const history = turnHistory(messages);
+  const lastUserMsg = [...history].reverse().find(m => m.role === 'user')?.content || '';
   const cfg = agent.apiConfig || {};
   const dlp = agent.dlp || {};
-  const safeMessages = dlpMessages(messages, dlp);
+  const safeMessages = dlpMessages(history, dlp);
 
   if (!configUsable(cfg)) {
     const err = new Error('The platform has not set up a model for this AI Chatbot\'s organization yet.');
     err.code = 'NO_API_KEY';
     throw err;
   }
-  const meta = { orgId: cfg.orgId || null, source: 'agents', itemType: 'agent', itemId: agentId };
+  const ragChunks = lastUserMsg.trim() ? await retrieveRagChunks(agentId, lastUserMsg) : [];
+  const systemPrompt = buildSystemPrompt(agent, ragChunks);
+  /* `public`: a stranger set this off (widget, app, WhatsApp), so it counts
+     against the organization's share of the platform's budget too. */
+  const meta = { orgId: cfg.orgId || null, source: 'agents', itemType: 'agent', itemId: agentId, public: audience !== 'internal' };
 
   let ended = false;
   const runTool = async (name, inputs) => {

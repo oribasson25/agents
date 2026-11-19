@@ -1,5 +1,5 @@
 import { sql } from './_db.js';
-import { checkAuth } from './_auth.js';
+import { requireSession } from './_auth.js';
 
 const KINDS = ['platform', 'tool', 'skill'];
 
@@ -8,7 +8,7 @@ const KINDS = ['platform', 'tool', 'skill'];
  * Assistant tab can show what was asked and what the assistant did.
  */
 export default async function handler(req, res) {
-  const user = checkAuth(req, res);
+  const user = await requireSession(req, res);
   if (!user) return;
 
   if (req.method === 'GET') {

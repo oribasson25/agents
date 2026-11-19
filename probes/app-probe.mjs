@@ -91,6 +91,7 @@ const USER = { id: 'u1' };
 const db = { apps: new Map(), versions: [], repos: new Map(), rows: [{ id: 'r1', data: { name: 'Dana' } }],
              agents: { 'agent-1': 'u1', 'agent-x': 'u2' }, tables: { 'table-1': 'u1', 'table-2': 'u1', 'table-x': 'u2' } };
 let writes = 0;
+let fileReads = 0;
 
 /* Each user is the admin of an organization of their own: o-u1, o-u2. */
 const orgOf = (userId) => `o-${userId}`;
@@ -130,6 +131,38 @@ globalThis.__db = (text, p) => {
     const a = db.apps.get(p[0]);
     return a ? [{ data: a.data, user_id: a.user_id, org_id: orgOf(a.user_id) }] : [];
   }
+  if (t.startsWith("select data - 'files' as data, id, user_id, org_id, active_version_id, updated_at from apps where slug")) {
+    const a = [...db.apps.values()].find(x => x.slug === p[0]);
+    if (!a) return [];
+    const { files, ...rest } = a.data;
+    return [{ data: rest, id: a.id, user_id: a.user_id, org_id: orgOf(a.user_id), active_version_id: a.active, updated_at: a.updated || 'now' }];
+  }
+  if (t.startsWith("select data->'files'->>? as content, data->'files'->>? as folder_index from apps where id")) {
+    fileReads++;
+    const a = db.apps.get(p[2]);
+    return a ? [{ content: a.data.files?.[p[0]] ?? null, folder_index: a.data.files?.[p[1]] ?? null }] : [];
+  }
+  if (t.startsWith("select data - 'files' as data, user_id, org_id from apps where id")) {
+    const a = db.apps.get(p[0]);
+    if (!a) return [];
+    const { files, ...rest } = a.data;
+    return [{ data: rest, user_id: a.user_id, org_id: orgOf(a.user_id) }];
+  }
+  if (t.startsWith("select id, org_id, data - 'files' as data, updated_at,"))
+    return [...db.apps.values()].filter(a => orgOf(a.user_id) === p[0])
+      .map(a => { const { files, ...rest } = a.data; return { id: a.id, org_id: orgOf(a.user_id), data: rest, file_count: Object.keys(files || {}).length, updated_at: 'now', versions: 1 }; });
+  if (t.startsWith('with locked as (select id from apps where id = ? for update), made as ( insert into app_versions')) {
+    const live = t.includes('update apps set data');
+    const [appId, id, content, source, commitSha, message] = p;
+    const a = db.apps.get(appId);
+    if (!a) return [];
+    const number = db.versions.filter(v => v.app_id === appId).length + 1;
+    db.versions.push({ id, app_id: appId, number, data: JSON.parse(content), source, commit_sha: commitSha, message });
+    if (live) { a.data = JSON.parse(p[7]); writes++; }
+    a.active = id;
+    a.updated = `t${number}`;
+    return [{ number }];
+  }
   if (t.startsWith('select id, org_id, data, updated_at,'))
     return [...db.apps.values()].filter(a => orgOf(a.user_id) === p[0])
       .map(a => ({ id: a.id, org_id: orgOf(a.user_id), data: a.data, updated_at: 'now', versions: 1 }));
@@ -158,8 +191,14 @@ globalThis.__db = (text, p) => {
   }
   if (t.startsWith('select id from data_tables where org_id')) return p[1].filter(id => db.tables[id] === p[0]).map(id => ({ id }));
 
-  if (t.startsWith('select owner, repo, webhook_id from app_repos')) { const r = db.repos.get(p[0]); return r ? [r] : []; }
-  if (t.startsWith('insert into app_repos')) { db.repos.set(p[0], { owner: p[1], repo: p[2], webhook_id: p[3], last_push_sha: p[4] }); return []; }
+  if (t.startsWith('select owner, repo, webhook_id') && t.includes('from app_repos')) { const r = db.repos.get(p[0]); return r ? [r] : []; }
+  if (t.startsWith('select 1 as held from agent_repos'))
+    return [...db.repos.values()].some(r => r.owner === p[0] && r.repo === p[1]) ? [{ held: 1 }] : [];
+  if (t.startsWith('insert into app_repos')) {
+    if (db.repos.has(p[0])) return [];
+    db.repos.set(p[0], { owner: p[1], repo: p[2], webhook_id: p[3], last_push_sha: p[4] }); return [{ app_id: p[0] }];
+  }
+  if (t.startsWith('update app_repos set webhook_id')) { db.repos.get(p[1]).webhook_id = p[0]; return []; }
   if (t.startsWith('update app_repos set last_push_sha')) { db.repos.get(p[1]).last_push_sha = p[0]; return []; }
   if (t.startsWith('select r.agent_id, r.last_push_sha')) return [];
   if (t.startsWith('select r.automation_id, r.last_push_sha')) return [];
@@ -228,7 +267,7 @@ check('a second app by the same name gets its own address',
 
 const pulled = await call(filesHandler, 'GET', { id: APP });
 check('pull returns the tree with a version', pulled.statusCode === 200 && !!pulled.payload.files['app.json'] && !!pulled.payload.version);
-check('pull makes the repository', pulled.payload.git?.cloneUrl === `https://github.com/8legs-agents/app-leads-desk-${APP.slice(0, 8)}.git`,
+check('pull makes the repository, named with the whole id', pulled.payload.git?.cloneUrl === `https://github.com/8legs-agents/app-leads-desk-${APP}.git`,
       JSON.stringify(pulled.payload.git));
 check('pull works by slug too', (await call(filesHandler, 'GET', { id: 'leads-desk' })).payload.appId === APP);
 check('no token -> 401', (await call(filesHandler, 'GET', { id: APP }, null, '')).statusCode === 401);
@@ -336,6 +375,36 @@ check('the rewrite form (the path as a query) serves a file', (await viaRewrite(
 check('and the folder form, which is how an app is opened', (await viaRewrite(`leads-desk/~${tok}/`)).body.includes('edited locally'));
 check('and redirects the bare form to the address the browser asked for',
       (await viaRewrite(`leads-desk/~${tok}`)).headers.location === `/a/leads-desk/~${tok}/`);
+
+{
+  const first = await get(`/a/leads-desk/~${tok}/app.js`);
+  const reads = fileReads;
+  const again = await call(serve, 'GET', {}, null, '', { url: `/a/leads-desk/~${tok}/app.js`, headers: { authorization: '', host: 'www.8legs.world', 'if-none-match': first.headers.etag } });
+  check('a file is served with an ETag, and asked again it is a 304 without reading it',
+        !!first.headers.etag && again.statusCode === 304 && fileReads === reads, `${first.headers.etag} ${again.statusCode}`);
+  check('and is kept but revalidated', /no-cache/.test(first.headers['cache-control']) && !/no-store/.test(first.headers['cache-control']));
+  db.apps.get(APP).data.files['.env'] = 'SECRET=1';
+  check('a dotfile stored from before is not served', (await get(`/a/leads-desk/~${tok}/.env`)).statusCode === 404);
+  delete db.apps.get(APP).data.files['.env'];
+}
+
+/* ── extras can never replace a checked field ───────────────────────────── */
+{
+  const cur = appToFiles(db.apps.get(APP).data);
+  const cfg = JSON.parse(cur['app.json']);
+  const sneaky = { ...cur, 'app.json': JSON.stringify({ ...cfg, extras: { ...(cfg.extras || {}),
+    files: { '.git/config': '[core]\n\tfsmonitor = touch /tmp/pwned', 'index.html': 'replaced' }, slug: 'taken', access: 'link' } }) };
+  const before2 = JSON.stringify(db.apps.get(APP).data);
+  const r2 = await call(filesHandler, 'PUT', { id: APP }, { baseVersion: appVersion(db.apps.get(APP).data), files: sneaky });
+  const after2 = db.apps.get(APP).data;
+  check('extras.files cannot replace the checked files (no .git/config, no limits bypass)',
+        !('.git/config' in (after2.files || {})) && after2.files['index.html'] !== 'replaced', JSON.stringify(r2.payload).slice(0, 200));
+  check('nor move the address or open the app', after2.slug === 'leads-desk' && after2.access === JSON.parse(before2).access);
+  const gitPath = await call(filesHandler, 'PUT', { id: APP }, { baseVersion: appVersion(db.apps.get(APP).data), files: { ...cur, 'js/.GIT/config': 'x' } });
+  check('a .git folder anywhere, any case, is refused', gitPath.statusCode === 422 && /reserved/.test(String(gitPath.payload.errors)), JSON.stringify(gitPath.payload));
+  const dotted = await call(filesHandler, 'PUT', { id: APP }, { baseVersion: appVersion(db.apps.get(APP).data), files: { ...cur, '.env': 'SECRET=1', '.github/workflows/x.yml': 'on: push' } });
+  check('dotfiles in a push are left behind, not stored', dotted.statusCode === 200 && !Object.keys(db.apps.get(APP).data.files).some(k => k.startsWith('.')), JSON.stringify(dotted.payload).slice(0, 200));
+}
 
 const open = await call(appHandler, 'PUT', { id: APP }, { access: 'link' }, session);
 check('sharing by link is a setting, not a version', open.payload.access === 'link' && open.payload.versionNumber === null && open.payload.url === '/a/leads-desk/');

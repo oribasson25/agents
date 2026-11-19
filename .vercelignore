@@ -1,0 +1,26 @@
+# The root of this repository is deployed as-is, and every file in it that is
+# not an API function is served as a static file (agentforge.html is the app).
+# So anything listed here would otherwise be public. Keep: api/, agentforge.html,
+# privacy.html, terms.html, presentation.html, 8legs_ai_logo_v2.svg,
+# package.json, package-lock.json, requirements.txt, vercel.json.
+
+# Notes, audits and prompts: they describe weaknesses and internals.
+*.md
+SECURITY-*
+AgentForge_Platform_Prompt.txt
+
+# The database's shape and tooling that only runs from a laptop.
+migrations/
+schema.sql
+seed_demo.js
+
+# Tests, the CLI (published to npm on its own) and the tool runner (its own
+# Vercel project, see tool-runner/README.md).
+probes/
+cli/
+tool-runner/
+
+# Local secrets and installs.
+.env
+.env.*
+node_modules/

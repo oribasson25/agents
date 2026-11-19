@@ -114,5 +114,5 @@ export class WhatsApp extends EventEmitter {
 }
 
 export function createRouter() {
-  return { drain: async () => {}, sendDueReminders: async () => {}, sendOutbox: async () => {} };
+  return { drain: async () => {}, sendDueReminders: async () => {}, sendOutbox: async () => 0, runDue: async () => {} };
 }

@@ -9,7 +9,7 @@ import path from 'path';
 import readline from 'readline';
 import { api, session, ApiError } from '../src/api.js';
 import { readConfig, writeConfig, clearConfig, configPath, DEFAULT_HOST } from '../src/config.js';
-import { writeTree, writeLock, readLock, findRoot, changes } from '../src/workdir.js';
+import { syncTree, writeLock, readLock, findRoot, changes } from '../src/workdir.js';
 
 const C = process.stdout.isTTY
   ? { dim: s => `\x1b[2m${s}\x1b[0m`, bold: s => `\x1b[1m${s}\x1b[0m`, green: s => `\x1b[32m${s}\x1b[0m`,
@@ -240,16 +240,13 @@ commands.pull = async () => {
       die(`You have local changes that a pull would overwrite:\n` +
           dirty.map(p => `  ${p}`).join('\n') + `\n\nPush them first, or pull with --force.`);
     }
-    /* A file the platform no longer has would otherwise linger and be read
-       as a local addition. Only files this checkout itself wrote are removed. */
-    for (const rel of Object.keys(existing.lock.files || {})) {
-      if (!(rel in pulled.files)) { try { fs.unlinkSync(path.join(root, rel)); } catch {} }
-    }
   } else if (fs.existsSync(root) && fs.readdirSync(root).length) {
     die(`${root} already exists and is not empty. Use --dir to choose another folder.`);
   }
 
-  writeTree(root, pulled.files);
+  /* A file the platform no longer has would otherwise linger and be read as a
+     local addition. Only files this checkout itself wrote are removed. */
+  syncTree(root, existing ? existing.lock.files : {}, pulled.files);
   writeLock(root, target.lock({ branch: pulled.branch, version: pulled.version,
                                 host: session().host, files: pulled.files }));
   const count = Object.keys(pulled.files).length;
@@ -265,13 +262,20 @@ commands.pull = async () => {
   }
 };
 
-/** The agent's own folder name, taken from the config it just sent. */
+/**
+ * The agent's own folder name, taken from what the server just sent — so it
+ * is cleaned like any other name from the server: one plain folder name in
+ * the current directory, never a path (`../x`, `/etc`, `.git`).
+ */
 function slug(pulled) {
-  if (pulled.slug) return pulled.slug;
-  if (pulled.automationId) {
-    return String(pulled.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || null;
-  }
-  try { return JSON.parse(pulled.files['config.json']).profile.name || null; } catch { return null; }
+  let raw = null;
+  if (pulled.slug) raw = pulled.slug;
+  else if (pulled.automationId) raw = pulled.name;
+  else { try { raw = JSON.parse(pulled.files['config.json']).profile.name; } catch { raw = null; } }
+  const clean = String(raw || '').normalize('NFKC').toLowerCase()
+    .replace(/[\/\\:*?"<>|\u0000-\u001f]+/g, '-').replace(/\s+/g, '-')
+    .replace(/^[.\-]+|[.\- ]+$/g, '').slice(0, 60);
+  return clean || null;
 }
 
 commands.status = async () => {
@@ -668,10 +672,7 @@ async function checkout(root, lock, name) {
   }
   /* Files the other branch does not have would otherwise linger and be read
      as local additions the moment you ran status. */
-  for (const rel of Object.keys(lock.files || {})) {
-    if (!(rel in pulled.files)) { try { fs.unlinkSync(path.join(root, rel)); } catch {} }
-  }
-  writeTree(root, pulled.files);
+  syncTree(root, lock.files, pulled.files);
   writeLock(root, { agentId: lock.agentId, branch: pulled.branch, version: pulled.version,
                     host: lock.host, files: pulled.files });
   console.log(C.green('✓ ') + `Now on ${C.bold(pulled.branch)}`);
@@ -751,10 +752,7 @@ commands.rollback = async () => {
   console.log(C.green('✓ ') + `Version ${done.versionNumber} is live again.`);
   /* The folder follows, so the next edit starts from what is being served. */
   const pulled = await api(thing(lock).files());
-  for (const rel of Object.keys(lock.files || {})) {
-    if (!(rel in pulled.files)) { try { fs.unlinkSync(path.join(root, rel)); } catch {} }
-  }
-  writeTree(root, pulled.files);
+  syncTree(root, lock.files, pulled.files);
   writeLock(root, thing(lock).lock({ branch: pulled.branch, version: pulled.version, host: lock.host, files: pulled.files }));
 };
 

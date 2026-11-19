@@ -1,26 +1,25 @@
-import crypto from 'crypto';
-import { verifyJWT, jwtSecret } from '../_auth.js';
+import { requireSession } from '../_auth.js';
 import { userOwnsAgent, appBaseUrl } from '../_gmail.js';
+import { signState, startNonce } from '../_connections.js';
 
-// Same key the rest of the app signs with — never a hard-coded fallback.
-const JWT_SECRET = jwtSecret();
-
-function signState(data) {
-  const payload = Buffer.from(JSON.stringify(data)).toString('base64url');
-  const sig = crypto.createHmac('sha256', JWT_SECRET).update(payload).digest('base64url');
-  return `${payload}.${sig}`;
-}
-
+/**
+ * Starts connecting one AI Chatbot's Gmail.
+ *
+ *   GET /api/gmail/auth?agentId=…
+ *   Authorization: Bearer <session>
+ *   → 200 { url }   Google's consent page; the browser goes there next
+ *
+ * The session travels in the header, never in the address. The state is
+ * signed, expires in ten minutes, and is bound to this browser by a nonce
+ * cookie the callback checks (see api/_connections.js).
+ */
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).end();
-
-  // Token passed as query param since this is a browser redirect (can't set headers)
-  const token = req.query.token || '';
-  const user = verifyJWT(token);
-  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  const user = await requireSession(req, res);
+  if (!user) return;
 
   // Gmail is connected per agent, so the flow always names one.
-  const agentId = req.query.agentId || '';
+  const agentId = String(req.query.agentId || '');
   if (!agentId) return res.status(400).json({ error: 'agentId is required' });
   if (!(await userOwnsAgent(agentId, user, 'edit'))) return res.status(404).json({ error: 'Agent not found' });
 
@@ -30,7 +29,8 @@ export default async function handler(req, res) {
   const appUrl = appBaseUrl(req);
   const redirectUri = `${appUrl}/api/gmail/callback`;
 
-  const state = signState({ userId: user.userId, agentId });
+  const nonce = startNonce();
+  const state = signState({ userId: user.userId, agentId, ...nonce.state }, 'gmail-agent');
 
   const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   url.searchParams.set('client_id', clientId);
@@ -41,5 +41,7 @@ export default async function handler(req, res) {
   url.searchParams.set('prompt', 'consent');
   url.searchParams.set('state', state);
 
-  res.redirect(302, url.toString());
+  res.setHeader('Set-Cookie', nonce.cookie);
+  res.setHeader('Cache-Control', 'no-store');
+  return res.status(200).json({ url: url.toString() });
 }

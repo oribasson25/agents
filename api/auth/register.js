@@ -1,5 +1,6 @@
 import { sql } from '../_db.js';
-import { signJWT, hashPassword } from '../_auth.js';
+import { sessionToken, hashPassword } from '../_auth.js';
+import { cleanUsername } from '../_orgs.js';
 import { seedDefaultAgents } from '../_defaultAgent.js';
 import { seedDefaultApp } from '../_defaultApp.js';
 import { claimInvite, releaseInvite, attachInviteUser } from '../_invites.js';
@@ -30,6 +31,13 @@ export default async function handler(req, res) {
   if (!inviteCode) {
     return res.status(403).json({ error: 'An invitation code is required to create an account.' });
   }
+  /* The same rules as every other way an account is made or a password set. */
+  let name;
+  try { name = cleanUsername(username); }
+  catch (err) { return res.status(400).json({ error: err.message }); }
+  if (String(password).length < 8) {
+    return res.status(400).json({ error: 'A password needs at least 8 characters.' });
+  }
 
   /* A username-taken answer is a small enumeration oracle. It is useful enough
      to a real user to keep, so instead of hiding it we cap how fast one
@@ -39,7 +47,7 @@ export default async function handler(req, res) {
     return res.status(429).json({ error: LOCKED_MESSAGE });
   }
 
-  const [existing] = await sql`select id from users where username = ${username}`;
+  const [existing] = await sql`select id from users where username = ${name}`;
   if (existing) {
     await recordFailure(regBucket);
     return res.status(409).json({ error: 'Username already taken' });
@@ -55,10 +63,10 @@ export default async function handler(req, res) {
   const id = crypto.randomUUID();
   const orgId = `org-${id}`;
   try {
-    await sql`insert into organizations (id, name, created_by) values (${orgId}, ${username}, null)`;
+    await sql`insert into organizations (id, name, created_by) values (${orgId}, ${name}, null)`;
     await sql`
       insert into users (id, username, password_hash, phone, is_admin, org_id, org_role, org_access)
-      values (${id}, ${username}, ${hashPassword(password)}, ${phone}, false, ${orgId}, 'admin', 'edit')
+      values (${id}, ${name}, ${hashPassword(String(password))}, ${phone}, false, ${orgId}, 'admin', 'edit')
     `;
     await sql`update organizations set created_by = ${id} where id = ${orgId}`;
   } catch (err) {
@@ -82,12 +90,7 @@ export default async function handler(req, res) {
   // And the default app, a chat page linked to those chatbots. Never throws either.
   await seedDefaultApp(id);
 
-  const token = signJWT({
-    userId: id,
-    username,
-    isAdmin: false,
-    exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7,
-  });
+  const token = sessionToken({ id, username: name, is_admin: false, token_version: 0 });
 
-  return res.status(201).json({ token, username, isAdmin: false, ...(await sessionInfo(id)) });
+  return res.status(201).json({ token, username: name, isAdmin: false, ...(await sessionInfo(id)) });
 }

@@ -285,11 +285,13 @@ await check('an HTTP step builds the request its settings describe', async () =>
     })], [edge('trigger', 'call')]),
     { id: 42, name: 'Dana "D"' },
     { secrets: { API_KEY: 'sk-secret-123' }, fetch: async (url, init) => { sent = { url, ...init }; return jsonResponse({ id: 'L1' }); } });
+  /* Header names arrive as the guarded fetch sends them: lower case. */
+  const sentHeaders = new Headers(sent.headers);
   assert.equal(sent.url, 'https://api.test/leads/42?q=Dana+%22D%22');
   assert.equal(sent.method, 'POST');
-  assert.equal(sent.headers.Authorization, 'Bearer sk-secret-123');
-  assert.equal(sent.headers['X-Trace'], 't-42');
-  assert.equal(sent.headers['Content-Type'], 'application/json');
+  assert.equal(sentHeaders.get('authorization'), 'Bearer sk-secret-123');
+  assert.equal(sentHeaders.get('x-trace'), 't-42');
+  assert.equal(sentHeaders.get('content-type'), 'application/json');
   assert.deepEqual(JSON.parse(sent.body), { name: 'Dana "D"', n: 42 });
   assert.deepEqual(state.outputs.call.body, { id: 'L1' });
   assert.equal(state.outputs.call.status, 200);

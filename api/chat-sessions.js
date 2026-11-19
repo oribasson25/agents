@@ -1,6 +1,7 @@
 import { sql } from './_db.js';
-import { checkAuth } from './_auth.js';
+import { requireSession } from './_auth.js';
 import { member, visible, accessTo, allows, refuse } from './_access.js';
+import { validSessionId } from './_agentRunner.js';
 
 /** The ids of the agents whose conversations this person may read. */
 async function readableAgentIds(user) {
@@ -23,13 +24,18 @@ async function readableAgentIds(user) {
  *
  * Every filter is sent as a nullable parameter and tested with
  * `(param is null or …)`, so the statement stays static and fully parameterized.
+ *
+ *   GET ?…filters                → { sessions, total, sources } — each with its whole transcript
+ *   GET ?…filters&preview=1      → the same, each with first_user_message instead of messages
+ *   GET ?id=<id>                 → { session } — one conversation, whole
  */
 export default async function handler(req, res) {
-  const user = checkAuth(req, res);
+  const user = await requireSession(req, res);
   if (!user) return;
   if (req.method === 'PUT')    return saveTestSession(req, res, user);
   if (req.method === 'DELETE') return deleteSession(req, res, user);
   if (req.method !== 'GET') return res.status(405).end();
+  if (req.query.id) return oneSession(req, res, user);
 
   const q            = str(req.query.q);
   const agentId      = str(req.query.agentId);
@@ -44,19 +50,51 @@ export default async function handler(req, res) {
   const limit        = Math.min(parseInt(req.query.limit) || 25, 200);
   const offset       = Math.max(parseInt(req.query.offset) || 0, 0);
   const allUsers     = !!user.isAdmin && req.query.scope === 'all';
+  /* A list needs a line per conversation, not its transcript: with
+     preview=1 only the first thing the person said comes back, and the
+     whole conversation is read by id when it is opened. */
+  const full         = req.query.preview !== '1';
 
   const toEnd = to ? `${to}T23:59:59.999Z` : null;
   /* A conversation is readable by whoever may see the chatbot it was with. */
   const readable = allUsers ? [] : await readableAgentIds(user);
 
-  const rows = await sql`
+  /* The usual order (newest first) is a plain column, so the index on
+     started_at serves it; the others are worked out per row. */
+  const byStarted = sort === 'started' && dir === 'desc';
+  const listed = byStarted
+    ? sql`
     select
-      cs.id,
-      cs.agent_id,
-      cs.source,
-      cs.messages,
-      cs.started_at,
-      cs.updated_at,
+      cs.id, cs.agent_id, cs.source,
+      case when ${full}::boolean then cs.messages end as messages,
+      case when ${full}::boolean then null else left((select m->>'content' from jsonb_array_elements(cs.messages) m where m->>'role' = 'user' limit 1), 300) end as first_user_message,
+      cs.started_at, cs.updated_at,
+      greatest(extract(epoch from (cs.updated_at - cs.started_at)), 0)::int as duration_seconds,
+      jsonb_array_length(cs.messages)                                      as message_count,
+      a.data->>'name'   as agent_name,
+      a.data->>'avatar' as agent_avatar,
+      u.username        as owner_username
+    from chat_sessions cs
+    join agents a on a.id = cs.agent_id
+    left join users u on u.id = a.user_id
+    where (${allUsers}::boolean or cs.agent_id = any(${readable}::text[]))
+      and (${agentId}::text is null or cs.agent_id = ${agentId})
+      and (case when ${source}::text is null then cs.source <> 'test' else cs.source = ${source} end)
+      and (${q}::text is null or cs.messages::text ilike '%' || ${q} || '%')
+      and (${from}::timestamptz is null or cs.started_at >= ${from}::timestamptz)
+      and (${toEnd}::timestamptz is null or cs.started_at <= ${toEnd}::timestamptz)
+      and (${minSeconds}::int is null or extract(epoch from (cs.updated_at - cs.started_at)) >= ${minSeconds})
+      and (${maxSeconds}::int is null or extract(epoch from (cs.updated_at - cs.started_at)) <= ${maxSeconds})
+      and (${minMessages}::int is null or jsonb_array_length(cs.messages) >= ${minMessages})
+    order by cs.started_at desc
+    limit ${limit} offset ${offset}
+  `
+    : sql`
+    select
+      cs.id, cs.agent_id, cs.source,
+      case when ${full}::boolean then cs.messages end as messages,
+      case when ${full}::boolean then null else left((select m->>'content' from jsonb_array_elements(cs.messages) m where m->>'role' = 'user' limit 1), 300) end as first_user_message,
+      cs.started_at, cs.updated_at,
       greatest(extract(epoch from (cs.updated_at - cs.started_at)), 0)::int as duration_seconds,
       jsonb_array_length(cs.messages)                                      as message_count,
       a.data->>'name'   as agent_name,
@@ -85,7 +123,7 @@ export default async function handler(req, res) {
     limit ${limit} offset ${offset}
   `;
 
-  const [countRow] = await sql`
+  const counted = sql`
     select count(*)::int as total
     from chat_sessions cs
     join agents a on a.id = cs.agent_id
@@ -101,7 +139,7 @@ export default async function handler(req, res) {
   `;
 
   // Channels actually present, for the source filter's options.
-  const sources = await sql`
+  const present = sql`
     select cs.source, count(*)::int as count
     from chat_sessions cs
     join agents a on a.id = cs.agent_id
@@ -111,7 +149,28 @@ export default async function handler(req, res) {
     order by cs.source
   `;
 
+  /* Three independent questions: asked at once rather than one after another. */
+  const [rows, [countRow], sources] = await Promise.all([listed, counted, present]);
   return res.json({ sessions: rows, total: countRow.total, sources, limit, offset });
+}
+
+/** One conversation, whole, for whoever may see the chatbot it was with. */
+async function oneSession(req, res, user) {
+  const id = str(req.query.id);
+  const [row] = await sql`
+    select cs.id, cs.agent_id, cs.source, cs.messages, cs.started_at, cs.updated_at,
+           greatest(extract(epoch from (cs.updated_at - cs.started_at)), 0)::int as duration_seconds,
+           jsonb_array_length(cs.messages) as message_count,
+           a.data->>'name' as agent_name, a.data->>'avatar' as agent_avatar
+    from chat_sessions cs join agents a on a.id = cs.agent_id
+    where cs.id = ${id}
+  `;
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (!(user.isAdmin && req.query.scope === 'all')) {
+    const { level } = await accessTo(user, 'agent', row.agent_id);
+    if (!allows(level, 'view')) return res.status(404).json({ error: 'Not found' });
+  }
+  return res.json({ session: row });
 }
 
 /**
@@ -143,13 +202,20 @@ async function saveTestSession(req, res, user) {
     }));
   if (clean.length === 0) return res.status(400).json({ error: 'nothing worth storing' });
 
-  await sql`
+  /* The id is the browser's to choose, so a conversation already stored
+     under it is only replaced when it is this chatbot's own test: never
+     somebody's widget or WhatsApp conversation, never another chatbot's. */
+  if (!validSessionId(id)) return res.status(400).json({ error: 'id must be up to 120 letters, digits or _ . : + -, and may not start with wa_ or wal_' });
+  const written = await sql`
     insert into chat_sessions (id, agent_id, source, messages)
     values (${id}, ${agentId}, 'test', ${JSON.stringify(clean)}::jsonb)
     on conflict (id) do update set
       messages   = excluded.messages,
       updated_at = now()
+    where chat_sessions.agent_id = excluded.agent_id and chat_sessions.source = 'test'
+    returning id
   `;
+  if (!written.length) return res.status(409).json({ error: 'That conversation id is taken. Start a new test conversation.' });
   return res.json({ ok: true, id, stored: clean.length });
 }
 

@@ -1,5 +1,6 @@
 import { sql } from './_db.js';
 import { rechunk } from './_knowledge.js';
+import { safeFetch } from './_netGuard.js';
 
 /**
  * Crawls a site into an AI Chatbot's knowledge base.
@@ -203,26 +204,33 @@ export function decodeBody(buffer, contentType) {
   }
 }
 
+/* The most of one response that is read. A page past it is cut, not refused:
+   the top of a long page is still worth having, and MAX_PAGE_CHARS keeps even
+   less than this. A video or a PDF linked as a page costs no more than this. */
+const MAX_FETCH_BYTES = 2 * 1024 * 1024;
+
+/**
+ * One page, through the platform's guard for addresses someone else chose
+ * (_netGuard.js): a crawl of http://10.0.0.5/, or of a site that redirects to
+ * the cloud's metadata address, is refused — every redirect is checked again,
+ * and the connection is pinned to the address that was checked.
+ */
 async function get(url, { timeoutMs = 15000, accept = 'text/html,application/xhtml+xml' } = {}) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const resp = await fetch(url, {
-      signal: controller.signal,
-      redirect: 'follow',
-      headers: { 'User-Agent': UA, Accept: accept, 'Accept-Language': 'he,en;q=0.9' },
-    });
-    const buffer = await resp.arrayBuffer();
-    return {
-      ok: resp.ok,
-      status: resp.status,
-      finalUrl: resp.url || url,
-      contentType: resp.headers.get('content-type') || '',
-      body: decodeBody(buffer, resp.headers.get('content-type')),
-    };
-  } finally {
-    clearTimeout(timer);
-  }
+  const resp = await safeFetch(url, {
+    timeoutMs,
+    maxBytes: MAX_FETCH_BYTES,
+    truncate: true,
+    headers: { 'User-Agent': UA, Accept: accept, 'Accept-Language': 'he,en;q=0.9' },
+  });
+  const contentType = resp.headers.get('content-type') || '';
+  const buffer = new Uint8Array(await resp.arrayBuffer());
+  return {
+    ok: resp.ok,
+    status: resp.status,
+    finalUrl: resp.url || url,
+    contentType,
+    body: decodeBody(buffer, contentType),
+  };
 }
 
 /* ─────────────────── HTML to text ─────────────────── */
@@ -285,6 +293,11 @@ function uid() {
 
 /* ─────────────────── the crawl ─────────────────── */
 
+/** The key a crawl's documents are filed under: the URL as typed, minus query, fragment and trailing slash. */
+export function crawlKey(startUrl) {
+  return String(startUrl).split('?')[0].split('#')[0].replace(/\/$/, '') || String(startUrl);
+}
+
 /**
  * budgetMs exists because the old loop could only stop on page count. A slow
  * site with a few 15-second timeouts ran past the function's own limit, the
@@ -297,7 +310,7 @@ export async function crawlSite({ startUrl, agentId, maxPages = DEFAULT_MAX_PAGE
   const deadline = Date.now() + budgetMs;
   // The key the documents are filed under stays the URL the user typed, so
   // re-crawling and removing a URL still find what the last crawl wrote.
-  const startNormalized = startUrl.split('?')[0].split('#')[0].replace(/\/$/, '') || startUrl;
+  const startNormalized = crawlKey(startUrl);
 
   const errors = [];
   let stoppedEarly = false, truncated = 0, thin = 0, blocked = 0;
@@ -450,7 +463,7 @@ export async function crawlSite({ startUrl, agentId, maxPages = DEFAULT_MAX_PAGE
       INSERT INTO documents (id, agent_id, skill_id, title, content, source_type, source_url)
       VALUES (${docId}, ${agentId}, NULL, ${pageTitle}, ${content}, 'crawl', ${startNormalized})
     `;
-    await rechunk(docId, agentId, null, pageTitle, content);
+    await rechunk(docId, agentId, null, pageTitle, content, { fresh: true });
     stored++;
     totalChars += content.length;
     if (onProgress && stored % 10 === 0) {

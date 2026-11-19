@@ -39,6 +39,8 @@ const db = {
   orgs: [{ id: 'o0', name: 'Platform' }, { id: 'o1', name: 'Acme' }, { id: 'o2', name: 'Other' }],
   users: [
     { id: 'p', username: 'admin', is_admin: true, org_id: 'o0', org_role: 'admin', org_access: 'edit' },
+    /* a colleague the platform admin made admin of the platform's own organization */
+    { id: 'q', username: 'platform-colleague', org_id: 'o0', org_role: 'admin', org_access: 'edit' },
     { id: 'a', username: 'acme-admin', org_id: 'o1', org_role: 'admin', org_access: 'edit' },
     { id: 'v', username: 'viewer', org_id: 'o1', org_role: 'member', org_access: 'view' },
     { id: 'e', username: 'editor', org_id: 'o1', org_role: 'member', org_access: 'edit' },
@@ -81,7 +83,14 @@ const access = accessStub({
   get grants() { return db.grants.map(g => ({ user: g.user_id, kind: g.kind, item: g.item_id, level: g.level })); },
 });
 
+const revokedTokensOf = [];
 globalThis.__db = (text, p) => {
+  /* The account row member() and requireSession read, with its token_version
+     (which the shared access stub does not know about). */
+  if (text.replace(/\s+/g, ' ').trim().startsWith('select u.id, u.username, u.is_admin, u.org_id, u.org_role')) {
+    const u = userById(p[0]);
+    return u ? [{ ...u, org_name: (db.orgs.find(o => o.id === u.org_id) || {}).name, token_version: u.token_version || 0 }] : [];
+  }
   const answered = access(text, p);
   if (answered !== undefined) return answered;
   const t = text.replace(/\s+/g, ' ').trim();
@@ -94,7 +103,8 @@ globalThis.__db = (text, p) => {
   if (t.startsWith('select data, user_id from agents where id')) return db.agents.filter(a => a.id === p[0]);
   if (t.startsWith('update agents set data')) { db.agents.find(a => a.id === p[1]).data = JSON.parse(p[0]); return []; }
   if (t.startsWith('insert into agents')) {
-    db.agents.push({ id: p[0], data: JSON.parse(p[1]), user_id: p[2], org_id: orgOfUser(p[2]) }); return [];
+    if (db.agents.some(a => a.id === p[0])) return [];
+    db.agents.push({ id: p[0], data: JSON.parse(p[1]), user_id: p[2], org_id: orgOfUser(p[2]) }); return [{ id: p[0] }];
   }
   if (t.startsWith('delete from agents where id')) { db.agents = db.agents.filter(a => a.id !== p[0]); return []; }
   if (t.startsWith('select id, org_id from agents where org_id')) return db.agents.filter(a => a.org_id === p[0]);
@@ -131,8 +141,14 @@ globalThis.__db = (text, p) => {
   }
   if (t.startsWith('update users set org_role')) { Object.assign(userById(p[2]), { org_role: p[0], org_access: p[1] }); return []; }
   if (t.startsWith('update users set password_hash')) {
-    Object.assign(userById(p[1]), { password_hash: p[0], must_change_password: t.includes('must_change_password = true') }); return [];
+    const u = userById(p[1]);
+    Object.assign(u, { password_hash: p[0], must_change_password: t.includes('must_change_password = true'),
+                       token_version: (u.token_version || 0) + (t.includes('token_version = token_version + 1') ? 1 : 0) });
+    return [];
   }
+  if (t.startsWith('update api_tokens set revoked_at = now() where user_id')) { revokedTokensOf.push(p[0]); return []; }
+  if (t.startsWith('select id, username, is_admin, token_version from users where id')) return db.users.filter(u => u.id === p[0]);
+  if (t.startsWith('insert into error_log') || t.startsWith('delete from error_log')) return [];
   for (const [table, list] of [['agents', 'agents'], ['data_tables', 'tables'], ['apps', null], ['claude_usage', 'usage']]) {
     if (t.startsWith(`update ${table} set user_id`) || t.startsWith(`update ${table}      set user_id`) || t.startsWith(`update ${table} set user_id`)) {
       if (list) db[list].filter(r => r.user_id === p[1]).forEach(r => { r.user_id = p[0]; });
@@ -219,11 +235,13 @@ check('an editor can', (await put('e', 'a2')).statusCode === 200 && db.agents.fi
 check('a member granted edit on one chatbot can change it', (await put('n', 'a1')).statusCode === 200);
 check('a viewer cannot delete one', (await call('agents/[id]/index.js', 'DELETE', { as: 'v', query: { id: 'a2' } })).statusCode === 403);
 
-const create = (as) => call('agents.js', 'POST', { as, body: { id: `new-${as}`, name: 'New' } });
+/* A new chatbot's id is a UUID (the server refuses anything else, since ids end up in request paths). */
+const newIds = { v: '00000000-0000-4000-8000-00000000000a', n: '00000000-0000-4000-8000-00000000000b', e: '00000000-0000-4000-8000-00000000000c' };
+const create = (as) => call('agents.js', 'POST', { as, body: { id: newIds[as], name: 'New' } });
 check('a viewer cannot add a chatbot', (await create('v')).statusCode === 403);
 check('a narrow member cannot either, whatever they were granted', (await create('n')).statusCode === 403);
 check('an org-wide editor can, and it lands in the organization',
-      (await create('e')).statusCode === 201 && db.agents.find(a => a.id === 'new-e').org_id === 'o1');
+      (await create('e')).statusCode === 201 && db.agents.find(a => a.id === newIds.e)?.org_id === 'o1');
 
 /* tables */
 const tables = async (as) => (await call('tables.js', 'GET', { as })).payload.tables.map(x => `${x.id}:${x._access}`).join(',');
@@ -251,6 +269,13 @@ check('the admin adds a member, with a temporary password shown once',
 check('which has to be replaced at first sign-in', dana?.must_change_password === true &&
       verifyPassword(added.payload.temporaryPassword, dana.password_hash));
 check('a taken username is refused', (await call('org/members.js', 'POST', { as: 'a', body: { username: 'viewer' } })).statusCode === 409);
+
+/* Until dana replaces the temporary password, nothing but /api/me answers her. */
+const blocked = await call('agents.js', 'GET', { as: dana.id });
+check('a temporary password opens nothing else until it is replaced',
+      blocked.statusCode === 403 && blocked.payload.code === 'MUST_CHANGE_PASSWORD', JSON.stringify(blocked.payload));
+check('/api/me still answers, so it can be replaced', (await call('me.js', 'GET', { as: dana.id })).statusCode === 200);
+dana.must_change_password = false;   /* as if replaced; set back below, where replacing it is checked */
 
 const grant = (as, userId, kind, itemId, level) => call('org/members/[userId].js', 'PATCH', { as, query: { userId }, body: { kind, itemId, level } });
 check('the admin grants one item', (await grant('a', dana.id, 'agent', 'a2', 'edit')).statusCode === 200 &&
@@ -306,6 +331,7 @@ check('a number cannot be made for someone in another organization',
       (await call('admin/jarvis/numbers.js', 'POST', { as: 'a', body: { label: 'Theirs', ownerUserId: 'x' } })).statusCode === 400);
 
 /* ── passwords ──────────────────────────────────────────────────────────── */
+dana.must_change_password = true;
 const me = await call('me.js', 'GET', { as: dana.id });
 check('the session says a temporary password must be replaced', me.payload.mustChangePassword === true && me.payload.orgName === 'Acme');
 check('a wrong current password is refused',
@@ -313,6 +339,39 @@ check('a wrong current password is refused',
 const changed = await call('me.js', 'POST', { as: dana.id, body: { currentPassword: added.payload.temporaryPassword, newPassword: 'a-new-password' } });
 check('the right one replaces it and clears the flag',
       changed.statusCode === 200 && !userById(dana.id).must_change_password && verifyPassword('a-new-password', userById(dana.id).password_hash));
+const { verifyJWT } = await import(`${ROOT}/api/_auth.js`);
+const fresh = changed.payload.token && verifyJWT(changed.payload.token);
+check('a change ends the sessions signed before it, and hands back a new one',
+      userById(dana.id).token_version === 1 && fresh && fresh.tv === 1 && fresh.userId === dana.id,
+      JSON.stringify({ tv: userById(dana.id).token_version, fresh }));
+check('the old token no longer opens anything', (await call('agents.js', 'GET', { as: dana.id })).statusCode === 401);
+const withFresh = async (path, method, opts = {}) => {
+  const { default: handler } = await import(`${ROOT}/api/${path}`);
+  const res = { statusCode: 200, payload: undefined,
+    status(c) { this.statusCode = c; return this; }, json(v) { this.payload = v; return this; }, setHeader() {}, end() { return this; } };
+  await handler({ method, query: opts.query || {}, body: opts.body, headers: { authorization: `Bearer ${changed.payload.token}` } }, res);
+  return res;
+};
+check('the new one does', (await withFresh('agents.js', 'GET')).statusCode === 200);
+
+/* ── the platform admin is out of an organization admin's reach ─────────── */
+const qReset = await call('org/members/[userId].js', 'POST', { as: 'q', query: { userId: 'p' }, body: { action: 'reset-password' } });
+check('an organization\'s admin cannot reset the platform admin\'s password',
+      qReset.statusCode === 403 && qReset.payload.code === 'PLATFORM_ADMIN' && !qReset.payload.temporaryPassword, JSON.stringify(qReset.payload));
+check('nor change their role',
+      (await call('org/members/[userId].js', 'PUT', { as: 'q', query: { userId: 'p' }, body: { orgRole: 'member' } })).statusCode === 403 &&
+      userById('p').org_role === 'admin');
+check('the platform admin can reset a colleague',
+      (await call('org/members/[userId].js', 'POST', { as: 'p', query: { userId: 'q' }, body: { action: 'reset-password' } })).statusCode === 200);
+check('which ends the colleague\'s sessions and access tokens',
+      userById('q').token_version === 1 && revokedTokensOf.includes('q') &&
+      (await call('org/members.js', 'GET', { as: 'q' })).statusCode === 401);
+check('an admin cannot demote themselves under any spelling of the role',
+      (await call('org/members/[userId].js', 'PUT', { as: 'a', query: { userId: 'a' }, body: { orgRole: 'owner' } })).statusCode === 409 &&
+      userById('a').org_role === 'admin');
+const broken = await call('org/members/[userId].js', 'PATCH', { as: 'a', query: { userId: 'v' }, body: { kind: 'app', itemId: 'x', level: 'view' } });
+check('an unexpected failure is reported plainly, without its internals',
+      broken.statusCode === 500 && !/unrouted|select/i.test(broken.payload.error), JSON.stringify(broken.payload));
 
 console.log(`\n${failed ? `${failed} FAILURE(S)` : 'all green'}`);
 process.exit(failed ? 1 : 0);

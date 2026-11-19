@@ -1,10 +1,10 @@
-import { checkAuth } from './_auth.js';
+import { requireSession } from './_auth.js';
 import { listTables, createTable } from './_tables.js';
 import { member, visible, canCreate } from './_access.js';
 
 /** The account's tables, and making one. */
 export default async function handler(req, res) {
-  const user = checkAuth(req, res);
+  const user = await requireSession(req, res);
   if (!user) return;
 
   try {

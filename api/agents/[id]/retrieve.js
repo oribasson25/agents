@@ -1,10 +1,10 @@
 import { sql } from '../../_db.js';
-import { checkAuth } from '../../_auth.js';
+import { requireSession } from '../../_auth.js';
 import { accessTo, allows } from '../../_access.js';
 import { searchDocuments } from '../../_knowledge.js';
 
 export default async function handler(req, res) {
-  const user = checkAuth(req, res);
+  const user = await requireSession(req, res);
   if (!user) return;
   if (req.method !== 'POST') return res.status(405).end();
 

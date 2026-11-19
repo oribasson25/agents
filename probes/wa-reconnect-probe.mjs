@@ -82,6 +82,12 @@ globalThis.__db = (text, p) => {
     return [];
   }
   if (t === 'update wa_numbers set command = ?, updated_at = now() where id = ?') { row(p[1]).command = p[0]; return []; }
+  if (t.startsWith('with taken as ( update wa_numbers n set command = null')) {
+    const n = row(p[0]);
+    const command = n?.command || null;
+    if (n) n.command = null;
+    return [{ command, outbox: false }];
+  }
   if (t.startsWith('update wa_numbers n set command = null')) {
     const n = row(p[0]);
     if (!n?.command) return [];
@@ -115,12 +121,13 @@ globalThis.__db = (text, p) => {
     const n = row(p[0]);
     return n ? [{ host: n.state.host ?? null }] : [];
   }
-  if (t === 'select id from wa_numbers where enabled and (phone is not null or qr_wanted_until > now()) and (lease_until is null or lease_until < now())') {
+  if (t === "select id from wa_numbers where enabled and (phone is not null or qr_wanted_until > now()) and (lease_until is null or lease_until < now()) and (coalesce(state->>'status', '') <> 'blocked' or qr_wanted_until > now())") {
+    const qr = (n) => n.qr_wanted_until && n.qr_wanted_until > Date.now();
     return [...db.numbers.values()]
-      .filter((n) => n.enabled && (n.phone != null || (n.qr_wanted_until && n.qr_wanted_until > Date.now())) && leaseFree(n))
+      .filter((n) => n.enabled && (n.phone != null || qr(n)) && leaseFree(n) && (n.state.status !== 'blocked' || qr(n)))
       .map((n) => ({ id: n.id }));
   }
-  if (t.startsWith('delete from wa_seen') || t.startsWith('delete from wa_group_messages') || t.startsWith('delete from wa_group_events')) return [];
+  if (['wa_seen', 'wa_group_messages', 'wa_group_events', 'wa_group_joins', 'whatsapp_messages', 'wa_dm_replies'].some((tbl) => t.startsWith(`delete from ${tbl}`))) return [];
 
   if (t === 'select v from wa_auth where number_id = ? and k = ?') {
     if (failAuthReads > 0) { failAuthReads--; return Promise.reject(new Error('probe: Connection terminated unexpectedly')); }

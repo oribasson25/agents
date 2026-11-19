@@ -3,11 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
-    "@anthropic-ai/sdk": "^1.8.0",
     "@neondatabase/serverless": "^0.9.0",
     "@sparticuz/chromium": "^147.0.0",
     "@vercel/functions": "^3.11.2",
-    "baileys": "^7.0.0-rc14",
+    "baileys": "7.0.0-rc14",
     "pino": "^10.4.0",
     "playwright-core": "^1.59.1",
     "qrcode": "^1.5.4"
@@ -16,7 +15,7 @@
     "migrate": "node migrations/run.mjs",
     "probe:roundtrip": "node probes/roundtrip-probe.mjs",
     "probe:files": "node --import ./probes/stub-db.mjs probes/files-api-probe.mjs",
-    "probe": "npm run probe:roundtrip && npm run probe:files && npm run probe:branches && npm run probe:github && npm run probe:cliauth && npm run probe:jsx && npm run probe:render && npm run probe:cli && npm run probe:starters && npm run probe:tables && npm run probe:apps && npm run probe:orgs && npm run probe:automations && npm run probe:crawl && npm run probe:autopilot && npm run probe:now && npm run probe:tour && npm run probe:invites && npm run probe:throttle && npm run probe:wa && npm run probe:llm",
+    "probe": "npm run probe:roundtrip && npm run probe:files && npm run probe:branches && npm run probe:github && npm run probe:cliauth && npm run probe:jsx && npm run probe:render && npm run probe:cli && npm run probe:starters && npm run probe:tables && npm run probe:apps && npm run probe:orgs && npm run probe:automations && npm run probe:crawl && npm run probe:autopilot && npm run probe:now && npm run probe:tour && npm run probe:invites && npm run probe:throttle && npm run probe:wa && npm run probe:llm && npm run probe:accounts && npm run probe:wasec && npm run probe:autosec && npm run probe:content && npm run probe:chatsec",
     "probe:cli": "node probes/cli-probe.mjs",
     "probe:branches": "node --import ./probes/stub-db.mjs probes/branches-probe.mjs",
     "probe:jsx": "node probes/check-jsx.mjs",
@@ -35,6 +34,11 @@
     "probe:automations": "node --import ./probes/stub-db.mjs probes/automation-probe.mjs",
     "probe:orgs": "node --import ./probes/stub-db.mjs probes/org-probe.mjs",
     "probe:wa": "node --import ./probes/stub-db.mjs probes/wa-reconnect-probe.mjs",
-    "probe:llm": "node --import ./probes/stub-db.mjs probes/llm-probe.mjs"
+    "probe:llm": "node --import ./probes/stub-db.mjs probes/llm-probe.mjs",
+    "probe:accounts": "node --import ./probes/stub-db.mjs probes/accounts-security-probe.mjs",
+    "probe:wasec": "node --import ./probes/stub-db.mjs probes/whatsapp-security-probe.mjs",
+    "probe:autosec": "node --import ./probes/stub-db.mjs probes/automation-security-probe.mjs",
+    "probe:content": "node --import ./probes/stub-db.mjs probes/content-security-probe.mjs",
+    "probe:chatsec": "node --import ./probes/stub-db.mjs probes/chat-security-probe.mjs"
   }
 }

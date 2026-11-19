@@ -1,9 +1,10 @@
 import { sql } from '../../../../_db.js';
-import { checkAdmin } from '../../../../_auth.js';
+import { requireAdmin } from '../../../../_auth.js';
 import crypto from 'crypto';
 
 export default async function handler(req, res) {
-  const admin = checkAdmin(req, res);
+  /* Admin as the database says now, not as a week-old token says. */
+  const admin = await requireAdmin(req, res);
   if (!admin) return;
 
   if (req.method !== 'POST') return res.status(405).end();

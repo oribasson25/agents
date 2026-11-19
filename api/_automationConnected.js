@@ -5,7 +5,9 @@
  * Each is handed its settings already filled in, and `ctx` for where it is
  * running: `orgId` and `ownerId` (whose automation this is — everything is
  * looked up inside that organization, so a name or an id in a file can never
- * reach another organization's things), `automationId`, `baseUrl`.
+ * reach another organization's things), `actorId` (who the run acts for:
+ * whoever published it, or whoever is testing it — a connection must be one
+ * they may use), `automationId`, `baseUrl`.
  */
 import { sql } from './_db.js';
 import { useConnection } from './_connections.js';
@@ -19,10 +21,14 @@ import { fieldsToObject, waitSeconds } from './_automationSpec.js';
 
 const source = (ctx) => `automation:${ctx.automationId || ''}`;
 
+/** The named connection, if the person this run acts for may use it. */
+const connection = (config, ctx, kinds) =>
+  useConnection({ orgId: ctx.orgId, name: config.connection, kinds, userId: ctx.actorId ?? ctx.ownerId ?? null });
+
 /* ─────────────────── WhatsApp ─────────────────── */
 
 async function whatsapp(config, ctx) {
-  const conn = await useConnection({ orgId: ctx.orgId, name: config.connection, kinds: ['whatsapp'] });
+  const conn = await connection(config, ctx, ['whatsapp']);
   const sent = await enqueue({ numberId: conn.data.numberId, to: config.to, text: config.text, source: source(ctx) });
   return { output: { queued: true, to: sent.to, from: conn.account }, port: 'out' };
 }
@@ -50,7 +56,7 @@ async function approval(config, ctx) {
     if (now >= ctx.parked.until) return { output: { answer: 'timeout', approved: false, text: '', by: ctx.parked.phone }, port: 'timeout' };
     return { park: ctx.parked };
   }
-  const conn = await useConnection({ orgId: ctx.orgId, name: config.connection, kinds: ['whatsapp'] });
+  const conn = await connection(config, ctx, ['whatsapp']);
   const phone = recipientOf(config.to);
   if (!phone || phone.includes('@')) throw new Error('an approval is asked of one person, so it needs a phone number with a country code');
   if (ctx.single) {
@@ -83,7 +89,7 @@ async function waReply(config, ctx) {
     if (now >= ctx.parked.until) return { output: { replied: false, text: '', from: ctx.parked.phone, name: '', kind: '', at: null }, port: 'timeout' };
     return { park: ctx.parked };
   }
-  const conn = await useConnection({ orgId: ctx.orgId, name: config.connection, kinds: ['whatsapp'] });
+  const conn = await connection(config, ctx, ['whatsapp']);
   const phone = recipientOf(config.from);
   /* Tested on its own there is nobody to wait for, and often no earlier test
      to say who it would be: it answers with an example so the steps after it
@@ -100,13 +106,13 @@ async function waReply(config, ctx) {
 /* ─────────────────── mail ─────────────────── */
 
 async function email(config, ctx) {
-  const conn = await useConnection({ orgId: ctx.orgId, name: config.connection, kinds: ['gmail', 'microsoft'] });
+  const conn = await connection(config, ctx, ['gmail', 'microsoft']);
   const sent = await sendMail(conn, { to: config.to, cc: config.cc, subject: config.subject, body: config.body }, { fetchImpl: ctx.fetch });
   return { output: sent, port: 'out' };
 }
 
 async function emailSearch(config, ctx) {
-  const conn = await useConnection({ orgId: ctx.orgId, name: config.connection, kinds: ['gmail', 'microsoft'] });
+  const conn = await connection(config, ctx, ['gmail', 'microsoft']);
   const messages = await searchMail(conn, { query: config.query, limit: config.limit }, { fetchImpl: ctx.fetch });
   return { output: { count: messages.length, messages }, port: 'out' };
 }
@@ -149,7 +155,7 @@ async function agent(config, ctx) {
   const message = String(config.message ?? '').trim();
   if (!message) throw new Error('has nothing to ask');
   const bot = { ...row.data, apiConfig: await resolveAgentApiConfig(row) };
-  const { text } = await runAgentTurn({ agent: bot, agentId: row.id, messages: [{ role: 'user', content: message }], baseUrl: ctx.baseUrl });
+  const { text } = await runAgentTurn({ agent: bot, agentId: row.id, messages: [{ role: 'user', content: message }], baseUrl: ctx.baseUrl, audience: 'internal' });
   return { output: { text, chatbot: row.data.name || '' }, port: 'out' };
 }
 

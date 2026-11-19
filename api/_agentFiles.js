@@ -86,6 +86,49 @@ export function extrasOf(obj, mapped) {
   return Object.keys(extras).length ? extras : undefined;
 }
 
+/**
+ * What a file's `extras` may add: only keys the parser does not map.
+ *
+ * Extras exist so a field added to the platform tomorrow survives a push
+ * today. They must never be a second way to set a field the parser checks —
+ * `extras.whatsapp` used to replace the protected WhatsApp settings, and an
+ * app's `extras.files` used to replace its checked files (`.git/config`
+ * included) after every check had run.
+ */
+export function safeExtras(extras, mapped) {
+  if (!extras || typeof extras !== 'object' || Array.isArray(extras)) return {};
+  const out = {};
+  for (const [k, v] of Object.entries(extras)) {
+    if (mapped.has(k) || k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * The agent as someone who may only look at it sees it: the WhatsApp
+ * credentials and the values of tools' environment variables are blanked.
+ * Editors get them (they have to, to keep them on the next save); a viewer
+ * cannot save, so blanking them loses nothing.
+ */
+export function redactAgentSecrets(agent) {
+  if (!agent || typeof agent !== 'object') return agent;
+  const out = { ...agent };
+  if (out.whatsapp && typeof out.whatsapp === 'object') {
+    out.whatsapp = { ...out.whatsapp };
+    for (const k of ['accessToken', 'appSecret', 'verifyToken']) if (out.whatsapp[k]) out.whatsapp[k] = '';
+  }
+  if (Array.isArray(out.tools)) {
+    out.tools = out.tools.map(t => (t && Array.isArray(t.envVars)
+      ? { ...t, envVars: t.envVars.map(ev => ({ ...ev, value: '' })) }
+      : t));
+  }
+  if (out.apiConfig && typeof out.apiConfig === 'object') {
+    out.apiConfig = Object.fromEntries(Object.entries(out.apiConfig).map(([k, v]) => [k, /key|secret|token/i.test(k) ? '' : v]));
+  }
+  return out;
+}
+
 /** True when a file's package list matches the platform's string, in any order. */
 function samePackages(list, str) {
   if (str === undefined) return false;
@@ -272,7 +315,7 @@ export function filesToAgent(files, existing = {}) {
       name: sk.display_name || '',
       description: sk.description || '',
       prompt: files[promptPath],
-      ...(sk.extras || {}),
+      ...safeExtras(sk.extras, SKILL_MAPPED),
     });
   }
 
@@ -300,7 +343,7 @@ export function filesToAgent(files, existing = {}) {
       /* Names come from the file; values stay whatever the platform holds. */
       envVars: (tl.env || []).map(key => ({ key, value: priorEnv.get(key) || '' })),
       code: files[`${dir}/run.py`],
-      ...(tl.extras || {}),
+      ...safeExtras(tl.extras, TOOL_MAPPED),
     });
   }
 
@@ -317,13 +360,15 @@ export function filesToAgent(files, existing = {}) {
   const crawlRuntime = {};
   for (const k of CRAWL_RUNTIME) if (priorCrawl[k] !== undefined) crawlRuntime[k] = priorCrawl[k];
   const crawlConfig = compact({
+    ...safeExtras(crawlFile.extras, new Set(['urls', 'maxPages', ...CRAWL_RUNTIME])),
     urls: crawlFile.urls_legacy,
     maxPages: crawlFile.max_pages,
-    ...(crawlFile.extras || {}),
     ...crawlRuntime,
   });
 
   const agent = compact({
+    /* First, so nothing below it can be overridden from a file. */
+    ...safeExtras(config.extras, MAPPED),
     id: profile.id,
     name: profile.display_name || '',
     avatar: profile.avatar || '',
@@ -341,7 +386,6 @@ export function filesToAgent(files, existing = {}) {
       phoneNumberId: wa.phone_number_id ? (priorWa.phoneNumberId || '') : '',
     },
     crawlConfig: existing.crawlConfig !== undefined || Object.keys(crawlConfig).length ? crawlConfig : undefined,
-    ...(config.extras || {}),
   });
 
   for (const key of SERVER_OWNED) if (existing[key] !== undefined) agent[key] = existing[key];

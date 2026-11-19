@@ -1,9 +1,9 @@
-import { checkAuth } from '../_auth.js';
+import { requireSession } from '../_auth.js';
 import { disconnectGmail, userOwnsAgent } from '../_gmail.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'DELETE') return res.status(405).end();
-  const user = checkAuth(req, res);
+  const user = await requireSession(req, res);
   if (!user) return;
 
   const agentId = req.query.agentId || '';

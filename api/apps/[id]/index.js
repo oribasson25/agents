@@ -1,4 +1,4 @@
-import { checkAuth } from '../../_auth.js';
+import { requireSession } from '../../_auth.js';
 import { loadApp, saveApp, deleteApp, linkProblems, appUrl } from '../../_apps.js';
 import { appToFiles, filesToApp } from '../../_appFiles.js';
 import { mirrorLinked } from '../../_github.js';
@@ -13,7 +13,7 @@ const EDITABLE = ['name', 'description', 'entry', 'agents', 'tables', 'automatio
  * is one more way of writing the same files, not a way around the rules.
  */
 export default async function handler(req, res) {
-  const user = checkAuth(req, res);
+  const user = await requireSession(req, res);
   if (!user) return;
   const { id } = req.query;
 
@@ -42,7 +42,7 @@ export default async function handler(req, res) {
 
       const { app: next, errors } = filesToApp(appToFiles(draft), app);
       if (errors.length) return res.status(422).json({ error: errors[0], errors });
-      const problems = await linkProblems(next, loaded.ownerId);
+      const problems = await linkProblems(next, loaded.ownerId, user, loaded.app);
       if (problems.length) return res.status(422).json({ error: problems[0], errors: problems });
       if (patch.access !== undefined) next.access = patch.access;
 

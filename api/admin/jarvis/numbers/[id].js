@@ -1,6 +1,6 @@
 import { sql } from '../../../_db.js';
 import { jarvisGate, numberInScope, ownerInScope } from '../../../_jarvisAccess.js';
-import { getNumber, kickWorker, leaseHeld, markQrWanted, setCommand, workerSetupProblem } from '../../../_waControl.js';
+import { getNumber, isBlocked, kickWorker, leaseHeld, markQrWanted, setCommand, workerSetupProblem } from '../../../_waControl.js';
 import { groupSettingsOf, sanitizeGroupSettings } from '../../../_waGroups.js';
 
 /**
@@ -34,7 +34,7 @@ export default async function handler(req, res) {
           problem = 'The WhatsApp worker did not start. Check the Vercel function logs for /api/wa/worker.';
         }
       }
-    } else if (number.enabled && number.phone && !(await leaseHeld(id))) {
+    } else if (number.enabled && number.phone && !isBlocked(number) && !(await leaseHeld(id))) {
       // A linked number with no worker shows as reconnecting: bring it back from
       // here, through the address the admin is using, which reaches production.
       await kickWorker(id, { via: req.headers.host });
@@ -64,7 +64,7 @@ export default async function handler(req, res) {
     if (body.agentId !== undefined) {
       agentId = body.agentId ? String(body.agentId) : null;
       if (agentId) {
-        // Only the owner account's own AI Chatbots: their key pays for the conversation.
+        // Only AI Chatbots of the owner's organization: it pays for the conversation.
         const [agent] = await sql`select id from agents where id = ${agentId} and org_id = (select org_id from users where id = ${number.owner_user_id})`;
         if (!agent) return res.status(400).json({ error: 'That AI Chatbot does not belong to this number\'s account.' });
       }
@@ -74,6 +74,11 @@ export default async function handler(req, res) {
          set label = ${label}, mode = ${mode}, agent_id = ${agentId}, enabled = ${enabled}, updated_at = now()
        where id = ${id}
     `;
+    /* Switching a number WhatsApp refused off and on again is the admin saying
+       "try again": it is no longer left out by the cron. */
+    if (body.enabled !== undefined && enabled && isBlocked(number)) {
+      await sql`update wa_numbers set state = state || '{"status":"connecting","error":null}'::jsonb where id = ${id}`;
+    }
     if (enabled && number.phone && !(await leaseHeld(id))) await kickWorker(id, { via: req.headers.host });
     return res.json(await detail(id));
   }

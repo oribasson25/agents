@@ -1,13 +1,15 @@
 import { getNumber } from './_waControl.js';
 import {
-  actionsLastHour, callsAgent, contextWindow, getGroup, groupSettingsOf, insertGroupMessage,
-  describeClaudeError, logGroupEvent, messagesSince, resolveMentions, setSeen, turnMode, upsertGroup,
+  actionsLastHour, callsAgent, contextWindow, decisionsLastHour, getGroup, groupSettingsOf, insertGroupMessage,
+  describeClaudeError, logGroupEvent, messagesSince, recapStartFor, recordJoins, resolveMentions, setSeen, turnMode, upsertGroup,
 } from './_waGroups.js';
 import { decideGroup } from './_waGroupBrain.js';
 import { createProactive, resolveSpeaker } from './_waGroupProactive.mjs';
 
 // Messages older than this (delivered after the number was offline) never trigger a turn.
 const STALE_MS = 10 * 60 * 1000;
+// A group's settings row is read again after this long (a burst reads it once).
+const GROUP_TTL_MS = 10_000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -21,22 +23,39 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  *
  * One lives for one worker session; drain() finishes what is in flight.
  */
-export function createGroupRouter(wa, numberId) {
+export function createGroupRouter(wa, numberId, { currentNumber: shared } = {}) {
   const pending = new Map(); // group jid -> { timer, addressed }
   const busy = new Set();
   const rerun = new Map();   // group jid -> addressed, for turns asked for while one was running
   const inflight = new Set();
   let draining = false;
-  let queue = Promise.resolve(); // messages are stored one at a time, so ids follow arrival order
+  /* Messages of one group are stored one at a time, so their ids follow
+     arrival order; different groups do not wait for each other. */
+  const queues = new Map();  // group jid -> the tail of its queue
+  let groupsQueue = Promise.resolve();
+  const groupRows = new Map(); // group jid -> { row, at }
   let number = null;
   let numberAt = 0;
 
+  /* The number's row: the router's copy when it has one, so both read it once a minute. */
   async function currentNumber() {
+    if (shared) {
+      number = await shared();
+      return number;
+    }
     if (!number || Date.now() - numberAt > 10_000) {
       number = await getNumber(numberId);
       numberAt = Date.now();
     }
     return number;
+  }
+
+  async function groupOf(jid) {
+    const hit = groupRows.get(jid);
+    if (hit && Date.now() - hit.at < GROUP_TTL_MS) return hit.row;
+    const row = await getGroup(numberId, jid);
+    if (row) groupRows.set(jid, { row, at: Date.now() });
+    return row;
   }
 
   /** The name it goes by in groups: the admin's choice, else the WhatsApp profile name. */
@@ -49,18 +68,27 @@ export function createGroupRouter(wa, numberId) {
   const proactive = createProactive(wa, numberId, { nameOf });
 
   wa.on('groups', (groups) => {
-    queue = queue
+    groupsQueue = groupsQueue
       .then(async () => { for (const g of groups) await upsertGroup(numberId, g.jid, g.name); })
       .catch((err) => console.warn(`[wa ${numberId}] could not record groups:`, err.message));
   });
 
+  // When people joined, so a recap they ask for starts there (see recapStartFor).
+  wa.on('joined', ({ chatJid, joined }) => {
+    recordJoins(numberId, chatJid, joined).catch((err) => console.warn(`[wa ${numberId}] could not record who joined:`, err.message));
+  });
+
   function handle(m) {
-    queue = queue.then(() => store(m)).catch((err) => console.error(`[wa ${numberId}] group message failed:`, err.message));
-    return queue;
+    const tail = (queues.get(m.chatJid) || Promise.resolve())
+      .then(() => store(m))
+      .catch((err) => console.error(`[wa ${numberId}] group message failed:`, err.message));
+    queues.set(m.chatJid, tail);
+    tail.finally(() => { if (queues.get(m.chatJid) === tail) queues.delete(m.chatJid); });
+    return tail;
   }
 
   async function store(m) {
-    const known = await getGroup(numberId, m.chatJid);
+    const known = await groupOf(m.chatJid);
     if (!known) {
       await upsertGroup(numberId, m.chatJid, null);
       wa.refreshGroup?.(m.chatJid);
@@ -70,7 +98,8 @@ export function createGroupRouter(wa, numberId) {
 
     const n = await currentNumber();
     if (!n || !n.enabled) return;
-    const group = known || (await getGroup(numberId, m.chatJid));
+    const group = known || (await groupOf(m.chatJid));
+    if (!group) return;
     const s = groupSettingsOf(n);
     const mode = turnMode(group.mode, s, new Date(), group.muted_until);
     if (mode === 'off') return;
@@ -127,7 +156,7 @@ export function createGroupRouter(wa, numberId) {
     const mode = turnMode(group.mode, s, new Date(), group.muted_until);
     if (mode === 'off' || (mode === 'mention' && !addressed)) return;
 
-    if (s.maxActionsPerHour && (await actionsLastHour(numberId, jid)) >= s.maxActionsPerHour) {
+    if ((await actionsLastHour(numberId, jid)) >= s.maxActionsPerHour) {
       await logGroupEvent(numberId, jid, 'limited', { reason: `Reached the limit of ${s.maxActionsPerHour} actions an hour` });
       return;
     }
@@ -135,6 +164,10 @@ export function createGroupRouter(wa, numberId) {
     // the model alone. Skipped quietly: in a busy group they would flood the log.
     const unsolicited = mode === 'smart' && !addressed;
     if (unsolicited && s.unsolicitedPerHour && (await actionsLastHour(numberId, jid, { unsolicited: true })) >= s.unsolicitedPerHour) return;
+    /* A decision to stay silent sends nothing but still costs a model call, and
+       in a busy group most turns end that way: those count too, against their
+       own hourly limit. A turn someone asked for is not held back by it. */
+    if (!addressed && (await decisionsLastHour(numberId, jid)) >= s.maxDecisionsPerHour) return;
 
     const rows = await contextWindow(numberId, jid, s.contextMessages);
     if (unsolicited && s.quietGap) {
@@ -163,9 +196,12 @@ export function createGroupRouter(wa, numberId) {
     await setSeen(numberId, jid, lastId);
 
     if (decision.action === 'summary') {
-      // "What did I miss?": written from the whole stretch they asked about, not just the context window.
+      // "What did I miss?": written from the whole stretch they asked about, not just the context window,
+      // but never from before the person asking was in the group.
       await wa.setTyping(jid, true);
-      const stretch = await messagesSince(numberId, jid, Date.now() - decision.hours * 3600_000);
+      const asked = Date.now() - decision.hours * 3600_000;
+      const since = Math.max(asked, await recapStartFor(numberId, jid, fresh.at(-1).sender_jid, asked));
+      const stretch = await messagesSince(numberId, jid, since);
       decision.text = await proactive.compose(n, group,
         `Someone asked what they missed. Write a recap of the last ${decision.hours} hours of the group's conversation for them: the topics, what was decided, open questions and anything someone is waiting on, with who said what where it matters. Short lines, most important first. If very little happened, say so in a line.`,
         { rows: stretch, recap: true });
@@ -216,7 +252,7 @@ export function createGroupRouter(wa, numberId) {
   /** End of session: run merged turns now and wait up to `timeoutMs` for running ones. */
   async function drain(timeoutMs) {
     draining = true;
-    await queue;
+    await Promise.allSettled([groupsQueue, ...queues.values()]);
     for (const [jid, p] of pending) {
       clearTimeout(p.timer);
       pending.delete(jid);

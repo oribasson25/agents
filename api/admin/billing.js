@@ -1,5 +1,5 @@
 import { sql } from '../_db.js';
-import { checkAdmin } from '../_auth.js';
+import { requireAdmin } from '../_auth.js';
 import { listOrgs } from '../_orgs.js';
 import {
   platformKey, savePlatformKey, savePlatformSettings, describeOpenRouterKey, openRouterModels, monthSpendUsd, STOP_MESSAGE_DEFAULT, topUpOrg,
@@ -15,16 +15,21 @@ import {
  *   GET ?catalog=1              → { models } — OpenRouter's catalog, with prices
  *   GET ?topups=<orgId>         → { topups } — that organization's top-ups, newest first
  *   PUT { key }                 → stores the key once OpenRouter has accepted it ('' removes it)
- *   PUT { defaultModel?, ceilingUsd?, stopMessage?: { he?, en? } }
+ *   PUT { defaultModel?, ceilingUsd?, stopMessage?: { he?, en? }, publicCapPct? }
+ *                               ceilingUsd: more than 0 (there is no "no ceiling": 0 would stop everything).
+ *                               publicCapPct: the share of the ceiling, 1–100, that strangers on one
+ *                               organization's widget, apps and WhatsApp may use up (100: no share of its own)
  *   PUT { orgId, model }        → the organization's own model ('' = the platform's default)
  *   PUT { orgId, models: [ids] } → the models its items may choose from (its default always may)
  *   PUT { orgId, topupUsd, note? }  → adds to its balance (negative corrects it). The first
  *                                   one gives an organization with no limit a balance.
  *   PUT { orgId, markupPct }    → percent added to OpenRouter's cost for that organization
  *   PUT { orgId, unlimited: true } → removes its balance: only the platform's ceiling applies
+ *   PUT { orgId, publicCapUsd } → what strangers on its chatbots may spend this month (OpenRouter's
+ *                                 cost, USD); null goes back to the platform's share
  */
 export default async function handler(req, res) {
-  const admin = checkAdmin(req, res);
+  const admin = await requireAdmin(req, res);
   if (!admin) return;
 
   try {
@@ -98,6 +103,20 @@ export default async function handler(req, res) {
           `;
           return res.json(await view());
         }
+        if (has('publicCapUsd')) {
+          let usd = null;
+          if (b.publicCapUsd !== null && b.publicCapUsd !== '') {
+            usd = Math.round(Number(b.publicCapUsd) * 100) / 100;
+            if (!Number.isFinite(usd) || usd < 0 || usd > 100000) {
+              return res.status(400).json({ error: 'The public cap is an amount in dollars, like 20 (0 stops its public chatbots), or empty for the platform\'s share.' });
+            }
+          }
+          await sql`
+            insert into org_billing (org_id, public_monthly_cap_usd, updated_at) values (${orgId}, ${usd}, now())
+            on conflict (org_id) do update set public_monthly_cap_usd = excluded.public_monthly_cap_usd, updated_at = now()
+          `;
+          return res.json(await view());
+        }
         if (b.unlimited === true) {
           const [was] = await sql`select balance_usd from org_billing where org_id = ${orgId}`;
           if (was && was.balance_usd !== null) {
@@ -122,7 +141,7 @@ export default async function handler(req, res) {
         return res.json(await view());
       }
 
-      if (has('defaultModel') || has('ceilingUsd') || has('stopMessage')) {
+      if (has('defaultModel') || has('ceilingUsd') || has('stopMessage') || has('publicCapPct')) {
         const patch = {};
         if (has('stopMessage')) {
           const m = b.stopMessage || {};
@@ -138,11 +157,20 @@ export default async function handler(req, res) {
           patch.defaultModel = model;
         }
         if (has('ceilingUsd')) {
-          const usd = Number(b.ceilingUsd);
-          if (!Number.isFinite(usd) || usd < 0 || usd > 100000) {
-            return res.status(400).json({ error: 'The monthly ceiling must be an amount in dollars, like 50.' });
+          /* 0 and empty are refused: a limit of 0 stops everything (as an
+             item's or a member's does), and there is no "no ceiling". */
+          const usd = b.ceilingUsd === null || b.ceilingUsd === '' ? NaN : Number(b.ceilingUsd);
+          if (!Number.isFinite(usd) || usd <= 0 || usd > 100000) {
+            return res.status(400).json({ error: 'The monthly ceiling must be an amount in dollars more than 0, like 50.' });
           }
           patch.monthlyCeilingUsd = usd;
+        }
+        if (has('publicCapPct')) {
+          const pct = Number(b.publicCapPct);
+          if (b.publicCapPct === null || b.publicCapPct === '' || !Number.isFinite(pct) || pct < 1 || pct > 100) {
+            return res.status(400).json({ error: 'The public share is a percentage of the ceiling from 1 to 100, like 50.' });
+          }
+          patch.orgPublicCapPct = pct;
         }
         await savePlatformSettings(patch, admin.userId);
         return res.json(await view());
@@ -166,10 +194,8 @@ async function unknownModel(model) {
 }
 
 async function view() {
-  const [p] = await sql`
-    select key_hint, updated_at, default_model, monthly_ceiling_usd, stop_message_he, stop_message_en
-    from platform_billing where id = true
-  `;
+  /* select *: org_public_cap_pct arrives with migration 037. */
+  const [p] = await sql`select * from platform_billing where id = true`;
   const key = await platformKey();
   const info = key ? await describeOpenRouterKey(key) : null;
 
@@ -178,7 +204,7 @@ async function view() {
   const [orgs, billing, usage] = await Promise.all([
     listOrgs(),
     sql`
-      select b.org_id, b.default_model, b.balance_usd, b.markup_pct, b.allowed_models,
+      select b.*,
              (select t.amount_usd from org_topups t where t.org_id = b.org_id and t.amount_usd > 0 order by t.at desc, t.id desc limit 1) as last_topup
       from org_billing b
     `,
@@ -200,7 +226,8 @@ async function view() {
   const round = (v) => Math.round(Number(v || 0) * 10000) / 10000;
   const ceiling = p && p.monthly_ceiling_usd != null ? Number(p.monthly_ceiling_usd) : 50;
   const defaultModel = (p && p.default_model) || '';
-  const spent = round(await monthSpendUsd({ fresh: true }));
+  const spent = round(await monthSpendUsd({ fresh: true }).catch(() => 0));
+  const publicPct = p && p.org_public_cap_pct != null ? Number(p.org_public_cap_pct) : 50;
 
   const charged = round(usage.reduce((a, u) => a + Number(u.charged || 0), 0));
   const rows = orgs.map((o) => {
@@ -228,6 +255,10 @@ async function view() {
         stopped: balance !== null && balance <= 0,
         // What its balance can still buy of OpenRouter, at its markup.
         canStillCostUsd: balance === null ? null : round(Math.max(balance, 0) / (1 + markupPct / 100)),
+        // What strangers on its chatbots may spend this month: its own cap, or the platform's share.
+        publicCapUsd: m && m.public_monthly_cap_usd !== null && m.public_monthly_cap_usd !== undefined ? Number(m.public_monthly_cap_usd) : null,
+        publicCapEffectiveUsd: m && m.public_monthly_cap_usd !== null && m.public_monthly_cap_usd !== undefined
+          ? Number(m.public_monthly_cap_usd) : (publicPct < 100 && ceiling > 0 ? round(ceiling * publicPct / 100) : null),
         month: {
           calls: u ? u.calls : 0,
           input: u ? Number(u.input) : 0,
@@ -250,6 +281,7 @@ async function view() {
     key: { set: !!key, hint: (p && p.key_hint) || '', updatedAt: (p && p.updated_at) || null, info },
     defaultModel,
     ceilingUsd: ceiling,
+    publicCapPct: publicPct,
     stopMessage: {
       he: (p && p.stop_message_he) || '',
       en: (p && p.stop_message_en) || '',

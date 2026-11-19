@@ -70,6 +70,17 @@ export async function claim(numberId, limit = 5) {
 }
 
 export const markSent = (id) => sql`update wa_outbox set status = 'sent', sent_at = now() where id = ${id}`;
+
+/** Claimed messages that were not sent (the session is ending, or the socket closed) go back in the queue. */
+export async function requeue(ids) {
+  if (!ids.length) return;
+  await sql`update wa_outbox set status = 'queued' where id = any(${ids}) and status = 'sending'`;
+}
+
+/** A send that failed because the connection went away, not because of the message: worth another try. */
+export function retryableSendError(err) {
+  return /connection (closed|lost|terminated)|not open|socket|timed? ?out|ECONNRESET|EPIPE|stream errored/i.test(String(err && err.message || err));
+}
 export const markFailed = (id, error) => sql`update wa_outbox set status = 'failed', error = ${String(error).slice(0, 300)} where id = ${id}`;
 
 /** A message a worker claimed and then died holding goes back in the queue once. */

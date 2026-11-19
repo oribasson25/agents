@@ -21,6 +21,7 @@ const AGENT = {
 const { token, hash } = createToken();
 let stored = JSON.parse(JSON.stringify(AGENT));
 let updates = 0;
+let takenNumber = 'nobody-holds-this';
 
 const { accessStub } = await import('./access-stub.mjs');
 const access = accessStub({ item: (kind, id) => (kind === 'agent' && id === AGENT.id ? { org: 'o1', user: 'u1' } : null) });
@@ -38,6 +39,8 @@ globalThis.__db = (text, params) => {
   }
   if (text.includes('from agent_branches')) return [];
   if (text.includes('update agents set data')) { updates++; stored = JSON.parse(params[0]); return []; }
+  /* The one-number-one-agent claim: another agent holds `takenNumber`. */
+  if (text.includes("data->'whatsapp'->>'phoneNumberId'")) return params[0] === takenNumber && params[1] !== 'other' ? [{ id: 'other' }] : [];
   throw new Error('unexpected query: ' + text.slice(0, 70));
 };
 
@@ -113,6 +116,33 @@ hijack.profile.id = 'someone-elses-agent';
 const moved = await call('PUT', { id: 'a1' },
   { baseVersion: agentVersion(stored), files: { ...files, 'config.json': JSON.stringify(hijack) } });
 check('a push cannot change the agent id', moved.statusCode === 200 && stored.id === 'a1');
+
+/* extras can add a field the platform does not know yet, never replace one it checks */
+{
+  const cur = (await call('GET', { id: 'a1' })).payload;
+  const cfg = JSON.parse(cur.files['config.json']);
+  cfg.extras = { ...(cfg.extras || {}),
+    whatsapp: { enabled: true, phoneNumberId: 'VICTIM-NUMBER', accessToken: 'attacker', appSecret: 'attacker', verifyToken: 'attacker' },
+    apiConfig: { provider: 'x', apiKey: 'attacker' }, createdAt: '1999-01-01', id: 'elsewhere', somethingNew: 42 };
+  const sneaky = await call('PUT', { id: 'a1' }, { baseVersion: cur.version, files: { ...cur.files, 'config.json': JSON.stringify(cfg) } });
+  check('extras.whatsapp cannot set the number or its tokens',
+        sneaky.statusCode === 200 && stored.whatsapp.phoneNumberId === '99999' && stored.whatsapp.accessToken === 'SECRET-WA',
+        JSON.stringify(stored.whatsapp));
+  check('nor the api key, createdAt or the id',
+        stored.apiConfig.apiKey === 'SECRET-KEY' && stored.createdAt === '2026-01-01T00:00:00.000Z' && stored.id === 'a1');
+  check('an unknown field in extras still survives', stored.somethingNew === 42);
+}
+
+/* the one-number-one-agent claim holds on a push too */
+{
+  takenNumber = '99999';
+  const cur = (await call('GET', { id: 'a1' })).payload;
+  const was = updates;
+  const r = await call('PUT', { id: 'a1' }, { baseVersion: cur.version, files: { ...cur.files, 'prompt.md': 'changed' } });
+  check('a push of an agent whose number another agent holds -> 409, nothing written',
+        r.statusCode === 409 && updates === was, `${r.statusCode} ${JSON.stringify(r.payload)}`);
+  takenNumber = 'nobody-holds-this';
+}
 
 console.log(`\n${failed ? `${failed} FAILURE(S)` : 'all green'}`);
 process.exit(failed ? 1 : 0);

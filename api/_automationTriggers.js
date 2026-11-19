@@ -7,9 +7,9 @@
  * reply to an approval question, which wakes the run that asked it.
  */
 import { sql } from './_db.js';
-import { startRun, workRun } from './_automations.js';
+import { startRun, workRun, eachLimited } from './_automations.js';
 import { useConnection } from './_connections.js';
-import { mailSince } from './_mail.js';
+import { pollMailbox } from './_mail.js';
 import { normalizePhone } from './_waControl.js';
 import { readAnswer } from './_automationConnected.js';
 
@@ -45,63 +45,64 @@ function whatsappMatches(config, message) {
  * Returns `{ consumed }` — true when the message was the automation's and
  * the number's chatbot or Jarvis should not also answer it.
  */
-export async function onWhatsAppMessage({ numberId, message, baseUrl }) {
+export async function onWhatsAppMessage({ numberId, message, baseUrl, triggers = true }) {
   const host = hostOf(baseUrl);
   const phone = message.senderPhone;
   if (!phone) return { consumed: false };
 
+  /* One look for a run waiting on this person (partial index on number and
+     phone, migration 039): an approval first when this is a yes or a no,
+     else whichever has waited longest for their reply. */
   const answer = readAnswer(message.text);
-  if (answer) {
-    const [waiting] = await sql`
-      select id from automation_runs
-      where status = 'waiting'
-        and state->'wait'->>'kind' = 'approval'
-        and state->'wait'->>'numberId' = ${numberId}
-        and state->'wait'->>'phone' = ${phone}
-        and state->'wait'->'answer' is null
-      order by started_at limit 1
-    `;
-    if (waiting) {
-      const given = { answer, text: String(message.text || '').slice(0, 500), at: new Date().toISOString() };
-      const [woken] = await sql`
-        update automation_runs
-        set state = jsonb_set(state, '{wait,answer}', ${JSON.stringify(given)}::jsonb), resume_at = now()
-        where id = ${waiting.id} and status = 'waiting' returning id
-      `;
-      if (woken) { workSoon(woken.id, host); return { consumed: true, approval: woken.id }; }
-    }
-  }
-
-  const [expecting] = await sql`
-    select id from automation_runs
+  const kinds = answer ? ['approval', 'reply'] : ['reply'];
+  const [waiting] = await sql`
+    select id, state->'wait'->>'kind' as kind from automation_runs
     where status = 'waiting'
-      and state->'wait'->>'kind' = 'reply'
       and state->'wait'->>'numberId' = ${numberId}
       and state->'wait'->>'phone' = ${phone}
+      and state->'wait'->>'kind' = any(${kinds})
       and state->'wait'->'answer' is null
-    order by started_at limit 1
+    order by (state->'wait'->>'kind' = 'approval') desc, started_at
+    limit 1
   `;
-  if (expecting) {
-    const given = { text: String(message.text || '').slice(0, 4000), name: message.senderName || '',
-                    kind: message.kind || 'text', at: new Date(message.ts || Date.now()).toISOString() };
+  if (waiting) {
+    const given = waiting.kind === 'approval'
+      ? { answer, text: String(message.text || '').slice(0, 500), at: new Date().toISOString() }
+      : { text: String(message.text || '').slice(0, 4000), name: message.senderName || '',
+          kind: message.kind || 'text', at: new Date(message.ts || Date.now()).toISOString() };
     const [woken] = await sql`
       update automation_runs
       set state = jsonb_set(state, '{wait,answer}', ${JSON.stringify(given)}::jsonb), resume_at = now()
-      where id = ${expecting.id} and status = 'waiting' returning id
+      where id = ${waiting.id} and status = 'waiting' returning id
     `;
-    if (woken) { workSoon(woken.id, host); return { consumed: true, reply: woken.id }; }
+    if (woken) {
+      workSoon(woken.id, host);
+      return waiting.kind === 'approval' ? { consumed: true, approval: woken.id } : { consumed: true, reply: woken.id };
+    }
   }
 
+  /* `triggers: false` — the router says this sender is someone Jarvis talks
+     to and the admin has not let automations see them: a wait that asked
+     them something is still answered, but no listening automation may read
+     (and swallow) their private messages. */
+  if (!triggers) return { consumed: false, started: [] };
+
+  /* Live automations listening on this number — only those whose publisher
+     may use its connection. */
   const listening = await sql`
-    select a.* from automations a
+    select a.*
+    from automations a
     join connections c
       on c.org_id = a.org_id and c.kind = 'whatsapp' and c.data->>'numberId' = ${numberId}
      and lower(c.name) = lower(a.published->'trigger'->'config'->>'connection')
+    left join users pu on pu.id = coalesce(a.published_by, a.user_id)
     where a.enabled and a.published->'trigger'->>'type' = 'whatsapp'
+      and (c.shared is not false or c.created_by = coalesce(a.published_by, a.user_id)
+           or coalesce(pu.is_admin, false) or (pu.org_role = 'admin' and pu.org_id = c.org_id))
   `;
   let consumed = false;
   const started = [];
-  for (const row of listening) {
+  for (const row of listening || []) {
     const config = (row.published.trigger && row.published.trigger.config) || {};
     if (!whatsappMatches(config, message)) continue;
     try {
@@ -132,19 +133,30 @@ export async function onWhatsAppMessage({ numberId, message, baseUrl }) {
 export async function onRowAdded({ table, row, writtenBy }) {
   try {
     const watching = (await sql`
-      select * from automations
-      where enabled and org_id = ${table.org_id}
-        and published->'trigger'->>'type' = 'table'
-        and published->'trigger'->'config'->>'table' = ${table.id}
+      select a.*, h.host as last_host
+      from automations a
+      left join lateral (
+        select host from automation_runs r
+        where r.automation_id = a.id and r.host is not null order by r.started_at desc limit 1
+      ) h on true
+      where a.enabled and a.org_id = ${table.org_id}
+        and a.published->'trigger'->>'type' = 'table'
+        and a.published->'trigger'->'config'->>'table' = ${table.id}
     `) || [];
     const started = [];
     for (const auto of watching) {
       if (writtenBy === `automation:${auto.id}`) continue;
-      const [last] = (await sql`select host from automation_runs where automation_id = ${auto.id} and host is not null order by started_at desc limit 1`) || [];
-      started.push(await startRun({
-        row: auto, mode: 'live', source: 'table', host: last ? last.host : null,
-        input: { table: { id: table.id, name: table.name }, rowId: row.id, row: { id: row.id, ...(row.data || {}) }, addedBy: writtenBy },
-      }));
+      /* A row written by another automation's run starts this one a level
+         deeper (see startRun), so two that feed each other through a table
+         stop after LIMITS.callDepth rounds instead of running forever. */
+      try {
+        started.push(await startRun({
+          row: auto, mode: 'live', source: 'table', host: auto.last_host || null,
+          input: { table: { id: table.id, name: table.name }, rowId: row.id, row: { id: row.id, ...(row.data || {}) }, addedBy: writtenBy },
+        }));
+      } catch (err) {
+        console.error(`[automations] ${auto.id} did not start on a new row:`, err.message);
+      }
     }
     return started;
   } catch (err) {
@@ -160,43 +172,66 @@ export async function onRowAdded({ table, row, writtenBy }) {
  * and starts a run for each message. Called by the cron, once a minute.
  *
  * What a trigger has already seen is kept on the automation
- * (`trigger_state.since`), moved forward only past messages a run was
- * actually started for — so a failure to start is retried on the next look
- * rather than skipped.
+ * (`trigger_state.since`), written after each run it starts — so a failure
+ * part-way is retried from the message that failed, never from the start —
+ * and then moved past everything that was looked at (see pollMailbox).
+ *
+ * Each mailbox is locked while it is looked at (`trigger_state.polling`, one
+ * UPDATE that only succeeds when nobody holds it or the holder has been gone
+ * five minutes), so two overlapping ticks never start runs for the same mail.
+ * Mailboxes are looked at side by side, least recently looked at first, each
+ * call with its own timeout, and no new one is started once `budgetMs` is
+ * spent.
  */
-export async function pollEmailTriggers() {
+export async function pollEmailTriggers({ budgetMs = 90 * 1000, concurrency = 8 } = {}) {
+  const until = Date.now() + budgetMs;
   const watching = await sql`
-    select * from automations
-    where enabled and published is not null and published->'trigger'->>'type' = 'email'
+    select a.id
+    from automations a
+    where a.enabled and a.published is not null and a.published->'trigger'->>'type' = 'email'
+    order by (a.trigger_state->>'polledAt') nulls first
     limit 100
   `;
   let started = 0;
-  for (const row of watching) {
-    const config = (row.published.trigger && row.published.trigger.config) || {};
-    const state = row.trigger_state || {};
-    if (!state.since) {
-      await sql`update automations set trigger_state = ${JSON.stringify({ since: new Date().toISOString() })}::jsonb where id = ${row.id}`;
-      continue;
+  await eachLimited(watching || [], concurrency, async ({ id }) => {
+    if (Date.now() > until) return;
+    const [row] = await sql`
+      update automations
+      set trigger_state = coalesce(trigger_state, '{}'::jsonb) || jsonb_build_object('polling', now())
+      where id = ${id} and enabled
+        and (trigger_state->>'polling' is null or (trigger_state->>'polling')::timestamptz < now() - interval '5 minutes')
+      returning *, (
+        select host from automation_runs r
+        where r.automation_id = automations.id and r.host is not null order by r.started_at desc limit 1
+      ) as last_host
+    `;
+    if (!row) return;
+    const config = (row.published && row.published.trigger && row.published.trigger.config) || {};
+    const prior = row.trigger_state || {};
+    const save = (next) => sql`
+      update automations set trigger_state = ${JSON.stringify(next)}::jsonb where id = ${row.id}
+    `.catch(() => {});
+    if (!prior.since) {
+      await save({ since: new Date().toISOString(), polledAt: new Date().toISOString() });
+      return;
     }
+    let since = prior.since;
     try {
-      const conn = await useConnection({ orgId: row.org_id, name: config.connection, kinds: ['gmail', 'microsoft'] });
-      const fresh = await mailSince(conn, { since: state.since, query: config.query });
-      let since = state.since;
-      const [last] = await sql`select host from automation_runs where automation_id = ${row.id} and host is not null order by started_at desc limit 1`;
-      for (const m of fresh) {
-        await startRun({ row, mode: 'live', source: 'email', host: last ? last.host : null,
+      const conn = await useConnection({ orgId: row.org_id, name: config.connection, kinds: ['gmail', 'microsoft'],
+                                         userId: row.published_by || row.user_id });
+      const { messages, cursor } = await pollMailbox(conn, { since, query: config.query });
+      for (const m of messages) {
+        await startRun({ row, mode: 'live', source: 'email', host: row.last_host || null,
                          input: { id: m.id, from: m.from, fromName: m.fromName, to: m.to, subject: m.subject, text: m.text, date: m.date } });
         since = m.date;
         started++;
+        await save({ since, polling: new Date().toISOString() });
       }
-      if (since !== state.since || state.error) {
-        await sql`update automations set trigger_state = ${JSON.stringify({ since })}::jsonb where id = ${row.id}`;
-      }
+      if (cursor && new Date(cursor) > new Date(since)) since = cursor;
+      await save({ since, polledAt: new Date().toISOString() });
     } catch (err) {
-      if (state.error !== err.message) {
-        await sql`update automations set trigger_state = ${JSON.stringify({ ...state, error: err.message })}::jsonb where id = ${row.id}`.catch(() => {});
-      }
+      await save({ since, polledAt: new Date().toISOString(), error: String(err.message || err).slice(0, 300) });
     }
-  }
+  });
   return started;
 }

@@ -9,54 +9,27 @@
  * Loop and Wait are not here: they change how the run itself proceeds, so the
  * engine does them.
  */
-import dns from 'dns/promises';
-import net from 'net';
-import { internalSecret } from './_auth.js';
+import { safeFetch, assertPublicUrl } from './_netGuard.js';
+import { runToolCode } from './_toolRunner.js';
 import { compare, fieldsToObject, resolveJsonText, resolve, LIMITS } from './_automationSpec.js';
+
+/* An HTTP step reaches only the public internet: every hop is resolved,
+   checked and pinned by api/_netGuard.js. Re-exported for the probes. */
+export { assertPublicUrl };
 
 /* ─────────────────── HTTP request ─────────────────── */
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 
-function privateAddress(ip) {
-  if (net.isIPv4(ip)) {
-    const p = ip.split('.').map(Number);
-    return p[0] === 127 || p[0] === 10 || p[0] === 0 ||
-      (p[0] === 169 && p[1] === 254) || (p[0] === 192 && p[1] === 168) ||
-      (p[0] === 172 && p[1] >= 16 && p[1] <= 31) || (p[0] === 100 && p[1] >= 64 && p[1] <= 127);
-  }
-  const v6 = ip.toLowerCase();
-  if (v6.startsWith('::ffff:')) return privateAddress(v6.slice(7));
-  return v6 === '::1' || v6 === '::' || v6.startsWith('fc') || v6.startsWith('fd') || v6.startsWith('fe80');
+/** How long a step may still take: its own limit, cut to what the run has left. */
+export function stepTimeoutMs(wantedMs, ctx) {
+  const left = ctx && ctx.hardDeadline ? ctx.hardDeadline - Date.now() - 2000 : Infinity;
+  return Math.max(1000, Math.min(wantedMs, left));
 }
 
-/**
- * Refuses an address inside the platform's own network.
- *
- * An HTTP step runs on the platform's servers with whatever URL its author
- * typed, so it must not be a way to reach the cloud's metadata service or
- * anything else only the server can see. The name is resolved here and every
- * address it has is checked, and the same check runs again on each redirect.
- */
-export async function assertPublicUrl(rawUrl) {
-  let url;
-  try { url = new URL(rawUrl); } catch { throw new Error(`"${rawUrl}" is not a URL`); }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('Only http and https addresses can be called');
-  const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
-  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.internal')) {
-    throw new Error('That address is inside the platform\'s network and cannot be called');
-  }
-  let addresses;
-  if (net.isIP(host)) addresses = [host];
-  else {
-    try { addresses = (await dns.lookup(host, { all: true })).map(a => a.address); }
-    catch { throw new Error(`Could not find the server "${host}"`); }
-  }
-  if (!addresses.length || addresses.some(privateAddress)) {
-    throw new Error('That address is inside the platform\'s network and cannot be called');
-  }
-  return url;
-}
+/* What an automation sends with each request, so a chain that calls its own
+   webhook (A calls a hook that starts A …) is counted like any other chain. */
+export const CHAIN_HEADER = 'X-8legs-Chain';
 
 const rowsOn = (rows) => (Array.isArray(rows) ? rows : []).filter(r => r && r.on !== false && String(r.key || '').trim());
 
@@ -104,40 +77,31 @@ export function buildRequest(config) {
   return { method, url: url.toString(), headers, body };
 }
 
+const GUARD_WORDS = /inside the platform|is not a URL|Only http|Could not find the server|Too many redirects|user name or password/;
+
 async function http(config, ctx) {
   const request = buildRequest(config);
-  const timeout = Math.max(1, Math.min(120, Number(config.timeout) || 30)) * 1000;
+  const timeout = stepTimeoutMs(Math.max(1, Math.min(120, Number(config.timeout) || 30)) * 1000, ctx);
   const started = Date.now();
-  const doFetch = ctx.fetch || fetch;
+  const headers = { ...request.headers };
+  if (ctx.depth !== undefined && ctx.depth !== null) headers[CHAIN_HEADER] = String(Number(ctx.depth) + 1);
 
-  let url = request.url;
-  let method = request.method;
-  let body = request.body;
   let response;
-  for (let hop = 0; ; hop++) {
-    if (!ctx.allowPrivate) await assertPublicUrl(url);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), Math.max(1, timeout - (Date.now() - started)));
-    try {
-      response = await doFetch(url, { method, headers: request.headers, body, redirect: 'manual', signal: controller.signal });
-    } catch (err) {
-      if (err.name === 'AbortError') throw new Error(`No answer from ${new URL(url).host} within ${timeout / 1000} seconds`);
-      throw new Error(`Could not reach ${new URL(url).host}: ${err.cause ? err.cause.message || err.message : err.message}`);
-    } finally {
-      clearTimeout(timer);
-    }
-    const location = response.status >= 300 && response.status < 400 && response.headers.get('location');
-    if (!location) break;
-    if (hop >= 5) throw new Error('Too many redirects');
-    url = new URL(location, url).toString();
-    if (response.status === 303 || ((response.status === 301 || response.status === 302) && method === 'POST')) {
-      method = 'GET';
-      body = undefined;
-    }
+  try {
+    response = await safeFetch(request.url, {
+      method: request.method, headers, body: request.body,
+      timeoutMs: timeout, maxBytes: LIMITS.outputBytes,
+      fetch: ctx.fetch, allowPrivate: !!ctx.allowPrivate,
+    });
+  } catch (err) {
+    if (err.code === 'TOO_LARGE') throw new Error('The answer is larger than 1 MB, which is more than a step can hold');
+    if (err.code === 'TIMEOUT' || GUARD_WORDS.test(err.message || '')) throw err;
+    let host = '';
+    try { host = new URL(request.url).host; } catch { /* keep it empty */ }
+    throw new Error(`Could not reach ${host}: ${err.cause ? err.cause.message || err.message : err.message}`);
   }
 
-  const raw = method === 'HEAD' ? '' : await response.text();
-  if (raw.length > LIMITS.outputBytes) throw new Error('The answer is larger than 1 MB, which is more than a step can hold');
+  const raw = request.method === 'HEAD' ? '' : await response.text();
   let parsed = raw;
   const type = response.headers.get('content-type') || '';
   if (raw && (type.includes('json') || /^[\[{]/.test(raw.trim()))) {
@@ -177,18 +141,21 @@ def run(**__kw):
 `;
 
 async function code(config, ctx) {
-  if (!ctx.baseUrl) throw new Error('The code runner cannot be reached from here');
   const inputs = fieldsToObject(config.inputs, {});   /* already filled by the engine */
   const packages = String(config.packages || '').split(',').map(s => s.trim()).filter(Boolean);
-  const doFetch = ctx.fetch || fetch;
-  const resp = await doFetch(`${ctx.baseUrl}/api/run-tool`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Internal-Secret': internalSecret() },
-    body: JSON.stringify({ code: String(config.code || '') + WRAPPER, inputs, packages, env_vars: ctx.secrets || {} }),
-  });
+  const timeoutMs = stepTimeoutMs(120 * 1000, ctx);
   let data;
-  try { data = await resp.json(); }
-  catch { throw new Error(`The code runner answered ${resp.status} instead of a result`); }
+  try {
+    data = await runToolCode({
+      code: String(config.code || '') + WRAPPER, inputs, packages, envVars: ctx.secrets || {},
+      baseUrl: ctx.baseUrl, fetch: ctx.fetch || fetch, timeoutMs,
+    });
+  } catch (err) {
+    if (err && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+      throw new Error(`The code did not finish within ${Math.round(timeoutMs / 1000)} seconds`);
+    }
+    throw err;
+  }
   if (data.error) throw new Error(String(data.error));
   try {
     const parsed = JSON.parse(data.result);

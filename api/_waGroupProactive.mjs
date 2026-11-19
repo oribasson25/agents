@@ -19,13 +19,19 @@ const RECAP_MAX_MS = 7 * 24 * 3600_000;
 const RECAP_MIN_MESSAGES = 5;
 
 /**
- * Who speaks in a group: its AI Chatbot (else the number's) and the owner's
- * Claude key. Returns { agentRow, apiConfig } or { error } in words for the log.
+ * Who speaks in a group: its AI Chatbot (else the number's) and the model the
+ * organization pays for. Any AI Chatbot of the number owner's organization may,
+ * the same rule the admin screens offer them by (admin/jarvis/group.js,
+ * admin/jarvis/numbers/[id].js). Returns { agentRow, apiConfig } or { error }
+ * in words for the log.
  */
 export async function resolveSpeaker(number, group) {
   const agentId = group.agent_id || number.agent_id;
-  const [agentRow] = agentId ? await sql`select id, data, user_id from agents where id = ${agentId} and user_id = ${number.owner_user_id}` : [];
-  if (!agentRow) return { error: 'No AI Chatbot is set for this group or this number.' };
+  const [agentRow] = agentId ? await sql`
+    select id, data, user_id from agents
+    where id = ${agentId} and org_id = (select org_id from users where id = ${number.owner_user_id})
+  ` : [];
+  if (!agentRow) return { error: 'No AI Chatbot of this number\'s organization is set for this group or this number.' };
   const apiConfig = await resolveAgentApiConfig(agentRow);
   if (!configUsable(apiConfig)) return { error: 'The platform has not chosen a model for this account yet.' };
   return { agentRow, apiConfig };

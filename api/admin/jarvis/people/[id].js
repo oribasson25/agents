@@ -1,6 +1,6 @@
 import { sql } from '../../../_db.js';
 import { jarvisGate, numberInScope, ownerInScope } from '../../../_jarvisAccess.js';
-import { normalizePhone } from '../../../_waControl.js';
+import { normalizePhone, getNumber } from '../../../_waControl.js';
 import { CAPABILITY_DEFAULTS, PROACTIVE_DEFAULTS } from '../../../_jarvis.js';
 
 /**
@@ -13,6 +13,14 @@ import { CAPABILITY_DEFAULTS, PROACTIVE_DEFAULTS } from '../../../_jarvis.js';
  *
  * Their conversation is never returned: the admin sees how much there is, not
  * what it says. Their memory is returned only while adminCanViewMemory is on.
+ *
+ * Both promises have to hold against the admin too, not only against the
+ * screen:
+ *   - a new phone is a new person to Jarvis. Their conversation, memory and
+ *     reminders are erased with the change, or an admin could point the entry
+ *     at their own phone and simply ask Jarvis what it remembers;
+ *   - adminCanViewMemory is the person's to give. The admin can turn it off,
+ *     never on.
  */
 const TIMEZONES = new Set(Intl.supportedValuesOf ? Intl.supportedValuesOf('timeZone') : ['Asia/Jerusalem']);
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -39,14 +47,21 @@ export default async function handler(req, res) {
       timezone: b.timezone !== undefined && TIMEZONES.has(String(b.timezone)) ? String(b.timezone) : person.timezone,
       capabilities: { ...(person.capabilities || {}) },
       proactive: { ...(person.proactive || {}) },
-      admin_can_view_memory: b.adminCanViewMemory !== undefined ? !!b.adminCanViewMemory : person.admin_can_view_memory,
+      admin_can_view_memory: person.admin_can_view_memory && b.adminCanViewMemory !== false,
       phone: person.phone,
     };
+    if (b.adminCanViewMemory === true && !person.admin_can_view_memory) {
+      return res.status(403).json({ error: 'Only the person can let an admin see what Jarvis remembers about them.', code: 'PERSONS_CHOICE' });
+    }
+    let newPhone = false;
     if (b.phone !== undefined) {
       const phone = normalizePhone(b.phone);
       if (phone.length < 8 || phone.length > 15) return res.status(400).json({ error: 'That does not look like a phone number.' });
+      const number = await getNumber(person.number_id);
+      if (number && number.phone && phone === number.phone) return res.status(400).json({ error: 'That is the number itself.' });
       const [taken] = await sql`select id from jarvis_people where number_id = ${person.number_id} and phone = ${phone} and id <> ${id}`;
       if (taken) return res.status(409).json({ error: 'This phone number is already on the list.' });
+      newPhone = phone !== person.phone;
       next.phone = phone;
     }
     for (const [k, v] of Object.entries(b.capabilities || {})) {
@@ -57,6 +72,15 @@ export default async function handler(req, res) {
       else if ((k === 'briefTime' || k === 'quietFrom' || k === 'quietTo') && HHMM.test(String(v))) next.proactive[k] = String(v);
       else if (k === 'briefDays' && Array.isArray(v)) next.proactive[k] = v.filter((d) => DAYS.includes(d));
       else if (k === 'taskApp' && ['trello', 'monday', 'jira'].includes(v)) next.proactive[k] = v;
+    }
+    if (newPhone) {
+      /* Erased before the phone changes, so there is no moment where the new
+         phone reaches the old person's history. A new phone also starts with
+         the admin unable to see memory, whatever the old one had allowed. */
+      await sql`delete from jarvis_messages where person_id = ${id}`;
+      await sql`delete from jarvis_memory where person_id = ${id}`;
+      await sql`delete from jarvis_reminders where person_id = ${id}`;
+      next.admin_can_view_memory = false;
     }
     await sql`
       update jarvis_people set

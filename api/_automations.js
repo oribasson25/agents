@@ -8,18 +8,52 @@
  * draft, for real.
  */
 import crypto from 'crypto';
+import { AsyncLocalStorage } from 'async_hooks';
 import { sql } from './_db.js';
 import { agentVersion } from './_agentFiles.js';
 import { accessTo, allows, member, visible, ReadOnlyError } from './_access.js';
 import { checkAutomation, blankAutomation, LIMITS, TRIGGER_ID } from './_automationSpec.js';
 import { advance, freshState, clip, maskSecrets } from './_automationEngine.js';
 import { fillConfig, runStep } from './_automationSteps.js';
-import { nextRun } from './_schedule.js';
+import { nextRun, nextRunAfter } from './_schedule.js';
+import { canUseConnection } from './_connections.js';
 
 /** How long one function works a run before handing it on (seconds). */
 export const WORK_BUDGET_MS = 240 * 1000;
+/** What a worker may run past its budget to finish the step it is on. */
+const HARD_MARGIN_MS = 40 * 1000;
 const STALE_AFTER = '10 minutes';
+/* A run whose worker died this many times is not picked up again: whatever
+   kills it will kill the next one too. */
+const MAX_RECLAIMS = 3;
+/* The most runs one organization gets in one tick, so one with a pile of
+   runs cannot starve the rest. */
+const PER_ORG_PER_TICK = 5;
 const SECRET_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,59}$/;
+
+/**
+ * The run being worked right now, if any: { runId, depth, orgId }.
+ *
+ * Whatever a run sets off — a row its table step writes, a chatbot its agent
+ * step asks, another automation it calls — starts its runs inside this, so
+ * each knows how deep the chain already is (see startRun), however many
+ * files it went through to get there.
+ */
+export const runScope = new AsyncLocalStorage();
+
+/** Runs `fn` over `items`, at most `limit` at a time. */
+export async function eachLimited(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
 
 const fail = (message, code, status = 400) => Object.assign(new Error(message), { code, status });
 
@@ -152,12 +186,39 @@ function scheduleFor(def, enabled, after = new Date()) {
   try { return nextRun(def.trigger.config, after); } catch { return null; }
 }
 
+/** The connections a definition names (its trigger's and its steps'). */
+function connectionsNamed(def) {
+  const names = new Set();
+  const add = (v) => { const n = typeof v === 'string' ? v.trim() : ''; if (n && !n.includes('{{')) names.add(n); };
+  if (def && def.trigger && def.trigger.config) add(def.trigger.config.connection);
+  for (const step of (def && def.steps) || []) add(step.config && step.config.connection);
+  return [...names];
+}
+
+/**
+ * A live automation acts for whoever published it: it may only name
+ * connections that person may use. (A test acts for whoever runs it, and is
+ * checked when its steps run.)
+ */
+async function assertConnectionsUsable(def, orgId, user) {
+  if (user && user.system) return;
+  for (const name of connectionsNamed(def)) {
+    const [row] = await sql`select * from connections where org_id = ${orgId} and (lower(name) = lower(${name}) or id = ${name})`;
+    if (row && !(await canUseConnection(row, user && user.userId))) {
+      throw fail(`The connection "${row.name}" has not been shared with you. The organization's admin can share it under Connections.`, 'NOT_SHARED', 403);
+    }
+  }
+}
+
+const publisherOf = (user) => (user && !user.system && user.userId ? user.userId : null);
+
 /** Makes the draft what triggers fire, and keeps it as a version. */
 export async function publish({ id, user, source = 'ui', commitSha, message }) {
   const loaded = await loadAutomation({ id, user, need: 'edit' });
   if (!loaded) return null;
   const { automation: def, errors } = checkAutomation(loaded.row.data);
   if (errors.length) throw Object.assign(fail(errors[0], 'INVALID', 422), { errors });
+  await assertConnectionsUsable(def, loaded.row.org_id, user);
   const changed = !loaded.row.published || versionOf(loaded.row.published) !== versionOf(def);
   let made = null;
   if (changed) made = await recordVersion({ automationId: loaded.row.id, user, data: def, source, commitSha, message });
@@ -170,6 +231,7 @@ export async function publish({ id, user, source = 'ui', commitSha, message }) {
     update automations
     set published = ${JSON.stringify(def)}::jsonb, enabled = ${enabled}, next_run_at = ${next},
         trigger_state = ${JSON.stringify(freshTriggerState())}::jsonb,
+        published_by = coalesce(${publisherOf(user)}, published_by, user_id),
         active_version_id = coalesce(${made ? made.id : null}, active_version_id), updated_at = now()
     where id = ${loaded.row.id} returning *
   `;
@@ -209,10 +271,12 @@ export async function activateVersion({ id, user, versionId }) {
     where automation_id = ${loaded.row.id} and (id = ${String(versionId)} or number::text = ${String(versionId)})
   `;
   if (!v) throw fail('No such version', 'NO_VERSION', 404);
+  await assertConnectionsUsable(v.data, loaded.row.org_id, user);
   const next = scheduleFor(v.data, loaded.row.enabled);
   const [row] = await sql`
     update automations
     set data = ${JSON.stringify(v.data)}::jsonb, published = ${JSON.stringify(v.data)}::jsonb,
+        published_by = coalesce(${publisherOf(user)}, published_by, user_id),
         active_version_id = ${v.id}, next_run_at = ${next},
         trigger_state = ${JSON.stringify(freshTriggerState())}::jsonb, updated_at = now()
     where id = ${loaded.row.id} returning *
@@ -276,18 +340,30 @@ const rememberHost = (host) => (host && host !== process.env.VERCEL_URL ? host :
  *
  * `mode: 'test'` runs the draft, `'live'` what is published. The definition
  * is copied onto the run, so it finishes on the steps it started with.
+ *
+ * A run started while another is being worked (inside `runScope`) is one
+ * deeper than it; `depth` can only add to that (a webhook says how deep the
+ * caller was). Past LIMITS.callDepth it is refused: automations that start
+ * each other — through a table, a chatbot, a Run automation step or their
+ * own webhook — cannot go round forever.
  */
-export async function startRun({ row, mode = 'live', source = 'manual', input = null, userId = null, host = null }) {
+export async function startRun({ row, mode = 'live', source = 'manual', input = null, userId = null, host = null, depth = 0, parentRunId = null }) {
   const draft = mode === 'test';
   const { automation: def, errors } = checkAutomation(draft ? row.data : row.published);
   if (!draft && !row.published) throw fail('This automation has not been published yet.', 'NOT_PUBLISHED', 409);
   if (errors.length) throw Object.assign(fail(errors[0], 'INVALID', 422), { errors });
+  const scope = runScope.getStore();
+  const deep = Math.max(Math.max(0, Math.floor(Number(depth) || 0)), scope ? scope.depth + 1 : 0);
+  if (deep > LIMITS.callDepth) {
+    throw fail(`Automations are starting each other more than ${LIMITS.callDepth} deep, so this one was not started (they could otherwise run each other forever).`, 'TOO_DEEP', 409);
+  }
+  const parent = parentRunId || (scope ? scope.runId : null);
   const id = crypto.randomUUID();
   await sql`
-    insert into automation_runs (id, automation_id, org_id, mode, source, status, definition, input, state, resume_at, host, started_by)
+    insert into automation_runs (id, automation_id, org_id, mode, source, status, definition, input, state, resume_at, host, started_by, depth, parent_run_id)
     values (${id}, ${row.id}, ${row.org_id}, ${mode}, ${source}, 'queued', ${JSON.stringify(def)}::jsonb,
             ${JSON.stringify(input === undefined ? null : input)}::jsonb, ${JSON.stringify(freshState())}::jsonb,
-            now(), ${rememberHost(host)}, ${userId})
+            now(), ${rememberHost(host)}, ${userId}, ${deep}, ${parent})
   `;
   return id;
 }
@@ -296,84 +372,155 @@ export async function startRun({ row, mode = 'live', source = 'manual', input = 
  * Works a run as far as it will go in this function's time.
  *
  * Only one function works a run at a time: the claim is a single UPDATE that
- * succeeds for a run that is due, or one whose worker stopped answering.
+ * succeeds for a run that is due, or one whose worker stopped answering, and
+ * writes a fresh `claim_id`. Every later write is `where claim_id = ours and
+ * status = 'running'`, so once a person presses Stop (or another worker takes
+ * the run over) nothing this worker does can bring the run back: its saves
+ * touch no row, and the engine ends there.
+ *
+ * `budgetMs` is when to hand over between steps; `hardBudgetMs` (default
+ * budgetMs + 40 s) is what no step, retry or loop may run past — callers set
+ * it below their function's maxDuration.
+ *
  * Returns the run's row afterwards, or null if somebody else has it.
  */
-export async function workRun(runId, { host = null, budgetMs = WORK_BUDGET_MS, depth = 0 } = {}) {
+export async function workRun(runId, { host = null, budgetMs = WORK_BUDGET_MS, hardBudgetMs = null } = {}) {
+  const claim = crypto.randomUUID();
   const [run] = await sql`
-    update automation_runs set status = 'running', heartbeat_at = now()
+    update automation_runs
+    set status = 'running', heartbeat_at = now(), claim_id = ${claim},
+        reclaims = reclaims + (case when status = 'running' then 1 else 0 end)
     where id = ${runId}
       and (status in ('queued', 'waiting')
            or (status = 'running' and heartbeat_at < now() - ${STALE_AFTER}::interval))
     returning *
   `;
   if (!run) return null;
-  const [auto] = await sql`select id, org_id, user_id, secrets, samples from automations where id = ${run.automation_id}`;
+  if ((run.reclaims || 0) > MAX_RECLAIMS) {
+    const [gaveUp] = await sql`
+      update automation_runs
+      set status = 'failed', finished_at = now(), resume_at = null, heartbeat_at = now(),
+          error = ${`The run stopped answering ${run.reclaims} times in a row, so it is not tried again.`}
+      where id = ${run.id} and claim_id = ${claim} and status = 'running' returning *
+    `;
+    return gaveUp || null;
+  }
+  const [auto] = await sql`select id, org_id, user_id, published_by, secrets, samples from automations where id = ${run.automation_id}`;
   if (!auto) return null;
 
   const started = Date.now();
   const secrets = auto.secrets || {};
   const state = run.state && run.state.nodes ? run.state : freshState();
   const samples = {};
+  const depth = Number(run.depth) || 0;
+
+  /* The small parts of the state, which change with every step. The step
+     outputs, which can be large, are written one at a time as they appear. */
+  const small = (st) => JSON.stringify({ nodes: st.nodes || {}, edges: st.edges || {}, wait: st.wait ?? null,
+                                         output: st.output ?? null, inflight: st.inflight ?? null });
+  let savedWhole = false;
+  const saveState = async (st, { stepId = null } = {}) => {
+    let rows;
+    if (!savedWhole) {
+      rows = await sql`
+        update automation_runs set state = ${JSON.stringify(st)}::jsonb, heartbeat_at = now()
+        where id = ${run.id} and claim_id = ${claim} and status = 'running' returning id
+      `;
+      savedWhole = !!(rows && rows.length);
+    } else {
+      const patch = stepId ? JSON.stringify({ [stepId]: st.outputs[stepId] === undefined ? null : st.outputs[stepId] }) : '{}';
+      rows = await sql`
+        update automation_runs
+        set state = jsonb_set(state, '{outputs}', coalesce(state->'outputs', '{}'::jsonb) || ${patch}::jsonb) || ${small(st)}::jsonb,
+            heartbeat_at = now()
+        where id = ${run.id} and claim_id = ${claim} and status = 'running' returning id
+      `;
+    }
+    return !!(rows && rows.length);
+  };
+
   const ctx = {
     runId: run.id,
     mode: run.mode,
     orgId: auto.org_id,
     ownerId: auto.user_id,
+    /* Who the run acts for: whoever is testing it, or whoever published what runs. */
+    actorId: run.mode === 'test' ? (run.started_by || auto.user_id) : (auto.published_by || auto.user_id),
     automationId: auto.id,
+    depth,
     secrets,
     baseUrl: publicBase(host, run.host),
     deadline: started + budgetMs,
-    hardDeadline: started + budgetMs + 40 * 1000,
+    hardDeadline: started + (hardBudgetMs || budgetMs + HARD_MARGIN_MS),
     recordStep: (r) => sql`
       insert into automation_run_steps (run_id, step_id, step_type, step_name, status, port, iteration, input, output, error, ms)
       values (${run.id}, ${r.stepId}, ${r.stepType}, ${r.stepName}, ${r.status}, ${r.port}, ${r.iteration},
               ${JSON.stringify(r.input ?? null)}::jsonb, ${JSON.stringify(r.output ?? null)}::jsonb, ${r.error}, ${r.ms})
     `,
-    saveState: (st) => sql`
-      update automation_runs set state = ${JSON.stringify(st)}::jsonb, heartbeat_at = now() where id = ${run.id}
-    `,
+    saveState,
+    stillRunning: async () => {
+      const rows = await sql`
+        update automation_runs set heartbeat_at = now()
+        where id = ${run.id} and claim_id = ${claim} and status = 'running' returning id
+      `;
+      return !!(rows && rows.length);
+    },
     onSample: run.mode === 'test' ? (id, value) => { samples[id] = value; } : null,
-    callAutomation: (targetId, input) => callAutomation({ targetId, input, orgId: auto.org_id, parent: run, host, depth,
+    callAutomation: (targetId, input) => callAutomation({ targetId, input, orgId: auto.org_id, parent: run, host,
                                                           budgetMs: Math.max(5000, started + budgetMs - Date.now()) }),
   };
 
   let result;
   try {
-    result = await advance({ definition: run.definition, input: run.input, state, ctx });
+    result = await runScope.run({ runId: run.id, depth, orgId: auto.org_id },
+      () => advance({ definition: run.definition, input: run.input, state, ctx }));
   } catch (err) {
     result = { status: 'failed', error: `The run stopped unexpectedly: ${err.message}` };
   }
 
-  const finished = result.status === 'done' || result.status === 'failed';
-  const [after] = await sql`
-    update automation_runs
-    set status = ${result.status},
-        state = ${JSON.stringify(state)}::jsonb,
-        output = ${JSON.stringify(clip(maskSecrets(result.output ?? null, secrets), LIMITS.outputBytes))}::jsonb,
-        error = ${result.error || null},
-        resume_at = ${result.status === 'waiting' ? new Date(result.resumeAt) : result.status === 'queued' ? new Date() : null},
-        finished_at = ${finished ? new Date() : null},
-        heartbeat_at = now()
-    where id = ${run.id} returning *
-  `;
+  let after = null;
+  if (result.status !== 'stopped') {
+    const finished = result.status === 'done' || result.status === 'failed';
+    const output = JSON.stringify(clip(maskSecrets(result.output ?? null, secrets), LIMITS.outputBytes));
+    const resumeAt = result.status === 'waiting' ? new Date(result.resumeAt) : result.status === 'queued' ? new Date() : null;
+    [after] = savedWhole
+      ? await sql`
+          update automation_runs
+          set status = ${result.status}, state = state || ${small(state)}::jsonb, output = ${output}::jsonb,
+              error = ${result.error || null}, resume_at = ${resumeAt}, finished_at = ${finished ? new Date() : null},
+              heartbeat_at = now()
+          where id = ${run.id} and claim_id = ${claim} and status = 'running' returning *
+        `
+      : await sql`
+          update automation_runs
+          set status = ${result.status}, state = ${JSON.stringify(state)}::jsonb, output = ${output}::jsonb,
+              error = ${result.error || null}, resume_at = ${resumeAt}, finished_at = ${finished ? new Date() : null},
+              heartbeat_at = now()
+          where id = ${run.id} and claim_id = ${claim} and status = 'running' returning *
+        `;
+  }
+  /* Stopped meanwhile (or taken over): what the run is now, untouched. */
+  if (!after) [after] = await sql`select * from automation_runs where id = ${run.id}`;
 
   if (run.mode === 'test' && Object.keys(samples).length) {
     const merged = { ...(auto.samples || {}) };
     for (const [id, value] of Object.entries(samples)) merged[id] = clip(maskSecrets(value, secrets), LIMITS.sampleBytes);
     await sql`update automations set samples = ${JSON.stringify(merged)}::jsonb where id = ${auto.id}`.catch(() => {});
   }
-  return after;
+  return after || null;
 }
 
 /** A Run automation step: the other automation's published steps, run in place. */
-async function callAutomation({ targetId, input, orgId, parent, host, depth, budgetMs }) {
-  if (depth >= LIMITS.callDepth) throw new Error(`automations are calling each other more than ${LIMITS.callDepth} deep`);
+async function callAutomation({ targetId, input, orgId, parent, host, budgetMs }) {
+  if ((Number(parent && parent.depth) || 0) >= LIMITS.callDepth) {
+    throw new Error(`automations are calling each other more than ${LIMITS.callDepth} deep`);
+  }
   const [row] = await sql`select * from automations where id = ${targetId} and org_id = ${orgId}`;
   if (!row) throw new Error('the automation to run no longer exists');
   if (!row.published) throw new Error(`"${row.data.name}" has not been published yet`);
-  const childId = await startRun({ row, mode: 'live', source: 'call', input, userId: parent.started_by, host: host || parent.host });
-  const child = await workRun(childId, { host, budgetMs, depth: depth + 1 });
+  const childId = await startRun({ row, mode: 'live', source: 'call', input, userId: parent.started_by, host: host || parent.host,
+                                   parentRunId: parent.id || null });
+  const child = await workRun(childId, { host, budgetMs });
   if (!child) throw new Error(`"${row.data.name}" could not be started`);
   if (child.status === 'failed') throw new Error(`"${row.data.name}" failed — ${child.error}`);
   if (child.status !== 'done') {
@@ -416,9 +563,10 @@ export async function testStep({ id, user, stepId, host }) {
     } else {
       result = await runStep(step, filled, {
         secrets, baseUrl: publicBase(host), mode: 'test', single: true,
-        orgId: loaded.row.org_id, ownerId: loaded.row.user_id, automationId: loaded.row.id,
+        orgId: loaded.row.org_id, ownerId: loaded.row.user_id, actorId: user.userId, automationId: loaded.row.id,
+        depth: 0, hardDeadline: Date.now() + 120 * 1000,
         callAutomation: (targetId, input) => callAutomation({
-          targetId, input, orgId: loaded.row.org_id, parent: { started_by: user.userId, host }, host, depth: 0, budgetMs: 60000 }),
+          targetId, input, orgId: loaded.row.org_id, parent: { started_by: user.userId, host, depth: 0 }, host, budgetMs: 60000 }),
       });
     }
   } catch (err) {
@@ -436,7 +584,7 @@ export async function testStep({ id, user, stepId, host }) {
     port: result.port,
     input: maskSecrets(filled ?? null, secrets),
     output: clip(maskSecrets(result.output ?? null, secrets), LIMITS.storedBytes),
-    printed: result.printed || '',
+    printed: String(maskSecrets(result.printed || '', secrets) || ''),
     error: error ? String(maskSecrets(error, secrets)) : null,
     ms: Date.now() - started,
   };
@@ -495,48 +643,66 @@ export async function getSamples({ id, user }) {
  * Fires every schedule that has come due, and returns the runs it started.
  *
  * Each due automation is claimed by moving its next firing forward in the
- * same statement that reads it, so two overlapping ticks cannot both fire it.
- * A schedule that fell behind fires once, not once per missed slot.
+ * same statement that checks it is still due, so two overlapping ticks cannot
+ * both fire it. A schedule that fell behind fires once, not once per missed
+ * slot; an interval counts from the slot it was due at, so it does not drift.
+ * One query reads the due automations with the host each last ran on, and
+ * they are fired side by side.
  */
 export async function fireDueSchedules(now = new Date()) {
   const due = await sql`
-    select id from automations
-    where enabled and published is not null and next_run_at is not null and next_run_at <= ${now}
+    select a.*, h.host as last_host
+    from automations a
+    left join lateral (
+      select host from automation_runs r
+      where r.automation_id = a.id and r.host is not null order by r.started_at desc limit 1
+    ) h on true
+    where a.enabled and a.published is not null and a.next_run_at is not null and a.next_run_at <= ${now}
+    order by a.next_run_at
     limit 50
   `;
   const started = [];
-  for (const { id } of due) {
-    const [row] = await sql`select * from automations where id = ${id}`;
-    if (!row) continue;
+  await eachLimited(due || [], 10, async (row) => {
     const scheduledFor = row.next_run_at;
-    const next = scheduleFor(row.published, true, now);
+    const trigger = (row.published && row.published.trigger) || {};
+    let next = null;
+    try { next = trigger.type === 'schedule' ? nextRunAfter(trigger.config, scheduledFor, now) : null; } catch { next = null; }
     const [claimed] = await sql`
       update automations set next_run_at = ${next}
-      where id = ${id} and next_run_at = ${scheduledFor} returning id
+      where id = ${row.id} and next_run_at = ${scheduledFor} returning id
     `;
-    if (!claimed) continue;
+    if (!claimed) return;
     try {
-      const [last] = await sql`
-        select host from automation_runs where automation_id = ${id} and host is not null order by started_at desc limit 1
-      `;
       started.push(await startRun({
-        row, mode: 'live', source: 'schedule', host: last ? last.host : null,
+        row, mode: 'live', source: 'schedule', host: row.last_host || null,
         input: { scheduledFor: new Date(scheduledFor).toISOString(), firedAt: now.toISOString() },
       }));
     } catch (err) {
-      console.error(`[automations] schedule for ${id} did not start:`, err.message);
+      console.error(`[automations] schedule for ${row.id} did not start:`, err.message);
     }
-  }
+  });
   return started;
 }
 
-/** Runs that are due: queued, done waiting, or left by a function that died. */
+/**
+ * Runs that are due: queued, done waiting, or left by a function that died.
+ *
+ * Taken round-robin across organizations — each one's oldest first, at most
+ * PER_ORG_PER_TICK each — so one organization's pile of runs cannot keep
+ * everyone else's waiting.
+ */
 export async function dueRuns(limit = 20) {
   const rows = await sql`
-    select id from automation_runs
-    where (status in ('queued', 'waiting') and resume_at <= now())
-       or (status = 'running' and heartbeat_at < now() - ${STALE_AFTER}::interval)
-    order by resume_at nulls first limit ${limit}
+    select id from (
+      select id, resume_at,
+             row_number() over (partition by org_id order by resume_at nulls first) as turn
+      from automation_runs
+      where (status in ('queued', 'waiting') and resume_at <= now())
+         or (status = 'running' and heartbeat_at < now() - ${STALE_AFTER}::interval)
+    ) due
+    where turn <= ${PER_ORG_PER_TICK}
+    order by turn, resume_at nulls first
+    limit ${limit}
   `;
   return rows.map(r => r.id);
 }

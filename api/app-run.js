@@ -2,12 +2,33 @@ import { sql } from './_db.js';
 import { loadAppById, mayOpen } from './_apps.js';
 import { linkId, aiOf } from './_appFiles.js';
 import { getTable, listRows, addRow, updateRow, deleteRow } from './_tables.js';
-import { runAgentTurn, saveSession } from './_agentRunner.js';
-import { resolveAgentApiConfig, getUserSettings, resolveApiConfig, configUsable } from './_settings.js';
+import { runAgentTurn, saveSession, claimSession, publicHistory, validSessionId, appBaseUrl } from './_agentRunner.js';
+import { getUserSettings, resolveApiConfig, configUsable } from './_settings.js';
 import { llmFetch, replyText, isStopped, stopMessage } from './_llm.js';
 import { branchForSession, loadForConversation } from './_branches.js';
 import { logError } from './_errorLog.js';
 import { startRun, workRun } from './_automations.js';
+import { rateLimit, clientIp } from './_throttle.js';
+
+/* vercel.json gives this function 90 seconds. An automation it runs must be
+   done, or handed over, with time left to answer. */
+const MAX_DURATION_MS = 90 * 1000;
+const ANSWER_MARGIN_MS = 8 * 1000;
+const HARD_BUDGET_MS = 80 * 1000;    /* no step, retry or loop runs past this */
+const HANDOVER_AT_MS = 50 * 1000;    /* steps hand the run over to the cron after this */
+
+/* What one visitor may set off that costs the organization a model call. */
+const AI_PER_IP_PER_MINUTE = 20;
+const SEND_PER_IP_PER_MINUTE = 20;
+const SEND_PER_SESSION_PER_MINUTE = 10;
+
+async function overLimit(res, checks) {
+  const ok = await Promise.all(checks);
+  if (!ok.includes(false)) return false;
+  res.setHeader('Retry-After', '60');
+  res.status(429).json({ error: 'Too many requests. Wait a minute and try again.' });
+  return true;
+}
 
 /**
  * What a running app may ask the platform for — the other end of `legs`.
@@ -21,6 +42,7 @@ import { startRun, workRun } from './_automations.js';
  * with exactly what its owner linked to it — nothing else in the account.
  */
 export default async function handler(req, res) {
+  const started = Date.now();
   /* App pages are sandboxed, so to the browser this is a cross-origin call. */
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -42,6 +64,7 @@ export default async function handler(req, res) {
     if (op === 'ai') {
       const ai = aiOf(app.ai);
       if (!ai) return res.status(403).json({ error: 'This app may not call a model: add "ai": true to its app.json, or switch AI on in its Links.' });
+      if (await overLimit(res, [rateLimit(`app-ai:${app.id}:${clientIp(req)}`, AI_PER_IP_PER_MINUTE, 60)])) return;
       const msgs = [];
       if (typeof body.system === 'string' && body.system.trim()) msgs.push({ role: 'system', content: body.system.slice(0, 20000) });
       if (Array.isArray(body.messages)) {
@@ -58,7 +81,7 @@ export default async function handler(req, res) {
       try {
         const { ok, status, data } = await llmFetch({
           cfg, body: { messages: msgs, max_tokens: maxTokens },
-          meta: { orgId, ownerId, source: 'app', itemType: 'app', itemId: app.id },
+          meta: { orgId, ownerId, source: 'app', itemType: 'app', itemId: app.id, public: true },
         });
         if (!ok) return res.status(status >= 400 ? status : 502).json({ error: (data.error && data.error.message) || 'The model did not answer.' });
         const text = replyText(data);
@@ -88,32 +111,44 @@ export default async function handler(req, res) {
     if (op === 'agent.send') {
       const agentId = linkId((app.agents || {})[name]);
       if (!agentId) return res.status(404).json({ error: `This app has no AI Chatbot linked as "${name}"` });
-      const { messages, sessionId } = body;
-      if (!Array.isArray(messages) || !messages.length) {
-        return res.status(400).json({ error: 'messages array required' });
+      const history = publicHistory(body.messages);
+      if (history.error) return res.status(400).json({ error: history.error });
+      const sessionId = body.sessionId || null;
+      if (sessionId && !validSessionId(sessionId)) {
+        return res.status(400).json({ error: 'sessionId must be up to 120 letters, digits or _ . : + -, and may not start with wa_ or wal_' });
       }
+      if (await overLimit(res, [
+        rateLimit(`app-send-ip:${clientIp(req)}`, SEND_PER_IP_PER_MINUTE, 60),
+        sessionId ? rateLimit(`app-send-session:${agentId}:${sessionId}`, SEND_PER_SESSION_PER_MINUTE, 60) : true,
+      ])) return;
       const [row] = await sql`select data, user_id from agents where id = ${agentId} and org_id = ${orgId}`;
       if (!row) return res.status(404).json({ error: `The AI Chatbot linked as "${name}" no longer exists` });
 
-      const branchId = await branchForSession(agentId, sessionId);
-      const chosen = await loadForConversation(agentId, branchId);
-      const agent = { ...chosen.agent, apiConfig: await resolveAgentApiConfig(row, chosen.agent) };
-      const proto = req.headers['x-forwarded-proto'] || 'https';
-      const baseUrl = `${proto}://${req.headers.host}`;
+      /* A conversation id is only this chatbot's to write to (see claimSession). */
+      const [claim, settings] = await Promise.all([
+        claimSession(sessionId, agentId, 'app'),
+        row.user_id ? getUserSettings(row.user_id) : null,
+      ]);
+      if (!claim.ok) return res.status(409).json({ error: 'This conversation cannot be continued here. Start a new one.' });
+      const branchId = claim.exists ? claim.branchId : await branchForSession(agentId, null);
+      const chosen = branchId ? await loadForConversation(agentId, branchId) : { agent: row.data, branchId: null };
+      const agent = { ...chosen.agent, apiConfig: resolveApiConfig(settings, { model: chosen.agent && chosen.agent.model }) };
       try {
-        const { text, safeMessages } = await runAgentTurn({ agent, agentId, messages, baseUrl });
-        await saveSession(sessionId, agentId, [...safeMessages, { role: 'assistant', content: text }],
-                          'app', chosen.branchId);
+        const { text, safeMessages } = await runAgentTurn({ agent, agentId, messages: history.messages, baseUrl: appBaseUrl(req) });
+        if (sessionId) {
+          await saveSession(sessionId, agentId, [...safeMessages, { role: 'assistant', content: text }], 'app', chosen.branchId);
+        }
         return res.json({ content: text });
       } catch (err) {
         // Out of money or over its limit: the visitor reads the stop message, as on the widget.
         if (isStopped(err)) {
-          const last = [...messages].reverse().find((m) => m && m.role === 'user');
+          const last = history.messages[history.messages.length - 1];
           return res.json({ content: await stopMessage(last && last.content), stopped: true });
         }
-        await logError({ agentId, source: 'app', message: err.message, context: { appId: app.id } });
-        return res.status(err.code === 'NO_API_KEY' ? 503 : err.code === 'ORG_BALANCE' || err.code === 'BUDGET' ? 402 : 500)
-          .json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
+        /* What went wrong is the owner's to read in the error log, not the visitor's. */
+        await logError({ agentId, source: 'app', message: err.message, context: { appId: app.id, code: err.code || null } });
+        return res.status(err.code === 'NO_API_KEY' || err.status === 503 ? 503 : 500)
+          .json({ error: 'The AI Chatbot could not answer. Please try again.', ...(err.code === 'NO_API_KEY' ? { code: err.code } : {}) });
       }
     }
 
@@ -130,7 +165,8 @@ export default async function handler(req, res) {
         return res.json({ name: table.name, description: table.description, columns: table.columns, readonly });
       }
       if (op === 'table.rows') {
-        const { rows, total } = await listRows(tableId, { q: body.q || '', limit: body.limit, offset: body.offset });
+        if (body.q !== undefined && body.q !== null && typeof body.q !== 'string') return res.status(400).json({ error: 'q must be text' });
+        const { rows, total } = await listRows(tableId, { q: (body.q || '').slice(0, 500), limit: body.limit, offset: body.offset });
         return res.json({ rows, total, columns: table.columns });
       }
       if (readonly) return res.status(403).json({ error: `"${name}" is linked read-only` });
@@ -155,8 +191,13 @@ export default async function handler(req, res) {
         return res.status(409).json({ error: `The automation linked as "${name}" is not live — publish it and switch it on` });
       }
       const input = body.input && typeof body.input === 'object' && !Array.isArray(body.input) ? body.input : {};
-      const runId = await startRun({ row: auto, mode: 'live', source: 'app', input, host: req.headers.host });
-      const run = await workRun(runId, { host: req.headers.host, budgetMs: 70 * 1000 });
+      const host = new URL(appBaseUrl(req)).host;
+      const runId = await startRun({ row: auto, mode: 'live', source: 'app', input, host });
+      /* Nothing may run past 80 seconds, nor past what is left of this
+         function's 90 less the time to answer; steps hand over at 50. */
+      const left = MAX_DURATION_MS - (Date.now() - started) - ANSWER_MARGIN_MS;
+      const hardBudgetMs = Math.max(10_000, Math.min(HARD_BUDGET_MS, left));
+      const run = await workRun(runId, { host, budgetMs: Math.max(5000, Math.min(HANDOVER_AT_MS, hardBudgetMs - 30_000)), hardBudgetMs });
       if (run && run.status === 'failed') {
         await logError({ agentId: null, source: 'app', message: run.error, context: { appId: app.id, automationId: id } });
         /* What went wrong inside is the owner's to read in the run log, not the visitor's. */
@@ -167,6 +208,9 @@ export default async function handler(req, res) {
 
     return res.status(400).json({ error: `Unknown operation "${op}"` });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    /* The visitor of a public app reads nothing of the platform's insides. */
+    console.error(`[app-run] app=${app.id} op=${op} error:`, err.message);
+    await logError({ agentId: null, source: 'app', message: `${op}: ${err.message}`, context: { appId: app.id } });
+    return res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 }

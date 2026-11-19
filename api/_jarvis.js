@@ -54,10 +54,11 @@ async function recordUserMessage(personId, content) {
 async function loadContext(personId) {
   const [history, memory, reminders] = await Promise.all([
     sql`select role, content from jarvis_messages where person_id = ${personId} order by id desc limit ${HISTORY_MESSAGES}`,
-    sql`select id, fact from jarvis_memory where person_id = ${personId} order by id limit ${MAX_FACTS}`,
+    // Newest first, then back in order: past MAX_FACTS the oldest drop out of view, never the new ones.
+    sql`select id, fact from jarvis_memory where person_id = ${personId} order by id desc limit ${MAX_FACTS}`,
     sql`select id, text, due_at from jarvis_reminders where person_id = ${personId} and sent_at is null order by due_at limit 50`,
   ]);
-  return { history: history.reverse(), memory, reminders };
+  return { history: history.reverse(), memory: memory.reverse(), reminders };
 }
 
 function localTime(date, tz) {
@@ -174,6 +175,10 @@ async function runTool(personId, name, input) {
   if (name === 'remember') {
     const fact = String(args.fact || '').trim().slice(0, 500);
     if (!fact) return { error: 'The fact is empty.' };
+    /* A fact past what fits in the prompt would be remembered and never seen
+       again: say so, so they can choose what to forget first. */
+    const [{ n }] = await sql`select count(*)::int as n from jarvis_memory where person_id = ${personId}`;
+    if (n >= MAX_FACTS) return { error: `Memory is full (${MAX_FACTS} facts). Ask them which facts to forget first, forget those, then remember this.` };
     const [row] = await sql`insert into jarvis_memory (person_id, fact) values (${personId}, ${fact}) returning id`;
     return { ok: `Remembered as [${row.id}].` };
   }

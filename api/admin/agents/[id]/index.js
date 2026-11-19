@@ -1,15 +1,18 @@
 import { sql } from '../../../_db.js';
-import { checkAdmin } from '../../../_auth.js';
+import { requireAdmin } from '../../../_auth.js';
 import { findPhoneNumberConflict, PHONE_CONFLICT_MESSAGE } from '../../../_whatsappClaim.js';
 
 export default async function handler(req, res) {
-  const admin = checkAdmin(req, res);
+  /* Admin as the database says now, not as a week-old token says. */
+  const admin = await requireAdmin(req, res);
   if (!admin) return;
 
   const { id } = req.query;
 
   if (req.method === 'PUT') {
-    const agent = req.body;
+    /* Stored under this row's id whatever the body says: the interface builds
+       request paths from it. */
+    const agent = { ...(req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}), id };
 
     if (await findPhoneNumberConflict(agent?.whatsapp?.phoneNumberId, id)) {
       return res.status(409).json({ error: PHONE_CONFLICT_MESSAGE });

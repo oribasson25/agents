@@ -1,10 +1,10 @@
-import { checkAuth } from '../../_auth.js';
+import { requireSession } from '../../_auth.js';
 import { getTable, addRow, updateRow, deleteRow } from '../../_tables.js';
 import { accessTo, allows, refuse } from '../../_access.js';
 
 /** Rows, from the Tables screen. An AI Chatbot reaches them another way. */
 export default async function handler(req, res) {
-  const user = checkAuth(req, res);
+  const user = await requireSession(req, res);
   if (!user) return;
   const { id } = req.query;
 

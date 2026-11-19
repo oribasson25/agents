@@ -1,11 +1,11 @@
-import { checkAuth } from '../_auth.js';
+import { requireSession } from '../_auth.js';
 import { findPhoneNumberConflict, PHONE_CONFLICT_MESSAGE } from '../_whatsappClaim.js';
 
 const GRAPH = 'https://graph.facebook.com/v20.0';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
-  const user = checkAuth(req, res);
+  const user = await requireSession(req, res);
   if (!user) return;
 
   const { phoneNumberId, accessToken, agentId } = req.body || {};

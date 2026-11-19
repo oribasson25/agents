@@ -9,6 +9,12 @@
  * Nothing here ever returns a token to a screen: `listConnections` gives the
  * name, the kind and the account, and `useConnection` — for the server's own
  * use when a step runs — is the only way to the rest.
+ *
+ * Who may use one: whoever added it, the organization's admins, and — once
+ * the admin shares it (`shared`) — everyone who builds automations in the
+ * organization. A connection is somebody's mailbox or number, so a new one
+ * starts unshared; the ones that existed before sharing did start shared, so
+ * nothing that ran kept working stopped.
  */
 import crypto from 'crypto';
 import { sql } from './_db.js';
@@ -34,32 +40,101 @@ export function seal(value) {
   return `v1.${iv.toString('base64url')}.${cipher.getAuthTag().toString('base64url')}.${body.toString('base64url')}`;
 }
 
-export function unseal(sealed) {
+function open(sealed, message) {
   const [v, iv, tag, body] = String(sealed || '').split('.');
-  if (v !== 'v1' || !iv || !tag || !body) throw fail('This connection\'s stored permission cannot be read. Connect it again.', 'UNREADABLE');
+  if (v !== 'v1' || !iv || !tag || !body) throw fail(message, 'UNREADABLE');
   try {
-    const decipher = crypto.createDecipheriv('aes-256-gcm', key(), Buffer.from(iv, 'base64url'));
-    decipher.setAuthTag(Buffer.from(tag, 'base64url'));
+    const tagBytes = Buffer.from(tag, 'base64url');
+    if (tagBytes.length !== 16) throw new Error('short tag');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key(), Buffer.from(iv, 'base64url'), { authTagLength: 16 });
+    decipher.setAuthTag(tagBytes);
     return JSON.parse(Buffer.concat([decipher.update(Buffer.from(body, 'base64url')), decipher.final()]).toString('utf8'));
   } catch {
-    throw fail('This connection\'s stored permission cannot be read. Connect it again.', 'UNREADABLE');
+    throw fail(message, 'UNREADABLE');
   }
 }
 
-/* A state value for an OAuth round trip: signed, and good for ten minutes. */
+export function unseal(sealed) {
+  return open(sealed, 'This connection\'s stored permission cannot be read. Connect it again.');
+}
+
+/**
+ * The same encryption for anything else the platform keeps that would hand
+ * over an account if the database leaked (WhatsApp session keys, say).
+ * `encryptSecret(value)` takes any JSON value and gives a string;
+ * `decryptSecret(text)` gives the value back, or throws (code UNREADABLE)
+ * when the text was not sealed here or was changed. `isSealed` tells one
+ * from plain text written before encryption.
+ */
+export const encryptSecret = (value) => seal(value);
+export const decryptSecret = (sealed) => open(sealed, 'A stored secret cannot be read.');
+export const isSealed = (value) => typeof value === 'string' && /^v1\.[\w-]+\.[\w-]+\.[\w-]+$/.test(value);
+
+/* ─────────────────── OAuth round trips ─────────────────── */
+
+/*
+ * A state value for an OAuth round trip: signed, good for ten minutes, and
+ * for one purpose ('connection' for an organization's connection,
+ * 'gmail-agent' for one chatbot's Gmail) — so a state made for one flow is
+ * never taken by the other.
+ *
+ * It is also bound to the browser that started it: starting puts a random
+ * nonce in an HttpOnly cookie and its hash in the state, and the callback
+ * takes the state only together with that cookie. A consent link someone
+ * else started (to land your mailbox in their organization) fails in your
+ * browser.
+ */
 const stateKey = () => crypto.createHash('sha256').update(`${jwtSecret()}:connection-state`).digest();
-export function signState(data) {
-  const payload = Buffer.from(JSON.stringify({ ...data, connection: true, exp: Date.now() + 10 * 60 * 1000 })).toString('base64url');
+const STATE_MINUTES = 10;
+
+export function signState(data, purpose = 'connection') {
+  const payload = Buffer.from(JSON.stringify({ ...data, purpose, connection: purpose === 'connection',
+                                               exp: Date.now() + STATE_MINUTES * 60 * 1000 })).toString('base64url');
   return `${payload}.${crypto.createHmac('sha256', stateKey()).update(payload).digest('base64url')}`;
 }
-export function readState(state) {
+export function readState(state, purpose = 'connection') {
   try {
     const [payload, sig] = String(state || '').split('.');
+    if (!payload || !sig) return null;
     const want = crypto.createHmac('sha256', stateKey()).update(payload).digest('base64url');
-    if (!sig || sig.length !== want.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want))) return null;
+    if (sig.length !== want.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want))) return null;
     const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
-    return data.connection && data.exp > Date.now() ? data : null;
+    return data && data.purpose === purpose && typeof data.exp === 'number' && data.exp > Date.now() ? data : null;
   } catch { return null; }
+}
+
+const sha = (text) => crypto.createHash('sha256').update(String(text)).digest('base64url');
+const cookieName = (id) => `oauth_${id}`;
+const cookieAttrs = (maxAge) => `HttpOnly; Secure; SameSite=Lax; Path=/api; Max-Age=${maxAge}`;
+
+/** A fresh nonce for one sign-in: `state` fields to sign, and the Set-Cookie value. */
+export function startNonce() {
+  const nid = crypto.randomBytes(6).toString('hex');
+  const nonce = crypto.randomBytes(24).toString('base64url');
+  return { state: { nid, nh: sha(nonce) }, cookie: `${cookieName(nid)}=${nonce}; ${cookieAttrs(STATE_MINUTES * 60)}` };
+}
+
+function readCookie(req, name) {
+  for (const part of String((req && req.headers && req.headers.cookie) || '').split(';')) {
+    const at = part.indexOf('=');
+    if (at > 0 && part.slice(0, at).trim() === name) return part.slice(at + 1).trim();
+  }
+  return '';
+}
+
+/** Did this browser start the sign-in this state belongs to? */
+export function nonceMatches(req, data) {
+  if (!data || !/^[0-9a-f]{12}$/.test(String(data.nid || '')) || !data.nh) return false;
+  const nonce = readCookie(req, cookieName(data.nid));
+  if (!nonce) return false;
+  const got = Buffer.from(sha(nonce)), want = Buffer.from(String(data.nh));
+  return got.length === want.length && crypto.timingSafeEqual(got, want);
+}
+
+/** The Set-Cookie value that removes a sign-in's nonce. */
+export function clearNonce(data) {
+  const nid = data && /^[0-9a-f]{12}$/.test(String(data.nid || '')) ? data.nid : '0';
+  return `${cookieName(nid)}=; ${cookieAttrs(0)}`;
 }
 
 /* ─────────────────── the list ─────────────────── */
@@ -67,12 +142,27 @@ export function readState(state) {
 const cleanName = (name) => String(name || '').trim().replace(/\s+/g, ' ').slice(0, 60);
 
 const shape = (r) => ({ id: r.id, kind: r.kind, name: r.name, account: r.account, problem: r.problem || null,
+                        shared: r.shared !== false, createdBy: r.created_by || null,
                         createdAt: r.created_at, ...(r.kind === 'whatsapp' ? { numberId: (r.data || {}).numberId } : {}) });
 
-export async function listConnections(orgId) {
+/**
+ * The organization's connections. Given `me`, only the ones that person may
+ * use (an admin may use them all).
+ */
+export async function listConnections(orgId, { me = null } = {}) {
   if (!orgId) return [];
   const rows = await sql`select * from connections where org_id = ${orgId} order by kind, lower(name)`;
-  return rows.map(shape);
+  const mine = me && !me.isPlatformAdmin && me.orgRole !== 'admin'
+    ? rows.filter(r => r.shared !== false || (r.created_by && r.created_by === me.userId))
+    : rows;
+  return mine.map(shape);
+}
+
+/** Shares a connection with everyone who builds automations in the organization, or stops sharing it. */
+export async function setConnectionShared({ orgId, id, shared }) {
+  const [row] = await sql`update connections set shared = ${!!shared}, updated_at = now() where id = ${id} and org_id = ${orgId} returning id, shared`;
+  if (!row) throw fail('No such connection.', 'NOT_FOUND', 404);
+  return { id: row.id, shared: !!row.shared };
 }
 
 async function nameFree(orgId, name, exceptId = null) {
@@ -92,8 +182,8 @@ export async function saveOAuthConnection({ orgId, userId, kind, name, account, 
   }
   const id = crypto.randomUUID();
   await sql`
-    insert into connections (id, org_id, kind, name, account, data, created_by)
-    values (${id}, ${orgId}, ${kind}, ${clean}, ${account}, ${JSON.stringify(data)}::jsonb, ${userId || null})
+    insert into connections (id, org_id, kind, name, account, data, created_by, shared)
+    values (${id}, ${orgId}, ${kind}, ${clean}, ${account}, ${JSON.stringify(data)}::jsonb, ${userId || null}, false)
   `;
   return id;
 }
@@ -111,9 +201,9 @@ export async function createWhatsAppConnection({ orgId, userId, name, numberId }
   if (dup) throw fail('That number is already connected for automations.', 'ALREADY', 409);
   const id = crypto.randomUUID();
   await sql`
-    insert into connections (id, org_id, kind, name, account, data, created_by)
+    insert into connections (id, org_id, kind, name, account, data, created_by, shared)
     values (${id}, ${orgId}, 'whatsapp', ${clean}, ${number.phone ? `+${number.phone}` : (number.label || '')},
-            ${JSON.stringify({ numberId: number.id })}::jsonb, ${userId || null})
+            ${JSON.stringify({ numberId: number.id })}::jsonb, ${userId || null}, false)
   `;
   return id;
 }
@@ -136,18 +226,37 @@ export async function deleteConnection({ orgId, id }) {
 /* ─────────────────── using one ─────────────────── */
 
 /**
+ * May `userId` act with this connection? Whoever added it, the organization's
+ * admins (and the platform admin), or anyone once it is shared.
+ */
+export async function canUseConnection(row, userId) {
+  if (!row) return false;
+  if (row.shared !== false) return true;
+  if (!userId) return false;
+  if (row.created_by && row.created_by === userId) return true;
+  const [u] = await sql`select is_admin, org_id, org_role from users where id = ${userId}`;
+  return !!u && (!!u.is_admin || (u.org_id === row.org_id && u.org_role === 'admin'));
+}
+
+/**
  * The connection an automation's step named, for the server to act with.
  *
  * `kinds` is what the step can work with; a name that is some other kind of
- * connection is refused with words that say so.
+ * connection is refused with words that say so. `userId` is who the step
+ * acts for (whoever published the automation, or whoever is testing it):
+ * a connection they may not use is refused. Every step passes one; leaving
+ * it out (undefined) is only for callers that have already checked.
  */
-export async function useConnection({ orgId, name, kinds }) {
+export async function useConnection({ orgId, name, kinds, userId }) {
   const wanted = String(name || '').trim();
   if (!wanted) throw fail('pick a connection', 'NO_CONNECTION');
   const [row] = await sql`select * from connections where org_id = ${orgId} and (lower(name) = lower(${wanted}) or id = ${wanted})`;
   if (!row) throw fail(`there is no connection called "${wanted}" — add it under Connections`, 'NO_CONNECTION');
   if (kinds && !kinds.includes(row.kind)) {
     throw fail(`"${row.name}" is a ${KINDS[row.kind] ? KINDS[row.kind].label : row.kind} connection, which this step cannot use`, 'WRONG_KIND');
+  }
+  if (userId !== undefined && !(await canUseConnection(row, userId))) {
+    throw fail(`the connection "${row.name}" has not been shared with whoever runs this automation — the organization's admin can share it under Connections`, 'NOT_SHARED');
   }
   return row;
 }
@@ -188,6 +297,7 @@ export async function accessToken(row, { fetchImpl = fetch } = {}) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: client.id || '', client_secret: client.secret || '',
                                 refresh_token: tokens.refresh_token, grant_type: 'refresh_token' }),
+    signal: AbortSignal.timeout(20000),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -257,12 +367,13 @@ export async function finishOAuth({ provider, code, appUrl, state, fetchImpl = f
       redirect_uri: isGoogle ? `${appUrl}/api/gmail/callback` : `${appUrl}/api/connections/callback`,
       ...(isGoogle ? {} : { scope: MICROSOFT_SCOPES }),
     }),
+    signal: AbortSignal.timeout(20000),
   });
   const tokens = await res.json().catch(() => ({}));
   if (!res.ok) throw fail(tokens.error_description || tokens.error || 'The provider did not accept the sign-in.', 'EXCHANGE_FAILED');
 
   const who = await fetchImpl(isGoogle ? 'https://www.googleapis.com/oauth2/v2/userinfo' : 'https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName',
-                              { headers: { Authorization: `Bearer ${tokens.access_token}` } });
+                              { headers: { Authorization: `Bearer ${tokens.access_token}` }, signal: AbortSignal.timeout(20000) });
   const profile = await who.json().catch(() => ({}));
   const account = (isGoogle ? profile.email : (profile.mail || profile.userPrincipalName)) || '';
 

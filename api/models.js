@@ -1,5 +1,5 @@
 import { sql } from './_db.js';
-import { checkAuth } from './_auth.js';
+import { requireSession } from './_auth.js';
 import { getUserSettings } from './_settings.js';
 import { openRouterModels } from './_llm.js';
 
@@ -14,7 +14,7 @@ import { openRouterModels } from './_llm.js';
  * price with its markup. The markup itself is not shown.
  */
 export default async function handler(req, res) {
-  const user = checkAuth(req, res);
+  const user = await requireSession(req, res);
   if (!user) return;
   if (req.method !== 'GET') return res.status(405).end();
   try {

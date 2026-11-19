@@ -23,16 +23,18 @@ export function slugFrom(name) {
 export async function listApps(user) {
   const me = await member(user);
   if (!me) return [];
+  /* The list never carries the files, not even from the database: an
+     organization's apps can be megabytes, and only their count is shown. */
   const rows = await sql`
-    select id, org_id, data, updated_at,
+    select id, org_id, data - 'files' as data, updated_at,
+           (select count(*)::int from jsonb_object_keys(coalesce(apps.data->'files', '{}'::jsonb))) as file_count,
            (select count(*)::int from app_versions v where v.app_id = apps.id) as versions
     from apps where org_id = ${me.orgId}
     order by updated_at desc
   `;
-  /* The list never carries the files: an organization's apps can be megabytes. */
   return (await visible(me, 'app', rows)).map(({ row: r, level }) => {
-    const { files, ...rest } = r.data;
-    return { ...rest, fileCount: Object.keys(files || {}).length, versions: r.versions,
+    const { files, ...rest } = r.data || {};
+    return { ...rest, fileCount: r.file_count ?? Object.keys(files || {}).length, versions: r.versions,
              updatedAt: r.updated_at, _access: level };
   });
 }
@@ -57,9 +59,39 @@ export async function loadAppBySlug(slug) {
   return row ? { app: row.data, ownerId: row.user_id, orgId: row.org_id } : null;
 }
 
+/**
+ * The app as its runtime needs it (app-run): everything but its files, which
+ * every legs.* call used to pull from the database to read one link.
+ */
 export async function loadAppById(id) {
-  const [row] = await sql`select data, user_id, org_id from apps where id = ${id}`;
+  const [row] = await sql`select data - 'files' as data, user_id, org_id from apps where id = ${id}`;
   return row ? { app: row.data, ownerId: row.user_id, orgId: row.org_id } : null;
+}
+
+/**
+ * What serving one file needs to decide, without the files: the app's
+ * settings, and what its version is (for the ETag).
+ */
+export async function loadAppMetaBySlug(slug) {
+  const [row] = await sql`
+    select data - 'files' as data, id, user_id, org_id, active_version_id, updated_at
+    from apps where slug = ${slug}
+  `;
+  return row ? { app: row.data, id: row.id, ownerId: row.user_id, orgId: row.org_id,
+                 versionId: row.active_version_id, updatedAt: row.updated_at } : null;
+}
+
+/** One file of an app (and the folder's index.html, for an address that names a folder). */
+export async function loadAppFile(appId, path) {
+  const folderIndex = `${String(path).replace(/\/$/, '')}/index.html`;
+  const [row] = await sql`
+    select data->'files'->>${path} as content, data->'files'->>${folderIndex} as folder_index
+    from apps where id = ${appId}
+  `;
+  if (!row) return null;
+  if (row.content !== null && row.content !== undefined) return { path, content: row.content };
+  if (row.folder_index !== null && row.folder_index !== undefined) return { path: folderIndex, content: row.folder_index };
+  return null;
 }
 
 /**
@@ -92,22 +124,57 @@ export async function createApp({ user, name, description, files, agents, tables
     insert into apps (id, user_id, slug, data)
     values (${id}, ${user.userId}, ${slug}, ${JSON.stringify(app)}::jsonb)
   `;
-  await recordVersion({ appId: id, user, data: app, source: 'ui', message });
+  await recordVersion({ appId: id, user, data: app, source: 'ui', message, live: false });
   return app;
 }
 
-async function recordVersion({ appId, user, data, source, commitSha = null, message = '' }) {
+/**
+ * Keeps `data` as the next version and makes it the live one, in one
+ * statement.
+ *
+ * The number is allocated under a lock on the app's row (`for update`), so two
+ * saves at once queue rather than both taking max(number) + 1 — and the
+ * version, the app's data and its active version change together or not at
+ * all. Pass `live: false` to record a version without touching apps.data
+ * (createApp has just inserted it).
+ */
+async function recordVersion({ appId, user, data, source, commitSha = null, message = '', live = true }) {
   const id = crypto.randomUUID();
   const { access, ...content } = data;
-  const [row] = await sql`
-    insert into app_versions (id, app_id, number, data, source, commit_sha, message, created_by)
-    values (${id}, ${appId},
-            (select coalesce(max(number), 0) + 1 from app_versions where app_id = ${appId}),
-            ${JSON.stringify(content)}::jsonb, ${source}, ${commitSha},
-            ${String(message || '').slice(0, 200)}, ${user.userId})
-    returning number
-  `;
-  await sql`update apps set active_version_id = ${id} where id = ${appId}`;
+  const [row] = live
+    ? await sql`
+        with locked as (select id from apps where id = ${appId} for update),
+        made as (
+          insert into app_versions (id, app_id, number, data, source, commit_sha, message, created_by)
+          select ${id}, locked.id,
+                 (select coalesce(max(number), 0) + 1 from app_versions where app_id = locked.id),
+                 ${JSON.stringify(content)}::jsonb, ${source}, ${commitSha},
+                 ${String(message || '').slice(0, 200)}, ${user.userId}
+          from locked
+          returning number
+        ),
+        moved as (
+          update apps set data = ${JSON.stringify(data)}::jsonb, active_version_id = ${id}, updated_at = now()
+          where id = ${appId} and exists (select 1 from made)
+        )
+        select number from made
+      `
+    : await sql`
+        with locked as (select id from apps where id = ${appId} for update),
+        made as (
+          insert into app_versions (id, app_id, number, data, source, commit_sha, message, created_by)
+          select ${id}, locked.id,
+                 (select coalesce(max(number), 0) + 1 from app_versions where app_id = locked.id),
+                 ${JSON.stringify(content)}::jsonb, ${source}, ${commitSha},
+                 ${String(message || '').slice(0, 200)}, ${user.userId}
+          from locked
+          returning number
+        ),
+        moved as (
+          update apps set active_version_id = ${id} where id = ${appId} and exists (select 1 from made)
+        )
+        select number from made
+      `;
   return { id, number: row ? row.number : null };
 }
 
@@ -123,13 +190,14 @@ export async function saveApp({ appId, user, data, source = 'ui', commitSha, mes
   const next = { ...data, id: current.app.id, slug: current.app.slug,
                  createdAt: current.app.createdAt, access: data.access || current.app.access || 'private' };
   const changed = appVersion(next) !== current.version;
-  await sql`
-    update apps set data = ${JSON.stringify(next)}::jsonb, updated_at = now()
-    where id = ${current.app.id}
-  `;
+  /* A change is written together with its version; a settings-only save
+     (access) is not a version and only updates the app. */
   const made = changed
     ? await recordVersion({ appId: current.app.id, user, data: next, source, commitSha, message })
-    : null;
+    : (await sql`
+        update apps set data = ${JSON.stringify(next)}::jsonb, updated_at = now()
+        where id = ${current.app.id}
+      `, null);
   return { app: next, version: appVersion(next), versionNumber: made ? made.number : null, changed };
 }
 
@@ -175,8 +243,36 @@ export async function deleteApp({ appId, user }) {
  * Checked when the app is saved, and again when it runs: an id in app.json is
  * only a claim, and a claim on somebody else's table must open nothing.
  */
-export async function linkProblems(app, ownerId) {
+export async function linkProblems(app, ownerId, editor = null, previous = null) {
   const problems = [];
+  /* Whoever saves the app must be able to reach what it links, as far as the
+     link reaches: an app is a way to use its links, and publishing one by
+     link hands that use to anyone. View is enough for a chatbot and for a
+     read-only table; a table the app may write, and an automation it may
+     run, need edit. The platform itself (a git push) and the owner's own
+     check below are not narrowed here. */
+  if (editor && !(editor.system)) {
+    const me = await member(editor);
+    const need = (kind, target) => (kind === 'table' && !(target && target.readonly)) || kind === 'automation' ? 'edit' : 'view';
+    const groups = [['agent', app.agents, 'AI Chatbot'], ['table', app.tables, 'Table'], ['automation', app.automations, 'automation']];
+    for (const [kind, links, label] of groups) {
+      const before = (previous && previous[kind === 'agent' ? 'agents' : kind === 'table' ? 'tables' : 'automations']) || {};
+      for (const [alias, target] of Object.entries(links || {})) {
+        const id = linkId(target);
+        if (!id) continue;
+        /* A link already there, unchanged, was someone's to make; editing the
+           page's text must not need access to everything it links. */
+        const was = before[alias];
+        if (was !== undefined && linkId(was) === id && need(kind, was) === need(kind, target)) continue;
+        const { level } = await accessTo(editor, kind, id, me);
+        const wanted = need(kind, target);
+        if (!allows(level, wanted)) {
+          const key = kind === 'agent' ? 'agents' : kind === 'table' ? 'tables' : 'automations';
+          problems.push(`app.json: ${key}.${alias} — you need ${wanted} access to that ${label} to link it`);
+        }
+      }
+    }
+  }
   const agentIds = Object.values(app.agents || {}).map(linkId);
   const tableIds = Object.values(app.tables || {}).map(linkId);
   if (agentIds.length) {

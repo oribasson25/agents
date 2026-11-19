@@ -53,9 +53,11 @@ for (const when of ['2026-09-20T19:41:00Z', '2026-01-15T12:00:00Z', '2026-09-20T
 
 /* ── and every chatbot actually gets it ── */
 const runner = fs.readFileSync(new URL('../api/_agentRunner.js', import.meta.url), 'utf8');
-ok(/let system = `\$\{nowBlock\(\)\}/.test(runner),
-   'the widget and WhatsApp prompt opens with it');
-ok(src.includes('let system = `${nowBlock()}'), 'the test chat prompt opens with it');
+/* Last, after the parts that never change, so a provider's prompt cache still
+   matches the prefix from one minute to the next. */
+ok(/system \+= `\\n\\n\$\{nowBlock\([^)]*\)\}`/.test(runner),
+   'the widget and WhatsApp prompt carries it, at the end');
+ok(src.includes('system += `\\n\\n${nowBlock()}`;'), 'the test chat prompt carries it too, at the end like the server');
 ok(/nowBlock\(\),\n      '',\n      PLATFORM_REFERENCE/.test(src),
    'and so does the platform assistant, which writes dates into tables');
 ok(!/table_|tool/i.test(String(nowBlock)) , 'it is not a tool a model has to remember to call');

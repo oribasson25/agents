@@ -151,7 +151,19 @@ function sliceForModel(text, limit = 9000) {
  * comes back suspiciously short, the original text is kept. Losing a document
  * would be a far worse failure than storing it unimproved.
  */
-export async function normalizeDocument({ title, content, apiConfig, agentId }) {
+export const NORMALIZE_CONCURRENCY = 4;
+export const NORMALIZE_BUDGET_MS = 200 * 1000;   /* of the 300 s the upload function has */
+
+/** Rejects when `ms` runs out first; the work itself is not cancelled. */
+function within(promise, ms) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('ran out of time')), Math.max(1, ms)); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+export async function normalizeDocument({ title, content, apiConfig, agentId, budgetMs = NORMALIZE_BUDGET_MS, call = callModel }) {
   const source = String(content || '');
   const usable = configUsable(apiConfig);
   if (!usable || !source.trim()) return { text: source, normalized: false, reason: 'no model configured' };
@@ -160,19 +172,35 @@ export async function normalizeDocument({ title, content, apiConfig, agentId }) 
   }
 
   try {
+    /* The slices go to the model a few at a time, not one after the other: a
+       document of 14 slices at up to a minute and a half each used to outlast
+       the function, which was then killed before anything was stored. They
+       come back in their own order, and the whole pass has a time budget —
+       past it the original text is kept. */
     const slices = sliceForModel(source);
-    const out = [];
-    for (let i = 0; i < slices.length; i++) {
-      const part = slices.length > 1 ? ` (part ${i + 1} of ${slices.length})` : '';
-      const text = await callModel(apiConfig, {
-        system: NORMALIZE_SYSTEM,
-        user: `Document title: ${title || '(untitled)'}${part}\n\n---\n${slices[i]}\n---`,
-        maxTokens: 8000,
-        agentId,
-      });
-      if (text) out.push(text);
+    const deadline = Date.now() + budgetMs;
+    const out = new Array(slices.length);
+    let next = 0;
+    let late = false;
+    const worker = async () => {
+      while (next < slices.length && !late) {
+        const i = next++;
+        const left = deadline - Date.now();
+        if (left <= 0) { late = true; return; }
+        const part = slices.length > 1 ? ` (part ${i + 1} of ${slices.length})` : '';
+        out[i] = await within(call(apiConfig, {
+          system: NORMALIZE_SYSTEM,
+          user: `Document title: ${title || '(untitled)'}${part}\n\n---\n${slices[i]}\n---`,
+          maxTokens: 8000,
+          agentId,
+        }), left);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(NORMALIZE_CONCURRENCY, slices.length) }, worker));
+    if (late || out.some(x => x === undefined)) {
+      return { text: source, normalized: false, reason: 'ran out of time, kept the original' };
     }
-    const joined = out.join('\n\n').trim();
+    const joined = out.filter(Boolean).join('\n\n').trim();
 
     // A model that returns a summary instead of a rewrite would quietly delete
     // most of the knowledge base. Anything that short is treated as a failure.
@@ -188,40 +216,80 @@ export async function normalizeDocument({ title, content, apiConfig, agentId }) 
 
 /* ─────────────────── storing ─────────────────── */
 
-/** Replaces a document's chunk rows with ones built from `content`. */
-export async function rechunk(docId, agentId, skillId, title, content) {
-  await sql`delete from documents where parent_id = ${docId}`;
+/**
+ * Replaces a document's chunk rows with ones built from `content`.
+ *
+ * One statement: the old chunks go and the new ones arrive together (a
+ * function killed half-way used to leave a document half chunked, and hidden
+ * from search because it had children), and all of them in one insert rather
+ * than a round trip each. `fresh` says the document was just created and has
+ * no chunks to delete.
+ */
+export async function rechunk(docId, agentId, skillId, title, content, { fresh = false } = {}) {
   const chunks = chunkText(content);
-  if (chunks.length <= 1) return 0;   // short enough to be its own chunk
-  for (let i = 0; i < chunks.length; i++) {
+  if (chunks.length <= 1) {   // short enough to be its own chunk
+    if (!fresh) await sql`delete from documents where parent_id = ${docId}`;
+    return 0;
+  }
+  if (fresh) {
     await sql`
       insert into documents (id, agent_id, skill_id, parent_id, chunk_index, title, content, source_type)
-      values (${`${docId}#${i}`}, ${agentId}, ${skillId || null}, ${docId}, ${i},
-              ${title}, ${chunks[i]}, 'chunk')
+      select ${docId}::text || '#' || (t.n - 1)::text, ${agentId}, ${skillId || null}, ${docId}, (t.n - 1)::int,
+             ${title}, t.c, 'chunk'
+      from unnest(${chunks}::text[]) with ordinality as t(c, n)
+    `;
+  } else {
+    /* Reading `gone` makes the delete run first, so the new rows (which reuse
+       the old ids) never meet the old ones. */
+    await sql`
+      with gone as (delete from documents where parent_id = ${docId} returning 1)
+      insert into documents (id, agent_id, skill_id, parent_id, chunk_index, title, content, source_type)
+      select ${docId}::text || '#' || (t.n - 1)::text, ${agentId}, ${skillId || null}, ${docId}, (t.n - 1)::int,
+             ${title}, t.c, 'chunk'
+      from unnest(${chunks}::text[]) with ordinality as t(c, n)
+      where (select count(*) from gone) >= 0
     `;
   }
   return chunks.length;
 }
 
 /**
- * The one way a document enters the knowledge base: normalise, store the
- * parent, then chunk it for search. The original text is kept in raw_content
- * so a disappointing rewrite can always be undone.
+ * The one way a document enters the knowledge base: store the parent as it
+ * came, normalise, then chunk it for search. The original text is kept in
+ * raw_content so a disappointing rewrite can always be undone.
+ *
+ * The original is stored before the model pass, so a function that runs out
+ * of time mid-rewrite leaves the document there unimproved rather than gone.
+ *
+ * A document id is the caller's, so it is only ever this agent's: an id that
+ * already belongs to another agent's document is refused (code DOC_CONFLICT),
+ * never overwritten.
  */
-export async function storeDocument({ docId, agentId, skillId, title, content, sourceType = 'manual', sourceUrl = null, apiConfig }) {
-  const { text, normalized, reason } = await normalizeDocument({ title, content, apiConfig, agentId });
-
+export async function storeDocument({ docId, agentId, skillId, title, content, sourceType = 'manual', sourceUrl = null, apiConfig, budgetMs }) {
   const [row] = await sql`
     insert into documents (id, agent_id, skill_id, title, content, raw_content, normalized, source_type, source_url)
-    values (${docId}, ${agentId}, ${skillId || null}, ${title}, ${text},
-            ${normalized ? content : null}, ${normalized}, ${sourceType}, ${sourceUrl})
+    values (${docId}, ${agentId}, ${skillId || null}, ${title}, ${content}, null, false, ${sourceType}, ${sourceUrl})
     on conflict (id) do update set
-      title = excluded.title, content = excluded.content, raw_content = excluded.raw_content,
-      normalized = excluded.normalized, updated_at = now()
-    returning id, agent_id, skill_id, title, content, normalized, created_at
+      title = excluded.title, content = excluded.content, raw_content = null,
+      normalized = false, updated_at = now()
+    where documents.agent_id = excluded.agent_id and documents.parent_id is null
+    returning id, agent_id, skill_id, title, content, normalized, created_at, (xmax = 0) as inserted
   `;
-  const chunks = await rechunk(docId, agentId, skillId, title, text);
-  return { ...row, chunks, normalizeSkipped: normalized ? '' : reason };
+  if (!row) {
+    throw Object.assign(new Error('A document with this id already exists elsewhere.'), { code: 'DOC_CONFLICT' });
+  }
+  const fresh = row.inserted === true;
+  delete row.inserted;
+
+  const { text, normalized, reason } = await normalizeDocument({ title, content, apiConfig, agentId, budgetMs });
+  if (normalized) {
+    await sql`
+      update documents set content = ${text}, raw_content = ${content}, normalized = true, updated_at = now()
+      where id = ${docId} and agent_id = ${agentId}
+    `;
+  }
+  const chunks = await rechunk(docId, agentId, skillId, title, text, { fresh });
+  return { ...row, content: text, normalized, chunks, normalizeSkipped: normalized ? '' : reason };
 }
 
 /* ─────────────────── searching ─────────────────── */

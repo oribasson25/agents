@@ -1,8 +1,8 @@
 import { sql } from '../../../_db.js';
-import { checkAdmin } from '../../../_auth.js';
+import { requireAdmin } from '../../../_auth.js';
 
 export default async function handler(req, res) {
-  const admin = checkAdmin(req, res);
+  const admin = await requireAdmin(req, res);
   if (!admin) return;
 
   const { userId } = req.query;

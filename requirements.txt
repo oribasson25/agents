@@ -1,2 +1,2 @@
-pymupdf
-pypdf
+pymupdf==2.1
+pypdf==7.1.1

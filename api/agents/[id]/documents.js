@@ -1,8 +1,9 @@
 import { sql } from '../../_db.js';
-import { checkAuth } from '../../_auth.js';
+import { requireSession } from '../../_auth.js';
 import { getUserSettings, resolveApiConfig } from '../../_settings.js';
 import { accessTo, allows, refuse } from '../../_access.js';
 import { storeDocument } from '../../_knowledge.js';
+import { logError } from '../../_errorLog.js';
 
 /** The caller's level on the agent — a document id is not a capability. */
 async function agentLevel(agentId, user) {
@@ -11,7 +12,7 @@ async function agentLevel(agentId, user) {
 
 
 export default async function handler(req, res) {
-  const user = checkAuth(req, res);
+  const user = await requireSession(req, res);
   if (!user) return;
 
   const { id } = req.query;
@@ -38,6 +39,10 @@ export default async function handler(req, res) {
     if (!docId || !title || !content) {
       return res.status(400).json({ error: 'docId, title, and content are required' });
     }
+    if (typeof docId !== 'string' || typeof title !== 'string' || typeof content !== 'string'
+        || docId.length > 100 || docId.includes('#')) {
+      return res.status(400).json({ error: 'docId, title and content must be text, and docId a plain id' });
+    }
 
     try {
       // The rewrite runs on the account's own model, so it needs the account's key.
@@ -49,8 +54,13 @@ export default async function handler(req, res) {
       });
       return res.status(201).json(stored);
     } catch (err) {
+      if (err.code === 'DOC_CONFLICT') {
+        return res.status(409).json({ error: 'A document with this id already exists. Upload it again as a new document.', code: 'DOC_CONFLICT' });
+      }
+      /* The reason goes to the log, not to the browser: it is database text. */
       console.error('Error inserting document:', err);
-      return res.status(500).json({ error: 'Database error', message: err.message });
+      await logError({ agentId: id, source: 'knowledge', message: err.message, context: { step: 'upload' } }).catch(() => {});
+      return res.status(500).json({ error: 'The document could not be saved. Try again.' });
     }
   }
 

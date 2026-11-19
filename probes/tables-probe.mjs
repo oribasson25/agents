@@ -22,8 +22,8 @@ globalThis.__db = (text, params) => {
   /* Each user is their own organization here; the query is scoped by the
      user whose organization it asks about. */
   if (q.startsWith('select t.id, t.org_id, t.name, t.description')) {
-    return db.tables.filter(t => t.user_id === params[0])
-      .map(t => ({ ...t, row_count: db.rows.filter(r => r.table_id === t.id).length }));
+    return db.tables.filter(t => t.user_id === params[0] && (!Array.isArray(params[1]) || params[1].includes(t.id)))
+      .map(t => ({ ...t, ...(q.includes('as row_count') || !Array.isArray(params[1]) ? { row_count: db.rows.filter(r => r.table_id === t.id).length } : {}) }));
   }
   if (q.startsWith('select id, org_id, name, description, columns')) {
     return db.tables.filter(t => t.id === params[0] && t.user_id === params[1]);

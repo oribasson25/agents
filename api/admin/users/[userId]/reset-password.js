@@ -1,9 +1,15 @@
 import { sql } from '../../../_db.js';
-import { checkAdmin, hashPassword } from '../../../_auth.js';
-import crypto from 'crypto';
+import { requireAdmin } from '../../../_auth.js';
+import { setTemporaryPassword } from '../../../_orgs.js';
 
+/**
+ * The platform admin gives any account a new temporary password. The same
+ * implementation an organization's admin uses (api/_orgs.js): twelve evenly
+ * drawn characters, replaced at the next sign-in, and every session and
+ * access token the old password opened ends with it.
+ */
 export default async function handler(req, res) {
-  const admin = checkAdmin(req, res);
+  const admin = await requireAdmin(req, res);
   if (!admin) return;
 
   if (req.method !== 'POST') return res.status(405).end();
@@ -13,10 +19,6 @@ export default async function handler(req, res) {
   const [user] = await sql`select id from users where id = ${userId}`;
   if (!user) return res.status(404).json({ error: 'user not found' });
 
-  // Generate a random 10-char temporary password
-  const tempPassword = crypto.randomBytes(5).toString('hex'); // e.g. "a3f9c21b4d"
-  /* Temporary: the next sign-in has to replace it. */
-  await sql`update users set password_hash = ${hashPassword(tempPassword)}, must_change_password = true where id = ${userId}`;
-
-  return res.json({ tempPassword });
+  const tempPassword = await setTemporaryPassword(userId);
+  return res.json({ tempPassword, temporaryPassword: tempPassword });
 }

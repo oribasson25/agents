@@ -90,6 +90,28 @@ export async function takeCommand(numberId) {
   return row?.command || null;
 }
 
+/**
+ * What the worker looks for while it holds a number, in one round trip: an
+ * admin's command (taken, so it runs once) and whether automations left
+ * messages to send. The worker asks less often while both stay empty.
+ */
+export async function poll(numberId) {
+  const [row] = await sql`
+    with taken as (
+      update wa_numbers n set command = null
+      from (select id, command from wa_numbers where id = ${numberId} and command is not null) old
+      where n.id = old.id
+      returning old.command
+    )
+    select (select command from taken) as command,
+           exists (select 1 from wa_outbox where number_id = ${numberId} and status = 'queued') as outbox
+  `;
+  return { command: row?.command || null, outbox: !!row?.outbox };
+}
+
+/** A number WhatsApp refused for good (403) waits for an admin: the cron leaves it alone. */
+export const isBlocked = (number) => number?.state?.status === 'blocked';
+
 /* ---------- the lease: at most one session per number ---------- */
 
 export async function acquireLease(numberId, ttlMs = LEASE_TTL_MS) {

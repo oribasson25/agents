@@ -21,7 +21,7 @@ product.
 - **Backend** — Vercel Serverless Functions under `api/` (Node) plus two Python functions
 - **Database** — Neon Postgres; an agent is a single JSONB row in `agents`
 - **Models** — any model on OpenRouter, through the platform's one key; the platform admin picks the model each organization runs on
-- **Tools** — user Python executed in `api/run_tool.py`, with `pip install` on demand
+- **Tools** — user Python executed by `api/run_tool.py` in a child process with only the tool's own variables, with `pip install` on demand; meant to run as a separate Vercel project (`tool-runner/`) that holds no platform secrets
 - **Crawler** — `api/_crawlSite.js`, plain fetch over a site's own HTML and its sitemap
 - **Live scraper** — Playwright + Chromium (`api/scrape_browser.js`), renders JS, one page at a time
 
@@ -74,9 +74,13 @@ npm install
 | `GOOGLE_CLIENT_ID` | for Gmail | OAuth client for the `send_email` tool |
 | `GOOGLE_CLIENT_SECRET` | for Gmail | same |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | first run | used once, to create the first administrator on a database with no users. After that the admin mints invitation codes |
-| `APP_URL` | no | base URL for the OAuth redirect; derived from the request when unset. Normalised on read (whitespace stripped, scheme added, trailing slash dropped) — a newline pasted in here used to reach Google inside `redirect_uri` and get the whole flow rejected |
+| `CRON_SECRET` | yes | the crons (`/api/cron/*`, `/api/wa/*`) refuse every caller without it |
+| `TOOL_RUNNER_URL` / `TOOL_RUNNER_SECRET` | recommended | where tool code runs: a separate Vercel project made from `tool-runner/` (see its README). Without them it runs in this project's `/api/run-tool`, next to the platform's secrets |
+| `CONNECTIONS_KEY` | recommended | encrypts connection tokens and linked WhatsApp keys; derived from `JWT_SECRET` when unset, so set it before ever rotating `JWT_SECRET` |
+| `APP_URL` | no | base URL for the OAuth redirect and for the platform's calls to itself; derived from the request when unset. Normalised on read (whitespace stripped, scheme added, trailing slash dropped) — a newline pasted in here used to reach Google inside `redirect_uri` and get the whole flow rejected |
 
-Leaving `JWT_SECRET` unset falls back to a hard-coded development value — set it.
+Leaving `JWT_SECRET` unset makes every function instance invent its own random key, so nobody
+stays signed in and the Python runner refuses every call — set it.
 
 ### Knowledge base
 
@@ -672,6 +676,11 @@ re-applies them harmlessly, and a run that stops on an error can be repeated onc
 fixed. The runner splits files into single statements while respecting dollar-quoted blocks,
 strings and comments.
 
+`036`–`039` must be applied **before** the code that ships with them goes live: the session
+check reads `users.token_version` (036), the model gateway holds cost on `llm_month_spend` (037,
+with a fallback to the old checks until it exists), the WhatsApp router counts replies in
+`wa_dm_replies` (038), and automation runs are claimed with `claim_id` (039).
+
 Two migrations are load-bearing for features rather than performance:
 
 - `007-whatsapp-hardening.sql` — adds `processed_at`; without it every inbound WhatsApp message
@@ -765,7 +774,8 @@ the name and checking each redirect.
 
 ## Scheduled work
 
-`vercel.json` registers two daily crons that re-crawl every agent's configured sites, and raises
+`vercel.json` registers two daily crons that re-crawl the configured sites (oldest first, each
+site once per run; refused without `CRON_SECRET`), and raises
 `maxDuration` for the crawler, the browser scraper and the WhatsApp webhook.
 
 ## Security notes
@@ -777,13 +787,25 @@ the name and checking each redirect.
   by the account's owner.
 - The platform assistant acts as the signed-in user through the same authenticated endpoints,
   so it cannot reach another account's data. It asks for confirmation before deleting an agent.
-- Tool code runs server-side with the environment variables that tool declares. Anyone who can
-  edit a tool can read its secrets and run arbitrary Python in the function.
-- `/api/run-tool`, `/api/scrape` and `/api/scrape-browser` are reachable
-  without authentication. They are called server-to-server by the agent runner; putting them
-  behind a shared secret is an open item.
-- The widget and the WhatsApp webhook are public by design; conversations through them count
-  against the platform's monthly ceiling. Watch **Interactions** and Admin › Billing for volume.
+- Tool code is customers' Python. `/api/run-tool` takes only the internal secret; the browser
+  goes through `POST /api/tool-run`, where an editor runs their draft and a viewer runs only the
+  saved tool. The code runs in a child process whose environment holds only the tool's own
+  variables — but a child can still read its parent's environment through `/proc`, so the real
+  boundary is running `tool-runner/` as its own Vercel project (`TOOL_RUNNER_URL`), with nothing
+  but `TOOL_RUNNER_SECRET` in its environment.
+- Everything that fetches an address a customer chose (HTTP steps, the crawler, the browser
+  scraper) goes through `api/_netGuard.js`: every address the name resolves to must be public,
+  the connection is pinned to the checked address, each redirect is checked again and loses
+  credential headers when it leaves the origin, and the body has one deadline and one size cap.
+- A session token carries the account's `token_version`; a password reset or change raises it,
+  which signs out every other session and revokes personal access tokens. Admin rights are read
+  from the database on every request, never from the token.
+- The widget and the WhatsApp webhook are public by design. Strangers are rate-limited per IP and
+  per conversation, may send only user/assistant text (the last 20 turns), and one organization's
+  strangers may use only a share of the platform's monthly ceiling (`org_public_cap_pct`, 50% by
+  default). Watch **Interactions** and Admin › Billing for volume.
+- Viewers of a chatbot never receive its WhatsApp token, app secret or tool variable values;
+  editors do.
 - `/privacy`, `/terms` and `/api/auth/invite-check` are public on purpose. The first two have to
   be, for Google's review; the third reserves nothing and refuses a malformed code without
   touching the database.

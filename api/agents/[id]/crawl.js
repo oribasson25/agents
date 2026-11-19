@@ -1,5 +1,5 @@
 import { sql } from '../../_db.js';
-import { checkAuth } from '../../_auth.js';
+import { requireSession } from '../../_auth.js';
 import { accessTo, allows, refuse } from '../../_access.js';
 import { crawlSite } from '../../_crawlSite.js';
 
@@ -21,7 +21,7 @@ async function saveConfig(id, cfg) {
 }
 
 export default async function handler(req, res) {
-  const user = checkAuth(req, res);
+  const user = await requireSession(req, res);
   if (!user) return;
 
   const { id } = req.query;

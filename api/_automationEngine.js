@@ -21,12 +21,32 @@
  * loop is not saved mid-way: one interrupted is started again from its first
  * item.
  *
+ * Never twice
+ * -----------
+ * A step that changes the world (sends mail or WhatsApp, calls an API with
+ * anything but GET, runs code, writes a row, runs another automation or a
+ * chatbot) is marked in `state.inflight` — and saved — before it starts, and
+ * the mark is cleared with the state saved after it. A run picked up with
+ * the mark still there was cut off in the middle of that step (its function
+ * died), so nobody knows whether it already sent: the step fails with words
+ * that say so, instead of sending a second time.
+ *
+ * Stopping
+ * --------
+ * `ctx.saveState` answers false once the run is no longer this worker's — a
+ * person pressed Stop, or another worker took it over. The walk ends there
+ * with status 'stopped', and so does a long loop, which asks
+ * `ctx.stillRunning()` every few seconds.
+ *
  * Nothing here knows about the database. `ctx` supplies the world:
  *
  *   secrets, baseUrl, fetch      what steps need
  *   deadline                     ms timestamp after which to stop and hand over
+ *   hardDeadline                 ms timestamp nothing may run past (a step's
+ *                                timeout and a retry's pause are cut to it)
  *   recordStep(record)           the run log
- *   saveState(state)             durability
+ *   saveState(state, { stepId }) durability; false when the run is not ours any more
+ *   stillRunning()               false when the run was stopped meanwhile
  *   onSample(id, value)          what the editor's field picker remembers
  *   callAutomation(id, input)    a Run automation step
  *   sleep(ms), now()             so a probe does not actually wait
@@ -37,6 +57,35 @@ import {
 import { fillConfig, runStep } from './_automationSteps.js';
 
 const MASK = '••••';
+
+/** Thrown when the run stopped being this worker's; everything above lets it through. */
+class RunStopped extends Error {
+  constructor() { super('The run was stopped.'); this.stopped = true; }
+}
+
+const READ_ONLY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/**
+ * Does this step change something outside the run, so that running it a
+ * second time could send, charge or write twice? A loop does when anything
+ * inside it does.
+ */
+export function changesTheWorld(step, def, owner = ownerOf(def)) {
+  if (!step) return false;
+  const c = step.config || {};
+  switch (step.type) {
+    case 'email': case 'whatsapp': case 'approval': case 'code': case 'call': case 'agent':
+      return true;
+    case 'http':
+      return !READ_ONLY_METHODS.has(String(c.method || 'GET').toUpperCase());
+    case 'table':
+      return (c.action || 'find') !== 'find';
+    case 'loop':
+      return (def.steps || []).some(s => owner[s.id] === step.id && changesTheWorld(s, def, owner));
+    default:
+      return false;
+  }
+}
 
 /** Replaces every secret value found anywhere in `value` with dots. */
 export function maskSecrets(value, secrets) {
@@ -103,6 +152,22 @@ export async function advance({ definition, input, state, ctx }) {
     });
   };
 
+  /* Picked up with a step marked as under way: its function died in the
+     middle of it. It is not run again — it may already have sent. */
+  if (state.inflight && state.inflight.stepId && !state.nodes[state.inflight.stepId]) {
+    const cut = (def.steps || []).find(s => s.id === state.inflight.stepId) || { id: state.inflight.stepId, type: 'unknown' };
+    state.inflight = null;
+    const error = 'was cut off while it was running, and is not run again in case it already sent or changed something. Run the automation again if it should.';
+    await record(cut, { status: 'failed', error });
+    return { status: 'failed', error: `${label(cut)}: ${error}`, failedStep: cut.id };
+  }
+  if (state.inflight) state.inflight = null;
+
+  const save = async (stepId) => {
+    if (!ctx.saveState) return;
+    if ((await ctx.saveState(state, { stepId })) === false) throw new RunStopped();
+  };
+
   /**
    * Runs the steps of one region — the automation outside any loop, or one
    * pass of one loop — as far as they will go.
@@ -126,6 +191,11 @@ export async function advance({ definition, input, state, ctx }) {
         if (main && ctx.deadline && now() > ctx.deadline) return { status: 'queued' };
 
         const scope = { ...base, now: new Date(now()).toISOString(), ...outer, ...st.outputs, ...extra };
+        const resumingPark = state.wait && state.wait.stepId === step.id;
+        if (main && !resumingPark && changesTheWorld(step, def, owner)) {
+          state.inflight = { stepId: step.id, at: now() };
+          await save(null);
+        }
         const started = now();
         let result;
 
@@ -149,6 +219,7 @@ export async function advance({ definition, input, state, ctx }) {
         }
 
         const ms = now() - started;
+        if (main) state.inflight = null;
         if (result.failed) {
           await record(step, { status: 'failed', input: result.input, output: result.output, error: result.error, ms, iteration });
           return { status: 'failed', error: `${label(step)}: ${maskSecrets(result.error, secrets)}`, failedStep: step.id };
@@ -164,7 +235,7 @@ export async function advance({ definition, input, state, ctx }) {
           output: result.printed ? { result: st.outputs[step.id], printed: result.printed } : st.outputs[step.id],
           error: result.error, ms, iteration,
         });
-        if (main && ctx.saveState) await ctx.saveState(state);
+        if (main) await save(step.id);
       }
       if (!progressed) return { status: 'done' };
     }
@@ -174,7 +245,10 @@ export async function advance({ definition, input, state, ctx }) {
   async function attempt(step, fn) {
     let error;
     let output;
-    for (let tries = 0; tries <= (step.retries || 0); tries++) {
+    /* A loop is not tried again: it would send its items over again from the
+       first one. Its steps' own retries still apply, item by item. */
+    const retries = step.type === 'loop' ? 0 : Math.max(0, Number(step.retries) || 0);
+    for (let tries = 0; tries <= retries; tries++) {
       try {
         const result = await fn();
         if (JSON.stringify(result.output === undefined ? null : result.output).length > LIMITS.outputBytes) {
@@ -182,9 +256,15 @@ export async function advance({ definition, input, state, ctx }) {
         }
         return result;
       } catch (err) {
+        if (err && err.stopped) throw err;
         error = err.message || String(err);
         output = err.output;
-        if (tries < (step.retries || 0)) await sleep(Math.min(8000, 1000 * 2 ** tries));
+        if (tries < retries) {
+          const pause = Math.min(8000, 1000 * 2 ** tries);
+          /* No time left for another go: give up now rather than past the deadline. */
+          if (ctx.hardDeadline && now() + pause + 1000 > ctx.hardDeadline) break;
+          await sleep(pause);
+        }
       }
     }
     /* Carrying on needs somewhere to carry on to: a step with one way out. */
@@ -211,7 +291,7 @@ export async function advance({ definition, input, state, ctx }) {
     const until = now() + seconds * 1000;
     state.wait = { stepId: step.id, until };
     await record(step, { status: 'waiting', input: config, output: { until: new Date(until).toISOString() }, iteration });
-    if (ctx.saveState) await ctx.saveState(state);
+    await save(null);
     return { status: 'waiting', resumeAt: until };
   }
 
@@ -237,10 +317,12 @@ export async function advance({ definition, input, state, ctx }) {
       }
       if (resuming) return { status: 'waiting', resumeAt: state.wait.until };
       state.wait = { stepId: step.id, ...result.park };
+      state.inflight = null;
       await record(step, { status: 'waiting', input: filled, output: result.waitingOutput || null, iteration });
-      if (ctx.saveState) await ctx.saveState(state);
+      await save(null);
       return { status: 'waiting', resumeAt: state.wait.until };
     } catch (err) {
+      if (err && err.stopped) throw err;
       return { failed: true, error: err.message || String(err), input: filled };
     }
   }
@@ -257,9 +339,14 @@ export async function advance({ definition, input, state, ctx }) {
     if (ctx.onSample && items.length) { ctx.onSample('item', items[0]); ctx.onSample('index', 0); }
 
     const results = [];
+    let checked = now();
     for (let index = 0; index < items.length; index++) {
       if (ctx.hardDeadline && now() > ctx.hardDeadline) {
         throw new Error(`ran out of time after ${index} of ${items.length} items`);
+      }
+      if (ctx.stillRunning && now() - checked > 5000) {
+        checked = now();
+        if (!(await ctx.stillRunning())) throw new RunStopped();
       }
       const pass = { nodes: {}, edges: {}, outputs: {} };
       for (const e of edges) if (e.from === step.id && e.port === 'each') pass.edges[edgeKey(e)] = 'fired';
@@ -277,7 +364,13 @@ export async function advance({ definition, input, state, ctx }) {
     return { output: { count: items.length, results }, port: 'done', input: { items: clip(items, 20000) } };
   }
 
-  const end = await region({ loopId: null, st: state, outer: {}, extra: {}, iteration: null });
+  let end;
+  try {
+    end = await region({ loopId: null, st: state, outer: {}, extra: {}, iteration: null });
+  } catch (err) {
+    if (err && err.stopped) return { status: 'stopped' };
+    throw err;
+  }
   if (end.status === 'done') return { status: 'done', output: state.output === undefined ? null : state.output };
   return end;
 }

@@ -1,5 +1,6 @@
 import { sql } from './_db.js';
 import { accessTo, allows } from './_access.js';
+import { addresses, header } from './_mail.js';
 
 /**
  * Gmail is connected per agent: an agent's send_email tool sends from the
@@ -11,6 +12,12 @@ import { accessTo, allows } from './_access.js';
 export async function userOwnsAgent(agentId, user, need = 'view') {
   if (!agentId) return false;
   return allows((await accessTo(user, 'agent', agentId)).level, need);
+}
+
+/** Has the agent's owner switched its send_email on? Off unless they did. */
+export async function agentEmailEnabled(agentId) {
+  const [row] = await sql`select data->'emailEnabled' as on from agents where id = ${agentId}`;
+  return !!(row && row.on === true);
 }
 
 export async function getGmailStatus(agentId) {
@@ -70,6 +77,14 @@ async function refreshAccessToken(agentId, refreshToken) {
  * REFRESH_FAILED | SEND_FAILED.
  */
 export async function sendGmail({ agentId, to, subject, body }) {
+  /* The recipient often comes from a model's tool call, which anyone talking
+     to the chatbot can steer: a line break in it would write headers of its
+     own (a Bcc to anyone). Refused, not cleaned. */
+  let recipients;
+  try { recipients = addresses(to); }
+  catch (err) { throw fail(err.message, 'BAD_ADDRESS'); }
+  if (!recipients.length) throw fail('There is no one to send to.', 'BAD_ADDRESS');
+
   const [row] = await sql`select * from gmail_tokens where agent_id = ${agentId}`;
   if (!row) throw fail('Gmail is not connected for this agent. Connect it in the agent\'s Tools tab.', 'NOT_CONNECTED');
 
@@ -81,19 +96,19 @@ export async function sendGmail({ agentId, to, subject, body }) {
     accessToken = await refreshAccessToken(agentId, row.refresh_token);
   }
 
-  // Encode the header values that carry user text, so non-ASCII subjects
-  // (Hebrew included) don't arrive mangled.
-  const encodeHeader = (value) =>
-    /^[\x20-\x7e]*$/.test(value) ? value : `=?UTF-8?B?${Buffer.from(value, 'utf8').toString('base64')}?=`;
-
+  let from = '';
+  try { from = addresses(row.email)[0] || ''; } catch { /* Gmail fills in the mailbox's own address */ }
   const message = [
-    `From: ${row.email}`,
-    `To: ${to}`,
-    `Subject: ${encodeHeader(String(subject))}`,
+    ...(from ? [`From: ${from}`] : []),
+    `To: ${recipients.join(', ')}`,
+    // Non-ASCII subjects (Hebrew included) are encoded so they arrive whole,
+    // and anything with a line break in it is encoded so it cannot end the header.
+    `Subject: ${header(String(subject ?? ''))}`,
     'MIME-Version: 1.0',
     'Content-Type: text/plain; charset=utf-8',
+    'Content-Transfer-Encoding: base64',
     '',
-    body || '',
+    Buffer.from(String(body || ''), 'utf8').toString('base64').replace(/(.{76})/g, '$1\r\n'),
   ].join('\r\n');
 
   const sendRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
@@ -107,7 +122,7 @@ export async function sendGmail({ agentId, to, subject, body }) {
     throw fail(err.error?.message || 'Failed to send email', 'SEND_FAILED');
   }
 
-  return { ok: true, from: row.email, message: `Email sent to ${to}` };
+  return { ok: true, from: row.email, message: `Email sent to ${recipients.join(', ')}` };
 }
 
 /**

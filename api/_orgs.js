@@ -13,20 +13,25 @@ import crypto from 'crypto';
 import { sql } from './_db.js';
 import { hashPassword } from './_auth.js';
 import { LEVELS, KINDS } from './_access.js';
+import { logError } from './_errorLog.js';
 import { seedDefaultAgents } from './_defaultAgent.js';
 import { seedDefaultApp } from './_defaultApp.js';
 
 const PASSWORD_ALPHABET = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
-/** A temporary password: twelve characters nobody will misread. */
+/**
+ * A temporary password: twelve characters nobody will misread, about 69 bits.
+ * randomInt draws each one evenly (a byte modulo 54 would favour the first
+ * characters of the alphabet).
+ */
 export function temporaryPassword() {
-  const bytes = crypto.randomBytes(12);
-  return Array.from(bytes, b => PASSWORD_ALPHABET[b % PASSWORD_ALPHABET.length]).join('');
+  return Array.from({ length: 12 }, () => PASSWORD_ALPHABET[crypto.randomInt(PASSWORD_ALPHABET.length)]).join('');
 }
 
 const fail = (message, code, status = 400) => Object.assign(new Error(message), { code, status });
 
-function cleanUsername(value) {
+/** The one rule for a username, wherever an account is made. */
+export function cleanUsername(value) {
   const name = String(value || '').trim();
   if (name.length < 2 || name.length > 60) throw fail('A username needs 2 to 60 characters.', 'BAD_NAME');
   if (/\s/.test(name)) throw fail('A username cannot contain spaces.', 'BAD_NAME');
@@ -125,10 +130,26 @@ async function adminCount(orgId) {
   return n;
 }
 
-/** Role and org-wide reach. An organization never loses its last admin. */
-export async function updateMember({ orgId, userId, orgRole, orgAccess }) {
+/*
+ * The platform admin can belong to an organization like anyone else, and that
+ * organization's admin must not be able to reach them through it: resetting
+ * their password hands over the whole platform, changing their role is a
+ * step towards it. Only the platform admin acts on the platform admin.
+ */
+function guardPlatformAdmin(target, actor) {
+  if (target.is_admin && !(actor && actor.isPlatformAdmin)) {
+    throw fail('Only the platform admin can change this account.', 'PLATFORM_ADMIN', 403);
+  }
+}
+
+/**
+ * Role and org-wide reach. An organization never loses its last admin.
+ * `actor` is the member() of whoever asks.
+ */
+export async function updateMember({ orgId, userId, orgRole, orgAccess, actor }) {
   const target = await memberOf(orgId, userId);
   if (!target) throw fail('No such member.', 'NO_MEMBER', 404);
+  guardPlatformAdmin(target, actor);
   const role = orgRole === undefined ? target.org_role : (orgRole === 'admin' ? 'admin' : 'member');
   if (target.org_role === 'admin' && role !== 'admin' && (await adminCount(orgId)) <= 1) {
     throw fail('An organization needs at least one admin.', 'LAST_ADMIN', 409);
@@ -139,12 +160,30 @@ export async function updateMember({ orgId, userId, orgRole, orgAccess }) {
   return { id: userId, username: target.username, orgRole: role, orgAccess: access };
 }
 
-/** A new temporary password, to be replaced at the next sign-in. */
-export async function resetPassword({ orgId, userId }) {
+/**
+ * Gives an account a new temporary password, to be replaced at the next
+ * sign-in, and ends everything the old one opened: every session token
+ * (token_version) and every personal access token. A reset is what an admin
+ * does for an account they think someone else holds, so nothing that someone
+ * could have made with the old password may keep working.
+ */
+export async function setTemporaryPassword(userId) {
+  const password = temporaryPassword();
+  await sql`
+    update users set password_hash = ${hashPassword(password)}, must_change_password = true,
+                     token_version = token_version + 1
+    where id = ${userId}
+  `;
+  await sql`update api_tokens set revoked_at = now() where user_id = ${userId} and revoked_at is null`;
+  return password;
+}
+
+/** A new temporary password for a member, shown once to the admin who asked. */
+export async function resetPassword({ orgId, userId, actor }) {
   const target = await memberOf(orgId, userId);
   if (!target) throw fail('No such member.', 'NO_MEMBER', 404);
-  const password = temporaryPassword();
-  await sql`update users set password_hash = ${hashPassword(password)}, must_change_password = true where id = ${userId}`;
+  guardPlatformAdmin(target, actor);
+  const password = await setTemporaryPassword(userId);
   return { id: userId, username: target.username, temporaryPassword: password };
 }
 
@@ -244,7 +283,12 @@ export async function setGrant({ orgId, userId, kind, itemId, level, grantedBy }
 /** The status and message for an error thrown here. */
 export function errorReply(res, err) {
   if (err && err.status) return res.status(err.status).json({ error: err.message, code: err.code });
-  return res.status(500).json({ error: err.message });
+  /* Anything without a status is not one of ours (a database error, a bug):
+     its text says nothing the caller can act on and may say things they
+     should not see, so it goes to the log and they get a plain answer. */
+  console.error('[orgs]', err);
+  logError({ source: 'orgs', message: (err && (err.stack || err.message)) || String(err) });
+  return res.status(500).json({ error: 'Something went wrong. Try again.' });
 }
 
 /**
@@ -253,9 +297,9 @@ export function errorReply(res, err) {
  * Answers 401/403 itself and returns null when there is none.
  */
 export async function manageableOrg(req, res) {
-  const { checkAuth } = await import('./_auth.js');
+  const { requireSession } = await import('./_auth.js');
   const { member, isOrgAdmin } = await import('./_access.js');
-  const user = checkAuth(req, res);
+  const user = await requireSession(req, res);
   if (!user) return null;
   const me = await member(user);
   if (!me) { res.status(401).json({ error: 'unauthorized' }); return null; }

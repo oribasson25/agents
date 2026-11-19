@@ -6,32 +6,60 @@ function he(s) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
+
+/*
+ * A value written into the inline <script>. JSON.stringify alone leaves "<"
+ * as it is, so an opening message of "</script><script>…" would close this
+ * block and run as the platform's own page; U+2028 and U+2029 end a line
+ * inside a string in older parsers.
+ */
+function js(value) {
+  return JSON.stringify(value === undefined ? null : value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
+/* Colours go into CSS, where he() does not help: only a hex colour is used. */
+function hexColor(value, fallback) {
+  const v = String(value || '').trim();
+  return /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v) ? v : fallback;
+}
+
+const text = (value, fallback, max) => {
+  const v = typeof value === 'string' ? value : '';
+  return (v || fallback).slice(0, max);
+};
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).end();
 
-  const { agentId } = req.query;
-  const accent      = req.query.accent      || '#6c63ff';
-  const titleColor  = req.query.titleColor  || '#ffffff';
-  const titleParam  = req.query.title       || '';
-  const placeholder = req.query.placeholder || 'Type a message\u2026';
-  const height      = parseInt(req.query.height) || 500;
+  const agentId = String(req.query.agentId || '');
+  const accent      = hexColor(req.query.accent, '#6c63ff');
+  const titleColor  = hexColor(req.query.titleColor, '#ffffff');
+  const titleParam  = text(req.query.title, '', 200);
+  const placeholder = text(req.query.placeholder, 'Type a message\u2026', 200);
 
   const [row] = await sql`select data from agents where id = ${agentId}`;
   if (!row) return res.status(404).send('Agent not found');
 
-  const agent = row.data;
-  const titleStr   = titleParam || agent.name || 'Agent';
+  const agent = row.data || {};
+  const titleStr   = titleParam || String(agent.name || '') || 'Agent';
   /* An AI Chatbot wears the platform's mark in its own colour — the same
-     drawing the app shows, so the widget in somebody's website matches. */
+     drawing the app shows, so the widget in somebody's website matches.
+     markSvg only ever draws a hex colour, so nothing of the agent's text is in it. */
   const avatarHtml = markSvg(markColor(agent.avatar), 30);
-  const openingStr = agent.openingMessage || 'Hello!';
+  const openingStr = typeof agent.openingMessage === 'string' && agent.openingMessage ? agent.openingMessage : 'Hello!';
+  const dlp = agent.dlp && typeof agent.dlp === 'object' ? { creditCard: !!agent.dlp.creditCard, israeliId: !!agent.dlp.israeliId } : {};
 
-  const jsChatUrl = JSON.stringify(`/api/widget/${agentId}/chat`);
-  const jsOpening = JSON.stringify(openingStr);
-  const jsDlp     = JSON.stringify(agent.dlp || {});
+  const jsChatUrl = js(`/api/widget/${encodeURIComponent(agentId)}/chat`);
+  const jsOpening = js(openingStr);
+  const jsDlp     = js(dlp);
 
   const html = `<!DOCTYPE html>
 <html>
@@ -133,20 +161,16 @@ async function sendMsg(){
   var t0=performance.now();
   showTyping();
   try{
-    console.log('[widget] sending to',CHAT_URL,'messages:',history.length);
-    var r=await fetch(CHAT_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:chatHistory,sessionId:SESSION_ID})});
-    console.log('[widget] response status:',r.status);
-    var raw=await r.text();
-    console.log('[widget] raw response:',raw);
-    var data;try{data=JSON.parse(raw)}catch(pe){throw new Error('Server returned non-JSON ('+r.status+'): '+raw.slice(0,200))}
-    if(!r.ok)throw new Error(data.error||JSON.stringify(data));
+    var r=await fetch(CHAT_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:chatHistory.slice(-20),sessionId:SESSION_ID})});
+    var body=await r.text();
+    var data;try{data=JSON.parse(body)}catch(pe){throw new Error('The server did not answer ('+r.status+')')}
+    if(!r.ok)throw new Error(data.error||('The server answered '+r.status));
     var content=data.content;
     if(!content)throw new Error('Empty response from server');
     var dt=((performance.now()-t0)/1000).toFixed(2)+'s';
     chatHistory.push({role:'assistant',content:content});
     hideTyping();addMsg('agent',content,new Date(),dt);
   }catch(e){
-    console.error('[widget] error:',e);
     var dt=((performance.now()-t0)/1000).toFixed(2)+'s';
     hideTyping();addMsg('error',e.message||String(e)||'Unknown error',new Date(),dt);
     chatHistory.pop();
@@ -158,8 +182,14 @@ async function sendMsg(){
 </html>`;
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.setHeader('X-Frame-Options', 'ALLOWALL');
-  res.setHeader('Content-Security-Policy', "frame-ancestors * file: data:;");
+  /* Any website may frame the widget (frame-ancestors). `sandbox` gives the
+     page an origin of its own, so even if something in it ran, it would run
+     outside the platform's domain: no reach into the app's storage, and no
+     same-origin frame of the app. It needs none — it only posts to the chat
+     endpoint, which answers any origin. */
+  res.setHeader('Content-Security-Policy', 'sandbox allow-scripts allow-forms; frame-ancestors * file: data:');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('Cache-Control', 'no-store');
   res.send(html);
 }

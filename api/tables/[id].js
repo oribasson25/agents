@@ -1,10 +1,10 @@
-import { checkAuth } from '../_auth.js';
+import { requireSession } from '../_auth.js';
 import { getTable, updateTable, deleteTable, listRows } from '../_tables.js';
 import { accessTo, allows, refuse } from '../_access.js';
 
 /** One table: its shape, and the rows in it. */
 export default async function handler(req, res) {
-  const user = checkAuth(req, res);
+  const user = await requireSession(req, res);
   if (!user) return;
   const { id } = req.query;
 

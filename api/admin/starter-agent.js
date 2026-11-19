@@ -1,5 +1,5 @@
 import { sql } from '../_db.js';
-import { checkAdmin } from '../_auth.js';
+import { requireAdmin } from '../_auth.js';
 import { listStarters, snapshotAgent, removeStarter } from '../_defaultAgent.js';
 
 /**
@@ -12,7 +12,8 @@ import { listStarters, snapshotAgent, removeStarter } from '../_defaultAgent.js'
  * button exists.
  */
 export default async function handler(req, res) {
-  const admin = checkAdmin(req, res);
+  /* Admin as the database says now, not as a week-old token says. */
+  const admin = await requireAdmin(req, res);
   if (!admin) return;
 
   try {

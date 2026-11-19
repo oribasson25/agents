@@ -1,4 +1,5 @@
-import { loadAppBySlug, mayOpen } from './_apps.js';
+import crypto from 'crypto';
+import { loadAppMetaBySlug, loadAppFile, mayOpen } from './_apps.js';
 import { linkId, aiOf } from './_appFiles.js';
 
 const TYPES = {
@@ -124,7 +125,7 @@ export default async function handler(req, res) {
   if (!parsed) return page(res, 404, 'No such app', 'Check the address.');
 
   let found;
-  try { found = await loadAppBySlug(parsed.slug); }
+  try { found = await loadAppMetaBySlug(parsed.slug); }
   catch (err) { return page(res, 500, 'Something went wrong', 'Try again in a moment.'); }
   if (!found) return page(res, 404, 'No such app', 'Check the address.');
   const { app } = found;
@@ -143,13 +144,46 @@ export default async function handler(req, res) {
   }
 
   const entry = app.entry || 'index.html';
-  let path = parsed.path || entry;
-  let content = (app.files || {})[path];
-  if (content === undefined && (app.files || {})[`${path.replace(/\/$/, '')}/index.html`] !== undefined) {
-    path = `${path.replace(/\/$/, '')}/index.html`;
-    content = app.files[path];
+  const askedPath = parsed.path || entry;
+  /* A dotfile is never part of an app (a push leaves them out), and one that
+     is stored from before is not served: a public app must not hand out a
+     `.env`. */
+  if (askedPath.split('/').some(p => p.startsWith('.'))) {
+    return page(res, 404, 'Not found', `This app has no file at ${askedPath.replace(/[<>&]/g, '')}.`);
   }
-  if (content === undefined) return page(res, 404, 'Not found', `This app has no file at ${path.replace(/[<>&]/g, '')}.`);
+
+  /* The app's version decides every byte of the answer (the page and the
+     handle injected into it), so it is the ETag: a browser asking again gets
+     a 304 without the file being read at all. */
+  const etag = `"${crypto.createHash('sha1')
+    .update(`${found.versionId || ''}|${found.updatedAt ? new Date(found.updatedAt).getTime() : ''}|${app.access || ''}|${askedPath}`)
+    .digest('base64url').slice(0, 27)}"`;
+  const commonHeaders = () => {
+    res.setHeader('Content-Security-Policy', SANDBOX);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    /* A sandboxed page is a foreign origin to its own files; module scripts and
+       fetch() need this to load them. */
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    /* Keep a private link's token out of the Referer of anything the page loads. */
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    /* Kept, but asked about every time: a private link must stop working when
+       it expires, and a new version must show at once. */
+    res.setHeader('Cache-Control', app.access === 'link' ? 'public, no-cache' : 'private, no-cache');
+    res.setHeader('ETag', etag);
+  };
+  const ifNoneMatch = String((req.headers || {})['if-none-match'] || '');
+  if (ifNoneMatch && ifNoneMatch.split(',').map(x => x.trim().replace(/^W\//, '')).includes(etag)) {
+    res.statusCode = 304;
+    commonHeaders();
+    return res.end();
+  }
+
+  let file;
+  try { file = await loadAppFile(found.id, askedPath); }
+  catch (err) { return page(res, 500, 'Something went wrong', 'Try again in a moment.'); }
+  if (!file) return page(res, 404, 'Not found', `This app has no file at ${askedPath.replace(/[<>&]/g, '')}.`);
+  const path = file.path;
+  let content = file.content;
 
   const ext = (path.split('.').pop() || '').toLowerCase();
   const type = TYPES[ext] || 'text/plain';
@@ -166,13 +200,6 @@ export default async function handler(req, res) {
 
   res.statusCode = 200;
   res.setHeader('Content-Type', `${type}; charset=utf-8`);
-  res.setHeader('Content-Security-Policy', SANDBOX);
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  /* A sandboxed page is a foreign origin to its own files; module scripts and
-     fetch() need this to load them. */
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  /* Keep a private link's token out of the Referer of anything the page loads. */
-  res.setHeader('Referrer-Policy', 'no-referrer');
-  res.setHeader('Cache-Control', 'no-store');
+  commonHeaders();
   return res.end(req.method === 'HEAD' ? undefined : content);
 }
