@@ -127,15 +127,12 @@ export function callsAgent(text, names) {
 }
 
 /** A Claude API error in words an admin can act on. */
+/** A model call that failed, in words for the admin's activity log. (Named before models moved to OpenRouter.) */
 export function describeClaudeError(err) {
-  const status = err?.status;
-  if (status === 401) return 'The Claude API key in the owner account’s Settings was refused.';
-  if (status === 403) return 'The Claude API key may not use this model.';
-  if (status === 404) return 'The model was not found for this Claude API key.';
-  if (status === 429) return 'Claude rate limit reached; try again in a minute.';
-  if (status === 400 && /credit balance/i.test(err.message || '')) return 'The Claude credit has run out.';
-  if (status === 529 || status === 503) return 'Claude is overloaded right now; try again in a minute.';
-  return err?.error?.error?.message || err?.message || String(err);
+  if (err?.code === 'NO_MODEL') return 'The platform has not chosen a model for this account yet.';
+  if (err?.code === 'NO_PLATFORM_KEY') return 'The platform has no model key set up yet.';
+  if (err?.status === 429) return 'The model is rate limited; try again in a minute.';
+  return err?.message || String(err);
 }
 
 /* ---------- storage ---------- */

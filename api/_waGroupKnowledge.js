@@ -1,21 +1,18 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { sql } from './_db.js';
-import { recordUsage } from './_usage.js';
+import { llmFetch, replyText, modelInfo } from './_llm.js';
 import { describeClaudeError, logGroupEvent } from './_waGroups.js';
 
 /*
  * Turns a WhatsApp chat export into knowledge the number carries into a group
  * (ported from the Grois group bot). The browser parses the export and sends
- * it in parts; Haiku reads each part and writes notes (cheap, one request per
- * part), then Opus merges all the notes plus the most recent messages into one
+ * it in parts; the model reads each part and writes notes (one request per
+ * part), then merges all the notes plus the most recent messages into one
  * profile of the group. The profile and a few real excerpts go into the
  * prompt on every turn in that group (see buildSystem in _waGroupBrain.js).
  *
- * Runs on the number owner's Claude key, and is counted in their credit.
+ * Runs on the model the platform chose for the number owner's organization,
+ * through the platform's OpenRouter key.
  */
-
-const DIGEST_MODEL = 'claude-haiku-5-5';
-const PROFILE_MODEL = 'claude-opus-5-5';
 const STALE_JOB_MS = 15 * 60_000;
 
 const DIGEST_SYSTEM = `You are helping an AI agent get to know a WhatsApp group before it joins them. You'll read one part of the group's chat history and write notes that a later step merges, together with the notes from the other parts, into a profile of the group. With that profile the agent should be able to talk like someone who has been in the group for years: know the people, get the references, and speak their language.
@@ -42,44 +39,47 @@ Write the profile in the language the group writes in. It goes into the agent's 
 
 When notes conflict, prefer the newer information (people change jobs, partners and cities) and mention the change when it matters. Leave out what you're not fairly sure about rather than guessing. Aim for 1,500 to 3,000 words, dense with specifics and without filler.`;
 
-const textOf = (message) => (message.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
-
-/** Notes on one part of the export. A part the model declines to read yields no notes. */
-export async function digestPart({ apiKey, ownerId, chatName, part, parts, from, to, text }) {
-  const client = new Anthropic({ apiKey });
-  const message = await client.messages
-    .stream({
-      model: DIGEST_MODEL,
-      max_tokens: 8000,
-      system: DIGEST_SYSTEM,
-      messages: [{ role: 'user', content: `Group: "${chatName || 'unnamed'}"\nPart ${part} of ${parts}, ${from} to ${to}.\n\n<chat>\n${text}\n</chat>` }],
-      output_config: { effort: 'low' },
-    })
-    .finalMessage();
-  await recordUsage({ userId: ownerId, model: message.model || DIGEST_MODEL, usage: message.usage, source: 'group-learning' });
-  if (message.stop_reason === 'refusal') return { notes: '', skipped: true };
-  return { notes: textOf(message) }; // notes cut off at max_tokens are still useful
+/** A long answer, capped at what the model can write. */
+async function capped(cfg, wanted) {
+  const info = await modelInfo(cfg.model);
+  return info && info.maxOutput ? Math.min(wanted, info.maxOutput) : wanted;
 }
 
-async function writeProfile({ apiKey, ownerId, chatName, notes, recent }) {
+async function ask(cfg, ownerId, { system, user, maxTokens }) {
+  const { ok, status, data } = await llmFetch({
+    cfg,
+    meta: { orgId: cfg.orgId, ownerId, source: 'group-learning' },
+    body: { max_tokens: await capped(cfg, maxTokens), messages: [{ role: 'system', content: system }, { role: 'user', content: user }] },
+  });
+  if (!ok) throw Object.assign(new Error((data.error && data.error.message) || `the model answered ${status}`), { status });
+  const choice = data.choices[0];
+  return { text: replyText(data), refused: !!(choice.message && choice.message.refusal), cutOff: choice.finish_reason === 'length' };
+}
+
+/** Notes on one part of the export. A part the model declines to read yields no notes. */
+export async function digestPart({ cfg, ownerId, chatName, part, parts, from, to, text }) {
+  const out = await ask(cfg, ownerId, {
+    system: DIGEST_SYSTEM,
+    user: `Group: "${chatName || 'unnamed'}"\nPart ${part} of ${parts}, ${from} to ${to}.\n\n<chat>\n${text}\n</chat>`,
+    maxTokens: 8000,
+  });
+  if (out.refused || !out.text) return { notes: '', skipped: true };
+  return { notes: out.text }; // notes cut off at max_tokens are still useful
+}
+
+async function writeProfile({ cfg, ownerId, chatName, notes, recent }) {
   const sections = notes
     .filter((n) => n.notes)
     .map((n) => `<notes part="${n.part}" from="${n.from}" to="${n.to}">\n${n.notes}\n</notes>`)
     .join('\n\n');
-  const client = new Anthropic({ apiKey });
-  const message = await client.messages
-    .stream({
-      model: PROFILE_MODEL,
-      max_tokens: 32000,
-      system: PROFILE_SYSTEM,
-      messages: [{ role: 'user', content: `Group: "${chatName || 'unnamed'}"\n\n${sections}\n\n<recent_messages>\n${recent}\n</recent_messages>\n\nWrite the profile now.` }],
-      output_config: { effort: 'medium' },
-    })
-    .finalMessage();
-  await recordUsage({ userId: ownerId, model: message.model || PROFILE_MODEL, usage: message.usage, source: 'group-learning' });
-  if (message.stop_reason === 'refusal') throw new Error('The model declined to read this chat.');
-  if (message.stop_reason === 'max_tokens') throw new Error('The profile came out too long; try again.');
-  return textOf(message);
+  const out = await ask(cfg, ownerId, {
+    system: PROFILE_SYSTEM,
+    user: `Group: "${chatName || 'unnamed'}"\n\n${sections}\n\n<recent_messages>\n${recent}\n</recent_messages>\n\nWrite the profile now.`,
+    maxTokens: 16000,
+  });
+  if (out.refused || !out.text) throw new Error('The model declined to read this chat.');
+  if (out.cutOff) throw new Error('The profile came out too long; try again.');
+  return out.text;
 }
 
 async function setKnowledge(numberId, jid, knowledge) {
@@ -94,11 +94,11 @@ async function setKnowledge(numberId, jid, knowledge) {
  * `job` on the group's knowledge, which the admin screen polls; the previous
  * profile stays in use until the new one is ready.
  */
-export async function buildKnowledge({ apiKey, ownerId, numberId, group, notes, recent, samples, stats }) {
+export async function buildKnowledge({ cfg, ownerId, numberId, group, notes, recent, samples, stats }) {
   const previous = group.knowledge || {};
   await setKnowledge(numberId, group.jid, { ...previous, job: { status: 'building', startedAt: Date.now() } });
   try {
-    const profile = await writeProfile({ apiKey, ownerId, chatName: group.name, notes, recent });
+    const profile = await writeProfile({ cfg, ownerId, chatName: group.name, notes, recent });
     await setKnowledge(numberId, group.jid, { profile, samples, stats, importedAt: Date.now(), job: null });
     await logGroupEvent(numberId, group.jid, 'knowledge', { messages: stats?.messages || null });
   } catch (err) {

@@ -188,32 +188,11 @@ ok(src.includes('async function commitPlan()') && src.includes('abilities: { web
 ok(src.includes('spec.openingMessage || fallbackGreeting') && src.includes("(plan && plan.openingMessage)"),
    'the built chatbot gets a fitting opening message, with a plan-based fallback');
 
-/* ── the key is asked for once, or not at all, and before the plan ── */
-ok(src.includes("haveKey ? [0, 1, 2, 4, 5, 6, 7, 8, 9, 10] : [0, 1, 3, 2, 4, 5, 6, 7, 8, 9, 10]"),
-   'an account with a key never sees the key screen, and one without it answers the key before the plan (the plan is a model call)');
-ok(src.includes('const haveKeyRef = useRef(null);') && src.includes('if (haveKeyRef.current === null && keyChecked)'),
-   'and the answer is latched, so answering screen 3 does not renumber the run under you');
-
-/* ── a filled field is not a key ── */
-const verify = lift('async function verifyApiKey({ provider, apiKey, model, ollamaHost }) {', '\n  /** Did the model refuse us');
-ok(verify.includes('api.anthropic.com/v1/messages') && verify.includes('max_tokens: 1'),
-   'Claude is checked with the smallest call it will price');
-ok(verify.includes('api.openai.com/v1/models'), 'OpenAI is checked without spending a token');
-ok(verify.includes('/api/tags'), 'and a self-hosted server by asking what it has');
-ok(verify.includes("return { ok: false, why:"), 'a refusal comes back in the provider\'s own words');
-
-ok(src.includes('verifyApiKey(accountApi()).then(r =>'),
-   'the account key is tried before the wizard decides to skip the key screen');
-ok(/const tried = await verifyApiKey\(\{ \.\.\.patch, model: accountApi\(\)\.model \}\);[\s\S]{0,200}if \(!tried\.ok\)/.test(src),
-   'and the key screen refuses to store a key the provider would not take');
-ok(/const tried = await verifyApiKey\(draft\);[\s\S]{0,200}if \(!tried\.ok\)/.test(src),
-   'Settings does the same, which is where the bad key got in');
-ok(src.includes('looksLikeKeyProblem(error)') && src.includes("L('Fix the key', 'תקן את המפתח')"),
-   'a build stopped by the key offers to fix the key rather than retrying into the same wall');
-ok(src.includes('if (repairing) { setRepairing(false); go(8); build(); return; }'),
-   'and a repaired key returns to the build instead of re-asking every question');
-ok(src.includes('The latch is deliberately not flipped here'),
-   'answering the key screen does not renumber the run that is asking it');
+/* ── models come from the platform: there is no key to ask for ── */
+ok(src.includes('const FLOW = [0, 1, 2, 4, 5, 6, 7, 8, 9, 10]'),
+   'the wizard never shows a key screen');
+ok(!src.includes('async function verifyApiKey(') && !src.includes("L('Fix the key'"),
+   'and nothing in the interface asks for, tests or repairs a key');
 ok(src.includes('const questionSteps = FLOW.filter(n => [1, 2, 3, 4, 5, 7].includes(n));'),
    '"question 3 of 6" counts the questions actually being asked, in the order they are asked');
 ok(src.includes('|| !settings || autopilot ||'),
@@ -253,7 +232,7 @@ ok(/const picked = Array\.from\(files \|\| \[\]\)/.test(up) && up.indexOf('Array
 ok(up.includes('for (const file of picked)'),
    'and the loop reads the copy, not the list that by then is empty');
 
-const ensure = lift('function ensureAgent() {', '\n    async function saveKey()');
+const ensure = lift('function ensureAgent() {', '\n    async function startCrawl()');
 ok(ensure.includes('agentRef.current') && ensure.includes('creatingRef.current'),
    'two things asking for the agent at once get one agent, not two');
 ok(!/if \(w\.agentId\) return w\.agentId;/.test(ensure),

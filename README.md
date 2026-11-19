@@ -20,7 +20,7 @@ product.
 - **Frontend** — one file, `agentforge.html`: React 18 + Babel + Monaco loaded from CDNs
 - **Backend** — Vercel Serverless Functions under `api/` (Node) plus two Python functions
 - **Database** — Neon Postgres; an agent is a single JSONB row in `agents`
-- **Models** — Claude (Anthropic), OpenAI, or a self-hosted Ollama, chosen once per account
+- **Models** — any model on OpenRouter, through the platform's one key; the platform admin picks the model each organization runs on
 - **Tools** — user Python executed in `api/run_tool.py`, with `pip install` on demand
 - **Crawler** — `api/_crawlSite.js`, plain fetch over a site's own HTML and its sitemap
 - **Live scraper** — Playwright + Chromium (`api/scrape_browser.js`), renders JS, one page at a time
@@ -90,17 +90,37 @@ documents stored before this existed; without `--dry` it rewrites and re-chunks
 them, spending the owner's API credits, one call per ~9k characters.
 `--chunk-only` rebuilds chunks without calling any model.
 
-## Account API settings
+## Models
 
-The provider, API key and model are account-wide, held in `user_settings` and edited in the
-Settings screen — not per agent. Everything the account owns runs on them: every agent, the
-widget, WhatsApp, the builder assistants and the platform assistant.
+Models come only from the platform. Every call to a model goes through the server — the gateway
+in `api/_llm.js` — on the platform's one OpenRouter key, in the chat-completions shape. No
+organization holds a key: there is nothing to set in Settings, and migration `033` deletes the
+keys and Ollama addresses organizations had stored, and every agent's own `apiConfig`.
 
-The browser reads the key from `GET /api/settings` because model calls are made client-side in
-the test chat and the assistants, the same trust model the per-agent key had. The public
-channels resolve it server-side from the agent's owner (`resolveAgentApiConfig`), falling back
-to an agent's own stored `apiConfig` only while the account's settings are still empty —
-migration `010` backfills them from each user's most recently updated agent that had a key.
+The platform admin sets it up under **Admin › Billing**: the OpenRouter key (sealed in
+`platform_billing` like a connection's tokens, checked with OpenRouter before it is stored), a
+default model, a model per organization where it should differ (`org_billing`), and a monthly
+ceiling in dollars. `getUserSettings` resolves every person to provider `openrouter` with their
+organization's model; `configUsable` is true once the platform has a key and a model. On every
+call the model is the organization's, whatever the request asked for.
+
+The browser's calls (the test chat, the building assistants, Autopilot, the home chat) post to
+`/api/llm`; the server ones (the channels, knowledge processing, the automation AI step, Jarvis,
+the groups and learning a group) call `llmFetch` directly. Jarvis's web search is a tool of its own
+that asks OpenRouter's `web` plugin on the same model (`webSearch`). The groups ask for their
+decision as a JSON schema when the model supports structured outputs, and in words otherwise;
+prompt caching is marked only for `anthropic/` models.
+
+Every successful call is a row in `llm_usage`: organization, the member who set it off (none for a
+widget or WhatsApp visitor), what it is charged to (`item_type`/`item_id`), tokens, and the cost
+OpenRouter reported. Before each call the month's spend (UTC calendar month) is compared with the
+ceiling, and once it is reached every call is refused with a message until the 1st — the platform
+stops itself rather than wait for OpenRouter's own budget to refuse. A 402 from OpenRouter, or a
+403 from a workspace budget, reads as the same message. `npm run probe:llm` checks the gateway and
+the settings resolution.
+
+`OPENROUTER_BASE_URL` overrides where the gateway sends calls, for local testing against a
+stand-in; never set it in production.
 
 ## Language
 
@@ -217,7 +237,7 @@ opens by itself the first time an account with no chatbots is used, and **New AI
 shows a fork first: **Autopilot**, or **Advanced** — the editor, exactly as it was.
 
 The design rests on one rule: when the wizard closes, nothing may be left that needs the editor.
-So the API key, the site crawl, the file uploads, the table, the Gmail connection and the channel
+So the site crawl, the file uploads, the table, the Gmail connection and the channel
 all happen inside it, against the same endpoints the editor calls.
 
 Nobody is asked about a base prompt or a skill. They are asked about the business and about what
@@ -226,21 +246,8 @@ sends to the account's model, which returns the name, opening message, base prom
 JSON.
 
 Two of the screens are conditional, which is why the flow is an ordered list rather than
-`step + 1`. The key screen appears only for an account whose key **works**: the stored key is
-tried against the provider in the background while the first question is on screen, and only a key
-that answered takes the screen out of the flow, dropping the question count from six to five.
-`accountApiUsable` says only that the field is not empty, and a field that is not empty is not a
-key — an account here ran for a day with `25102004` in it, and everything reported "configured"
-until a model was asked for something.
-
-`verifyApiKey` is the check, and it is cheap on purpose: one token for Claude, a model listing for
-OpenAI, an `/api/tags` for a self-hosted server. It now guards Settings too, which is where the
-bad key got in; a key the provider refuses is not stored, and the refusal is shown in the
-provider's own words. And a build that dies on the key offers **Fix the key**, which returns to
-the key screen and then straight back into the build — retrying into the same wall was the only
-thing on offer before. The answer is latched when the run starts — supplying the key on screen 3
-would otherwise take screen 3 out of the flow and shrink "question 3 of 6" to "of 5" under the
-person who had just answered it.
+`step + 1`: knowledge is dropped when the plan says it is not needed, and connections appear only
+when a tool was proposed. There is no key screen — models come from the platform.
 
 Each screen is shaped by the one before it. `AUTOPILOT_CATALOG` holds six verticals, each with
 four jobs; the jobs ticked on screen 2 decide which knowledge sources screen 4 offers, whether
@@ -615,6 +622,10 @@ npm run migrate -- --dry   # list what would run
 npm run migrate            # apply it
 ```
 
+`npm run migrate -- --upto 032` stops after the files numbered up to 032 and leaves the rest
+pending — for a release whose later migration must wait until its code is live (033 deletes the
+model keys the code before 032 still reads).
+
 `DATABASE_URL` is read from the environment or from a local `.env`. Each file is written to be
 idempotent, so a first run against a database whose early migrations were applied by hand
 re-applies them harmlessly, and a run that stops on an error can be repeated once the cause is
@@ -721,17 +732,18 @@ the name and checking each redirect.
 
 - An agent belongs to a user; every endpoint verifies ownership before reading or writing.
   Admins can act on any agent.
-- The account API key lives in `user_settings.api_key`, and WhatsApp tokens and tool secrets in
-  the agent's JSONB row — all in plaintext, and all readable by the account's owner.
+- The platform's OpenRouter key is sealed (AES-256-GCM) in `platform_billing` and never leaves the
+  server. WhatsApp tokens and tool secrets live in the agent's JSONB row, in plaintext, readable
+  by the account's owner.
 - The platform assistant acts as the signed-in user through the same authenticated endpoints,
   so it cannot reach another account's data. It asks for confirmation before deleting an agent.
 - Tool code runs server-side with the environment variables that tool declares. Anyone who can
   edit a tool can read its secrets and run arbitrary Python in the function.
-- `/api/run-tool`, `/api/scrape`, `/api/scrape-browser` and `/api/ollama-proxy` are reachable
+- `/api/run-tool`, `/api/scrape` and `/api/scrape-browser` are reachable
   without authentication. They are called server-to-server by the agent runner; putting them
   behind a shared secret is an open item.
-- The widget and the WhatsApp webhook are public by design; conversations through them bill the
-  agent owner's API key. Watch **Interactions** for volume.
+- The widget and the WhatsApp webhook are public by design; conversations through them count
+  against the platform's monthly ceiling. Watch **Interactions** and Admin › Billing for volume.
 - `/privacy`, `/terms` and `/api/auth/invite-check` are public on purpose. The first two have to
   be, for Google's review; the third reserves nothing and refuses a malformed code without
   touching the database.

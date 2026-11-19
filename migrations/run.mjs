@@ -1,8 +1,9 @@
 /**
  * Applies the SQL files in this directory, in filename order, once each.
  *
- *   npm run migrate            # apply everything still pending
- *   npm run migrate -- --dry   # just say what would run
+ *   npm run migrate                  # apply everything still pending
+ *   npm run migrate -- --dry         # just say what would run
+ *   npm run migrate -- --upto 032    # stop after the files whose names start up to "032"
  *
  * DATABASE_URL comes from the environment or from a local .env file. Applied
  * files are recorded in schema_migrations, so re-running is a no-op. Every
@@ -18,6 +19,10 @@ import { neon } from '@neondatabase/serverless';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DRY = process.argv.includes('--dry');
+/* `--upto 032` leaves anything after 032 pending: a release whose later
+   migration must wait until its code is live (033 deletes what the code
+   before 032 still reads). */
+const UPTO = (() => { const i = process.argv.indexOf('--upto'); return i > -1 ? String(process.argv[i + 1] || '') : ''; })();
 
 function loadEnvFile() {
   const envPath = path.join(HERE, '..', '.env');
@@ -115,7 +120,7 @@ async function main() {
   `;
   const applied = new Set((await sql`select filename from schema_migrations`).map(r => r.filename));
 
-  const pending = files.filter(f => !applied.has(f));
+  const pending = files.filter(f => !applied.has(f) && (!UPTO || f.slice(0, UPTO.length) <= UPTO));
   if (pending.length === 0) {
     console.log(`Nothing to do — all ${files.length} migrations are already recorded as applied.`);
     return;

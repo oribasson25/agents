@@ -1,21 +1,14 @@
 import { sql } from './_db.js';
-import { DEFAULT_CLAUDE_MODEL, currentClaudeModel } from './_claudeModels.js';
 
 /**
- * Model settings belong to the organization: one key, provider and model drive
- * every agent, every channel and the assistants of everyone in it
- * (org_settings). The interface language is each person's own (user_settings).
- * An agent's own apiConfig is only a fallback while the organization has none.
+ * Models come only from the platform. Every organization runs on the
+ * platform's OpenRouter key (api/_llm.js), on the model the platform admin
+ * chose for it (org_billing.default_model) or, failing that, the platform's
+ * default (platform_billing.default_model). Nobody in an organization holds or
+ * sets a key, and an agent carries no model settings of its own.
  *
- * user_settings still has the old per-account key columns. They are read only
- * as a fallback for an organization that has no org_settings row yet.
+ * What a person still sets is their own interface language (user_settings).
  */
-
-export const DEFAULT_MODELS = {
-  claude: DEFAULT_CLAUDE_MODEL,
-  openai: 'gpt-4o',
-  ollama: 'gemma4:12b',
-};
 
 /* The interface and the assistants speak English unless the account picks
    Hebrew in Settings. */
@@ -23,7 +16,7 @@ export const ASSISTANT_LANGUAGES = ['en', 'he'];
 
 export function emptySettings() {
   return {
-    provider: 'claude', api_key: '', model: DEFAULT_MODELS.claude, ollama_host: '',
+    provider: 'openrouter', api_key: '', model: '', ollama_host: '', ready: false, org_id: null,
     assistant_language: 'en',
     /* An account with no settings row has never answered the language
        question, so it is still worth asking. */
@@ -34,35 +27,36 @@ export function emptySettings() {
 export async function getUserSettings(userId) {
   if (!userId) return null;
   const [row] = await sql`
-    select coalesce(o.provider, s.provider)       as provider,
-           coalesce(o.api_key, s.api_key)         as api_key,
-           coalesce(o.model, s.model)             as model,
-           coalesce(o.ollama_host, s.ollama_host) as ollama_host,
-           coalesce(s.assistant_language, 'en')   as assistant_language,
+    select coalesce(s.assistant_language, 'en')   as assistant_language,
            coalesce(s.language_chosen, false)     as language_chosen,
-           (o.org_id is not null or s.user_id is not null) as found
+           u.org_id                               as org_id,
+           coalesce(nullif(b.default_model, ''), p.default_model, '') as model,
+           coalesce(p.openrouter_key <> '', false) as platform_ready
     from users u
-    left join user_settings s on s.user_id = u.id
-    left join org_settings  o on o.org_id = u.org_id
+    left join user_settings    s on s.user_id = u.id
+    left join org_billing      b on b.org_id = u.org_id
+    left join platform_billing p on p.id = true
     where u.id = ${userId}
   `;
-  if (!row || !row.found) return null;
-  const { found, ...settings } = row;
-  return settings;
+  if (!row) return null;
+  return {
+    provider: 'openrouter',
+    api_key: '',
+    model: row.model || '',
+    ollama_host: '',
+    ready: !!row.platform_ready && !!row.model,
+    org_id: row.org_id || null,
+    assistant_language: row.assistant_language,
+    language_chosen: !!row.language_chosen,
+  };
 }
 
 /**
- * Saves what this person may change. The language is always theirs; the
- * model settings are the organization's, and only `canSetModel` (its admin)
- * writes them — every screen sends the whole object back, so a member saving
- * a language must not be refused over fields they never touched.
+ * Saves what this person may change: their interface language. Every screen
+ * sends the whole settings object back; anything else in it is ignored.
  */
-export async function saveUserSettings(userId, patch, { canSetModel = true } = {}) {
-  const provider = ['claude', 'openai', 'ollama'].includes(patch.provider) ? patch.provider : 'claude';
+export async function saveUserSettings(userId, patch) {
   const language = ASSISTANT_LANGUAGES.includes(patch.assistantLanguage) ? patch.assistantLanguage : 'en';
-  const apiKey = typeof patch.apiKey === 'string' ? patch.apiKey.trim() : '';
-  const model = currentModel(provider, (typeof patch.model === 'string' && patch.model.trim()) || DEFAULT_MODELS[provider]);
-  const ollamaHost = typeof patch.ollamaHost === 'string' ? patch.ollamaHost.trim().replace(/\/$/, '') : '';
   /* Only ever set, never cleared — `or` in the UPDATE below. Every screen that
      saves settings sends the whole object back, including a `languageChosen`
      it read from here, so a save that is about something else cannot
@@ -77,56 +71,18 @@ export async function saveUserSettings(userId, patch, { canSetModel = true } = {
       language_chosen    = user_settings.language_chosen or excluded.language_chosen,
       updated_at         = now()
   `;
-  if (canSetModel) {
-    await sql`
-      insert into org_settings (org_id, provider, api_key, model, ollama_host, updated_at)
-      select u.org_id, ${provider}, ${apiKey}, ${model}, ${ollamaHost}, now()
-      from users u where u.id = ${userId} and u.org_id is not null
-      on conflict (org_id) do update set
-        provider    = excluded.provider,
-        api_key     = excluded.api_key,
-        model       = excluded.model,
-        ollama_host = excluded.ollama_host,
-        updated_at  = now()
-    `;
-  }
   return getUserSettings(userId);
 }
 
-/** The model to call: a retired Claude id becomes its replacement; other providers' ids are left alone. */
-export function currentModel(provider, model) {
-  return (provider || 'claude') === 'claude' ? currentClaudeModel(model) : model;
-}
-
-/** Is this config able to reach a model at all? */
+/** Can this config reach a model: the platform has a key, and a model is chosen. */
 export function configUsable(cfg) {
-  if (!cfg) return false;
-  return cfg.provider === 'ollama' ? !!cfg.ollamaHost : !!cfg.apiKey;
+  return !!cfg && cfg.provider === 'openrouter' && !!cfg.ready && !!cfg.model;
 }
 
-/**
- * The account's settings win as a whole — never half of one config and half of
- * another, which would pair a Claude key with an OpenAI model. Falls back to
- * the agent's own stored config only while the account has none.
- */
-export function resolveApiConfig(settings, agent) {
-  const account = settings
-    ? {
-        provider: settings.provider || 'claude',
-        apiKey: settings.api_key || '',
-        model: currentModel(settings.provider, settings.model || DEFAULT_MODELS[settings.provider || 'claude']),
-        ollamaHost: settings.ollama_host || '',
-      }
-    : null;
-  if (configUsable(account)) return account;
-
-  const own = (agent && agent.apiConfig) || {};
-  return {
-    provider: own.provider || 'claude',
-    apiKey: own.apiKey || '',
-    model: currentModel(own.provider, own.model || DEFAULT_MODELS[own.provider || 'claude']),
-    ollamaHost: (own.ollamaHost || '').replace(/\/$/, ''),
-  };
+/** The config every call is made with, from a person's (or an owner's) settings. */
+export function resolveApiConfig(settings /* , agent — agents carry no model settings any more */) {
+  const s = settings || emptySettings();
+  return { provider: 'openrouter', apiKey: '', model: s.model || '', ollamaHost: '', ready: !!s.ready, orgId: s.org_id || null };
 }
 
 /**
@@ -135,5 +91,5 @@ export function resolveApiConfig(settings, agent) {
  */
 export async function resolveAgentApiConfig(agentRow) {
   const settings = agentRow?.user_id ? await getUserSettings(agentRow.user_id) : null;
-  return resolveApiConfig(settings, agentRow?.data);
+  return resolveApiConfig(settings);
 }

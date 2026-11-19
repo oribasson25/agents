@@ -517,7 +517,7 @@
     return ((d && d.content) || []).filter(c => c.type === 'text').map(c => c.text).join('\n').trim();
   }
 
-  let ACCOUNT_API = { provider: 'claude', apiKey: '', model: DEFAULT_MODEL.claude, ollamaHost: '', assistantLanguage: 'en' };
+  let ACCOUNT_API = { provider: 'openrouter', model: '', usable: false, assistantLanguage: 'en' };
   function accountApi() { return ACCOUNT_API; }
 
   /* ── the person signed in, and their organization ──
@@ -556,59 +556,11 @@
   /** L('Delete', 'מחק') — the English first, because that is the default. */
   function L(en, he) { return UI_LANG === 'he' ? he : en; }
   function uiDir() { return UI_LANG === 'he' ? 'rtl' : 'ltr'; }
+  /* Models come from the platform; the server says whether it has set this
+     organization up (a key, and a model chosen). */
   function accountApiUsable(cfg) {
     const c = cfg || ACCOUNT_API;
-    return c.provider === 'ollama' ? !!c.ollamaHost : !!c.apiKey;
-  }
-
-  /**
-   * Whether the key can actually reach a model.
-   *
-   * `accountApiUsable` only says the field is not empty, and a field that is
-   * not empty is not a key — an account here had `25102004` saved in it, which
-   * everything treated as configured right up to the moment a model was asked
-   * for something. The cheapest call each provider offers, and the provider's
-   * own words back when it refuses.
-   */
-  async function verifyApiKey({ provider, apiKey, model, ollamaHost }) {
-    try {
-      if (provider === 'ollama') {
-        const host = (ollamaHost || '').replace(/\/$/, '');
-        if (!host) return { ok: false, why: L('No server address.', 'לא הוזנה כתובת שרת.') };
-        const r = await fetch(`${host}/api/tags`);
-        return r.ok ? { ok: true } : { ok: false, why: L(`The server answered ${r.status}.`, `השרת ענה ${r.status}.`) };
-      }
-      const key = (apiKey || '').trim();
-      if (!key) return { ok: false, why: L('No key.', 'לא הוזן מפתח.') };
-
-      if (provider === 'openai') {
-        const r = await fetch('https://api.openai.com/v1/models', { headers: { Authorization: `Bearer ${key}` } });
-        if (r.ok) return { ok: true };
-        const d = await r.json().catch(() => ({}));
-        return { ok: false, why: d.error?.message || `HTTP ${r.status}` };
-      }
-
-      // One token is the smallest thing Anthropic will price, and a refusal
-      // costs nothing at all.
-      const r = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json', 'x-api-key': key,
-          'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({ model: model || DEFAULT_MODEL.claude, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
-      });
-      if (r.ok) return { ok: true };
-      const d = await r.json().catch(() => ({}));
-      return { ok: false, why: d.error?.message || `HTTP ${r.status}` };
-    } catch (err) {
-      return { ok: false, why: err.message };
-    }
-  }
-
-  /** Did the model refuse us, or refuse the request? They need different words. */
-  function looksLikeKeyProblem(message) {
-    return /x-api-key|api[ _-]?key|unauthorized|authentication|401|403|invalid.*credential|incorrect api key/i.test(String(message || ''));
+    return !!c.usable;
   }
 
   /* ─────────────────── API ─────────────────── */
@@ -620,6 +572,23 @@
     const token = getToken();
     const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, ...(opts.headers || {}) };
     return fetch(path, { ...opts, headers });
+  }
+  /* Every call to a model goes through the server (api/llm.js), on the
+     platform's OpenRouter key and the model chosen for the organization.
+     `body` is a chat-completions request and the answer is OpenRouter's own. */
+  function llmFetch(body, meta = {}) {
+    return apiFetch('/api/llm', { method: 'POST', body: JSON.stringify({ body, ...meta }) });
+  }
+  /* Whether the organization's stored settings reach a model. The browser no
+     longer holds the key to try it itself, so the server tries it. */
+  async function verifyStoredKey() {
+    try {
+      const r = await apiFetch('/api/llm', { method: 'POST', body: JSON.stringify({ ping: true }) });
+      const d = await r.json().catch(() => ({}));
+      return r.ok ? { ok: !!d.ok, why: d.why } : { ok: false, why: (d.error && d.error.message) || `HTTP ${r.status}` };
+    } catch (err) {
+      return { ok: false, why: err.message };
+    }
   }
   // Keys prefixed with "_" are UI-only state (_isNew drives the one-off
   // highlight on a freshly duplicated card). They must never be persisted:
@@ -704,23 +673,6 @@
   async function apiRevokeToken(id) {
     const r = await apiFetch(`/api/tokens?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
     if (!r.ok && r.status !== 204) throw new Error(`Could not revoke the token (${r.status})`);
-  }
-
-  /* The Claude credit left: the balance typed in from the Console minus what
-     8legs spent with the account's key since (see CreditSection). */
-  /* Calls the browser makes to Claude go straight to Anthropic, so the
-     server never sees what they cost. Report the token counts; the server
-     prices them. Fire and forget: a lost report must not break a reply. */
-  function reportClaudeUsage(d, source) {
-    if (!d || !d.usage) return;
-    apiFetch('/api/credit', { method: 'POST', body: JSON.stringify({ model: d.model, usage: d.usage, source }) }).catch(() => {});
-  }
-
-  async function apiCredit(method = 'GET', body) {
-    const r = await apiFetch('/api/credit', { method, ...(body ? { body: JSON.stringify(body) } : {}) });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.error || `Could not load the credit (${r.status})`);
-    return d;
   }
 
   async function apiGetSettings() {
@@ -979,7 +931,6 @@
       basePrompt: '',
       skills: [],
       tools: [],
-      apiConfig: { provider: 'claude', apiKey: '', model: DEFAULT_MODEL.claude, ollamaHost: '' },
       dlp: { creditCard: false, israeliId: false },
       scrapeUrls: [],
       emailEnabled: false,
@@ -1804,13 +1755,13 @@ function markSvgString(color, size = 30) {
         <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: '16px 24px', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 18 }}>🔑</span>
           <div style={{ flex: 1, minWidth: 220 }}>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>Model &amp; API key</div>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>{L('Model', 'מודל')}</div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.6 }}>
               {accountApiUsable()
-                ? L(`Every AI Chatbot in this account runs on ${accountApi().provider} · ${accountApi().model}. Change it in Settings.`,
-                    `כל ה-AI Chatbots בחשבון רצים על ${accountApi().provider} · ${accountApi().model}. להחלפה — מסך Settings.`)
-                : L('No API key set for this account yet. Until one is set in Settings, no AI Chatbot will answer.',
-                    'עדיין לא הוגדר מפתח API לחשבון. עד שיוגדר במסך Settings, אף AI Chatbot לא יענה.')}
+                ? L(`Every AI Chatbot in this organization runs on ${accountApi().model}, provided by the platform.`,
+                    `כל ה-AI Chatbots בארגון רצים על ${accountApi().model}, דרך הפלטפורמה.`)
+                : L('The platform admin has not finished setting up models for this organization. Until then, no AI Chatbot will answer.',
+                    'אדמין הפלטפורמה עוד לא סיים להגדיר מודלים לארגון. עד אז אף AI Chatbot לא יענה.')}
             </div>
           </div>
           <span style={{
@@ -2226,51 +2177,20 @@ function markSvgString(color, size = 30) {
   // agent tools, no RAG, no DLP. This is the builder talking to the model, not
   // an end user talking to the agent.
   async function callPlainLLM(system, history, maxTokens = 4096) {
-    const { apiKey, provider, model } = accountApi();
-
-    if (provider === 'claude') {
-      const r = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({ model, ...claudeRequestShape(model, maxTokens), system, messages: history }),
-      });
-      const d = await r.json();
-      if (!r.ok) {
-        recordError('provider', d.error?.message || JSON.stringify(d), { provider: 'claude', model });
-        throw new Error(d.error?.message || JSON.stringify(d));
-      }
-      reportClaudeUsage(d, 'builder');
-      return claudeReplyText(d);
-    }
-
-    if (provider === 'ollama') {
-      const host = (accountApi().ollamaHost || 'http://localhost:11434').replace(/\/$/, '');
-      const r = await apiFetch('/api/ollama-proxy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ host, path: '/v1/chat/completions', body: { model, messages: [{ role: 'system', content: system }, ...history] } }),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
-      return d.choices?.[0]?.message?.content || '';
-    }
-
-    const r = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, max_tokens: maxTokens, messages: [{ role: 'system', content: system }, ...history] }),
-    });
-    const d = await r.json();
+    const r = await llmFetch({ max_tokens: maxTokens, messages: [{ role: 'system', content: system }, ...history] }, { source: 'builder' });
+    const d = await r.json().catch(() => ({}));
     if (!r.ok) {
-      recordError('provider', d.error?.message || JSON.stringify(d), { provider, model });
+      recordError('provider', d.error?.message || JSON.stringify(d), { model: accountApi().model });
       throw new Error(d.error?.message || JSON.stringify(d));
     }
-    return d.choices?.[0]?.message?.content || '';
+    return chatReplyText(d);
+  }
+
+  /** The text of a chat-completions answer. */
+  function chatReplyText(d) {
+    const m = d && d.choices && d.choices[0] && d.choices[0].message;
+    if (!m) return '';
+    return typeof m.content === 'string' ? m.content : Array.isArray(m.content) ? m.content.map(c => c.text || '').join('') : '';
   }
 
   // The sandbox the generated code has to run in (api/run_tool.py).
@@ -2719,9 +2639,7 @@ function markSvgString(color, size = 30) {
 
         {noKey && (
           <div style={{ background: 'rgba(245,158,11,0.15)', borderBottom: '1px solid rgba(245,158,11,0.3)', padding: '8px 16px', fontSize: 12, color: 'var(--warning)', textAlign: 'center' }}>
-            {accountApi().provider === 'ollama'
-              ? 'Set the Ollama server in Settings to use the assistant'
-              : 'Add an API key in Settings to use the assistant'}
+            {L('The platform has not set up a model for this organization yet, so the assistant cannot answer.', 'הפלטפורמה עוד לא הגדירה מודל לארגון, ולכן האסיסטנט לא יכול לענות.')}
           </div>
         )}
 
@@ -3101,7 +3019,7 @@ function markSvgString(color, size = 30) {
         </div>
         {noKey && (
           <div style={{ background: 'rgba(245,158,11,0.15)', borderBottom: '1px solid rgba(245,158,11,0.3)', padding: '8px 16px', fontSize: 12, color: 'var(--warning)', textAlign: 'center' }}>
-            {accountApi().provider === 'ollama' ? 'Add the Ollama server in Settings to test live' : 'Add an API key in Settings to test live'}
+            {L('The platform has not set up a model for this organization yet, so it cannot be tested live.', 'הפלטפורמה עוד לא הגדירה מודל לארגון, ולכן אי אפשר לבדוק בשידור חי.')}
           </div>
         )}
         {/* Messages */}
@@ -3335,7 +3253,6 @@ function markSvgString(color, size = 30) {
   ];
 
   async function callWithTools(agent, history, onToolCall, activeSkillId = null) {
-    const { apiKey, provider, model } = accountApi();
 
     // RAG retrieval — inject relevant knowledge into system prompt
     let ragChunks = [];
@@ -3527,101 +3444,35 @@ function markSvgString(color, size = 30) {
       return String(data.result ?? data.error ?? 'No output');
     }
 
-    if (provider === 'claude') {
-      const claudeHeaders = { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' };
-      let msgs = dlpMessages([...history], dlp);
+    const meta = { source: 'test-chat', itemType: 'agent', itemId: agent.id };
 
-      for (let round = 0; round < 10; round++) {
-        const body = { model, ...claudeRequestShape(model, 1024), system: systemPrompt, messages: msgs };
-        // Gate on what was actually built, not on the agent's own tools —
-        // send_email and switch_skill are built in, and an agent with no tools
-        // of its own was being handed none of them.
-        const claudeTools = buildClaudeTools();
-        if (claudeTools.length > 0) body.tools = claudeTools;
+    let msgs = [{ role: 'system', content: systemPrompt }, ...dlpMessages(history, dlp)];
 
-        const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: claudeHeaders, body: JSON.stringify(body) });
-        const d = await r.json();
-        if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
-        reportClaudeUsage(d, 'test-chat');
+    for (let round = 0; round < 10; round++) {
+      const body = { messages: msgs, max_tokens: 2048 };
+      const fnTools = buildOpenAITools();
+      if (fnTools.length > 0) body.tools = fnTools;
 
-        if (d.stop_reason !== 'tool_use') return claudeReplyText(d);
+      const r = await llmFetch(body, meta);
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
 
-        // Execute all tool_use blocks (may be multiple)
-        const toolUses = d.content.filter(c => c.type === 'tool_use');
-        const toolResults = await Promise.all(toolUses.map(async tu => {
-          const onResult = await onToolCall(tu.name, tu.input);
-          const result = await executeTool(tu.name, tu.input);
-          if (onResult) onResult(result);
-          return { type: 'tool_result', tool_use_id: tu.id, content: result };
-        }));
+      const choice = d.choices[0];
+      if (!(choice.message.tool_calls || []).length) return chatReplyText(d);
 
-        msgs = [...msgs, { role: 'assistant', content: d.content }, { role: 'user', content: toolResults }];
-      }
-      throw new Error('Too many tool call rounds (max 10)');
+      // Execute all tool_calls (may be multiple)
+      const toolResultMsgs = await Promise.all((choice.message.tool_calls || []).map(async tc => {
+        let inputs = {};
+        try { inputs = JSON.parse(tc.function.arguments || '{}'); } catch (_) { /* keep {} */ }
+        const onResult = await onToolCall(tc.function.name, inputs);
+        const result = await executeTool(tc.function.name, inputs);
+        if (onResult) onResult(result);
+        return { role: 'tool', tool_call_id: tc.id, content: result };
+      }));
 
-    } else if (provider === 'ollama') {
-      const ollamaHost = (accountApi().ollamaHost || 'http://localhost:11434').replace(/\/$/, '');
-      let msgs = [{ role: 'system', content: systemPrompt }, ...dlpMessages(history, dlp)];
-
-      for (let round = 0; round < 10; round++) {
-        const body = { model, messages: msgs };
-        const fnTools = buildOpenAITools();
-        if (fnTools.length > 0) body.tools = fnTools;
-
-        // Route through server-side proxy to avoid mixed-content and CORS issues
-        const r = await apiFetch('/api/ollama-proxy', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ host: ollamaHost, path: '/v1/chat/completions', body }),
-        });
-        const d = await r.json();
-        if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
-
-        const choice = d.choices[0];
-        if (choice.finish_reason !== 'tool_calls') return choice.message.content;
-
-        const toolResultMsgs = await Promise.all((choice.message.tool_calls || []).map(async tc => {
-          const inputs = JSON.parse(tc.function.arguments);
-          const onResult = await onToolCall(tc.function.name, inputs);
-          const result = await executeTool(tc.function.name, inputs);
-          if (onResult) onResult(result);
-          return { role: 'tool', tool_call_id: tc.id, content: result };
-        }));
-
-        msgs = [...msgs, choice.message, ...toolResultMsgs];
-      }
-      throw new Error('Too many tool call rounds (max 10)');
-
-    } else {
-      // OpenAI
-      const oaiHeaders = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` };
-      let msgs = [{ role: 'system', content: systemPrompt }, ...dlpMessages(history, dlp)];
-
-      for (let round = 0; round < 10; round++) {
-        const body = { model, messages: msgs };
-        const fnTools = buildOpenAITools();
-        if (fnTools.length > 0) body.tools = fnTools;
-
-        const r = await fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', headers: oaiHeaders, body: JSON.stringify(body) });
-        const d = await r.json();
-        if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
-
-        const choice = d.choices[0];
-        if (choice.finish_reason !== 'tool_calls') return choice.message.content;
-
-        // Execute all tool_calls (may be multiple)
-        const toolResultMsgs = await Promise.all((choice.message.tool_calls || []).map(async tc => {
-          const inputs = JSON.parse(tc.function.arguments);
-          const onResult = await onToolCall(tc.function.name, inputs);
-          const result = await executeTool(tc.function.name, inputs);
-          if (onResult) onResult(result);
-          return { role: 'tool', tool_call_id: tc.id, content: result };
-        }));
-
-        msgs = [...msgs, choice.message, ...toolResultMsgs];
-      }
-      throw new Error('Too many tool call rounds (max 10)');
+      msgs = [...msgs, choice.message, ...toolResultMsgs];
     }
+    throw new Error('Too many tool call rounds (max 10)');
   }
 
   /* ─────────────────── KNOWLEDGE TAB ─────────────────── */
@@ -4487,7 +4338,7 @@ function markSvgString(color, size = 30) {
               </div>
               <div style={{ fontSize: 12, color: hasKey ? 'var(--success)' : 'var(--danger)', display: 'flex', alignItems: 'center', gap: 4 }}>
                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: hasKey ? 'var(--success)' : 'var(--danger)', display: 'inline-block' }} />
-                {hasKey ? (accountApi().provider === 'ollama' ? `Ollama · ${accountApi().ollamaHost}` : accountApi().model) : (accountApi().provider === 'ollama' ? 'No Ollama host set' : 'No API key in Settings')}
+                {hasKey ? accountApi().model : L('No model set up yet', 'עוד לא הוגדר מודל')}
               </div>
               {/* One line of explanation is a desktop luxury; the phone needs
                   the rows below it more than it needs the sentence. */}
@@ -5717,7 +5568,7 @@ function markSvgString(color, size = 30) {
 
           <H3>What an AI Chatbot is made of</H3>
           <UL>
-            <li><strong>Configuration</strong> — identity, base prompt, AI provider and model, masking of sensitive data</li>
+            <li><strong>Configuration</strong> — identity, base prompt, masking of sensitive data</li>
             <li><strong>Skills</strong> — focused modes the AI Chatbot switches between, each with a prompt of its own</li>
             <li><strong>Tools</strong> — Python functions the AI Chatbot calls mid-conversation, plus a built-in one for sending email</li>
             <li><strong>Knowledge</strong> — documents and crawled websites, pulled in by relevance</li>
@@ -5729,7 +5580,7 @@ function markSvgString(color, size = 30) {
             <li><strong>Frontend</strong> — one HTML file with React loaded from a CDN, and no build step</li>
             <li><strong>Backend</strong> — Vercel serverless functions under <Code>/api</Code></li>
             <li><strong>Database</strong> — Neon PostgreSQL; an AI Chatbot is stored as JSONB in the <Code>agents</Code> table</li>
-            <li><strong>Models</strong> — Claude (Anthropic), OpenAI, or a local Ollama</li>
+            <li><strong>Models</strong> — provided by the platform through OpenRouter; nobody sets a key</li>
             <li><strong>Running tools</strong> — Python serverless with <Code>pip install</Code> on demand</li>
             <li><strong>Crawling sites</strong> — the HTML the server returns, followed across the whole domain</li>
           </UL>
@@ -5759,7 +5610,7 @@ function markSvgString(color, size = 30) {
 
           <H3>Earlier conversations</H3>
           <P>Every conversation is saved automatically after each turn and appears in the sidebar list below the navigation. Clicking one opens it on Home and carries on; the <strong>+</strong> beside the heading starts a new one.</P>
-          <Warn>Without an API key on the Settings screen you cannot send — the field is locked and the screen says so.</Warn>
+          <Warn>Until the platform has set up a model for your organization you cannot send — the field is locked and the screen says so.</Warn>
         </div>
       ),
 
@@ -5817,7 +5668,6 @@ function markSvgString(color, size = 30) {
           <UL>
             <li><strong>1 · The business</strong> — six categories as a quick start, and your own words. What you write is the seed the plan is built from</li>
             <li><strong>2 · The plan</strong> — generated from your description, shown as capabilities you can toggle. This is the adaptive core: what stays on here is what the later screens ask about. The table, if one is needed, is created on the way out of this screen</li>
-            <li><strong>3 · The key</strong> — <strong>only if the account has no working key</strong>. Asked before the plan when needed, because generating the plan is itself a model call. A stored key is checked against the provider in the background; only a key that answered takes this screen out of the flow</li>
             <li><strong>4 · Knowledge</strong> — <strong>only when the plan says a knowledge base is needed</strong>. Crawling a site (which runs here, with the counter), uploading files (extracted and saved here, with a status line per file), or typing it out</li>
             <li><strong>5 · Abilities</strong> — writing to the table, connecting Gmail (which leaves for Google and comes back into the wizard), reading the site live from a URL set right here, connecting to another company&rsquo;s system (the explicit door to a custom tool), masking a customer&rsquo;s card or ID number (DLP), and handing over to a person. Everything the editor can switch on, this screen can too.</li>
             <li><strong>6 · Connections</strong> — <strong>appears only when needed</strong>. See below</li>
@@ -5867,10 +5717,8 @@ function markSvgString(color, size = 30) {
             <li>A file picked for upload is copied out of the input before anything can pause, and the chatbot it lands on is created once and shared — two uploads in quick succession cannot split their work across two chatbots</li>
           </UL>
 
-          <H3>The key is checked, not just stored</H3>
-          <P>The key field used to accept any string. An account ran for a whole day with <Code>25102004</Code> in it — everything said &ldquo;configured&rdquo; right up to the moment somebody asked a model for something, and back came <Code>invalid x-api-key</Code>. Now the key is sent to the provider before it is saved: one token from Claude, a model listing from OpenAI (no tokens at all), and a what-do-you-have from a local server. A rejected key is not saved, and the reason is shown in the provider&rsquo;s own words — in Settings and in the wizard alike.</P>
-          <P>And if a build stops on the key (a revoked key, an account out of credit), a <Code>Fix the key</Code> button returns to screen 3 and from there <strong>straight back to building</strong> — not to the questions from the start.</P>
-          <Warn>What can still stop a customer outright: without an Anthropic or OpenAI key nothing can be built at all, and that needs a developer account and a credit card. There is no platform-level key.</Warn>
+          <H3>No key to ask for</H3>
+          <P>Models come from the platform, so the wizard never asks for a key: what it builds runs on the model the platform chose for your organization. If that is not set up yet, the build stops with a message saying so, and <Code>Try again</Code> picks up from where it stopped once it is.</P>
         </div>
       ),
 
@@ -5882,7 +5730,7 @@ function markSvgString(color, size = 30) {
           <H3>The chatbots an account starts with</H3>
           <P>A new account begins with a copy of the example chatbots — including each one&rsquo;s prompt, skills, tools and knowledge base — so there is something to start from. What is not copied: the API key, the WhatsApp settings, the Gmail connection and the values of any secrets. The secret <em>names</em> stay, as a hint of what needs filling in.</P>
           <P>The copy is live: changing one of those chatbots affects the accounts registered after it. The Admin tab has a status line per template showing whether it is there and what it carries.</P>
-          <Warn>These chatbots will not answer until an API key is set for the account on the Settings screen.</Warn>
+          <Warn>These chatbots answer as soon as the platform has set up a model for the organization.</Warn>
 
           <H3>The card</H3>
           <P>Each chatbot on the <strong>AI Chatbots</strong> tab is a card with the avatar, the name, the date it was made, and how many skills and tools it has. Along the bottom:</P>
@@ -5918,15 +5766,10 @@ function markSvgString(color, size = 30) {
           <P>The final prompt the model receives is this, then the knowledge pulled in for the conversation, then every skill under a <Code>## Skill: name</Code> heading.</P>
           <Tip>Say the language, the tone, what is allowed and what is not, and what to do when there is no answer. A detailed prompt invents less.</Tip>
 
-          <H3>Model and API key — at the account level</H3>
-          <P>The key, the provider and the model are set <strong>once, on the Settings screen</strong>, and drive every chatbot, every channel and every assistant. There is no per-chatbot setting.</P>
-          <UL>
-            <li><strong>Claude</strong> — <Code>claude-opus-5-5</Code>, <Code>claude-sonnet-5-5</Code> (the default), <Code>claude-haiku-5-5</Code>. Needs an Anthropic key.</li>
-            <li><strong>OpenAI</strong> — <Code>gpt-4o</Code>, <Code>gpt-4o-mini</Code>, <Code>gpt-4-turbo</Code>, <Code>gpt-3.5-turbo</Code>. Needs an OpenAI key.</li>
-            <li><strong>Ollama</strong> — a local model. Instead of a key you give a server address, and the calls go through a proxy on the server.</li>
-          </UL>
+          <H3>The model — chosen by the platform</H3>
+          <P>Every chatbot, channel and assistant runs on <strong>one model per organization</strong>, reached through the platform&rsquo;s own OpenRouter account. The platform admin chooses it (or leaves the organization on the platform&rsquo;s default); nobody in an organization sets or holds an API key, and there is no per-chatbot setting yet. Settings shows which model the organization runs on.</P>
           <P>The same screen carries the <strong>interface language</strong> — English or Hebrew — which is the same setting the first screen asks about.</P>
-          <Warn>Without a key (or an Ollama address) no chatbot answers on any channel, and the assistants are locked. The note in the top corner shows the state on every screen.</Warn>
+          <Warn>Until the platform has set up a model for the organization, no chatbot answers on any channel and the assistants are locked. The note in the top corner shows the state on every screen. When the platform&rsquo;s monthly budget is used up, everything stops with a message until the 1st.</Warn>
 
           <H3>DLP — keeping sensitive data out</H3>
           <P>Two optional filters: <strong>credit card numbers</strong> (16 digits, with or without separators) and <strong>national ID numbers</strong> (9 digits). When they are on:</P>
@@ -6069,7 +5912,7 @@ def run(**kwargs):
           </UL>
 
           <H3>What it cannot do</H3>
-          <P>Connect Gmail, upload files to the knowledge base, or enter the API key. Those need you in the interface, and it will say exactly where to go.</P>
+          <P>Connect Gmail or upload files to the knowledge base. Those need you in the interface, and it will say exactly where to go.</P>
 
           <H3>It can see what broke</H3>
           <P>It has a <Code>get_recent_errors</Code> tool returning real failures from the last two weeks: a tool that threw in a live conversation, an answer the widget could not produce, an expired WhatsApp token, a provider error. Told &ldquo;something is not working&rdquo;, it is instructed to read the log before guessing — and after fixing a tool, to run it and check.</P>
@@ -6194,7 +6037,7 @@ def run(**kwargs):
           <UL>
             <li>The original is always kept. The <Code>↩</Code> button on the document card brings it back</li>
             <li>The tidy button runs it again, always from the original rather than on top of a previous pass</li>
-            <li>With no API key, or if the model fails, the document is stored as it is and marked <strong>raw</strong></li>
+            <li>With no model set up, or if the model fails, the document is stored as it is and marked <strong>raw</strong></li>
             <li>Crawled pages are split into passages but not tidied — a crawl can be a hundred pages, and that is a hundred model calls</li>
           </UL>
 
@@ -6326,7 +6169,7 @@ AGENTS.md                how to edit this chatbot — for Claude Code
 
           <H3>What is not in the folder</H3>
           <UL>
-            <li><strong>Secrets.</strong> The API key, WhatsApp tokens and tools&rsquo; environment values stay on the platform. <Code>config.json</Code> refers to them as <Code>{'{{global.NAME}}'}</Code>; do not replace a reference with a real value, push ignores it.</li>
+            <li><strong>Secrets.</strong> WhatsApp tokens and tools&rsquo; environment values stay on the platform. <Code>config.json</Code> refers to them as <Code>{'{{global.NAME}}'}</Code>; do not replace a reference with a real value, push ignores it.</li>
             <li><strong>Knowledge documents.</strong> They have a lifecycle of their own — upload, chunking, indexing — and a crawl of several hundred pages has no business being a commit.</li>
           </UL>
 
@@ -6385,7 +6228,7 @@ git add -A && git commit -m "…" && git push`}</Block>
             <li><strong>Edit</strong> — everything, including publishing, branches, knowledge and channels.</li>
             <li>Adding new chatbots, tables and apps is for the admin and for members who can edit across the organization.</li>
           </UL>
-          <Warn>The model key reaches every member&rsquo;s browser, because the test chat and the assistant call the model from there. A member sees it masked and cannot change it, but it is not a secret from them.</Warn>
+          <Warn>Models come from the platform: no organization has a key of its own, and nobody in one sees the platform&rsquo;s.</Warn>
 
           <H3>People</H3>
           <UL>
@@ -6558,7 +6401,7 @@ await leads.remove(rowId);`}</Block>
 
           <H3>What happens behind it</H3>
           <P>The widget talks to a public endpoint for that chatbot. It returns only what is needed to render — the name, the avatar and the opening message — and never the keys or the configuration. The chatbot answers server-side with its own key, including tools, knowledge and DLP, and every conversation is saved and shows up in Interactions as channel <Code>Widget</Code>.</P>
-          <Warn>The widget is open to anyone who reaches the page you embedded it on, and every conversation is billed to your API key. Do not embed an expensive chatbot on a public page without watching Interactions.</Warn>
+          <Warn>The widget is open to anyone who reaches the page you embedded it on, and every conversation counts against your organization&rsquo;s usage. Do not embed a chatbot on a busy public page without watching Interactions.</Warn>
         </div>
       ),
 
@@ -6654,7 +6497,7 @@ npm run migrate            # run it`}</Block>
 
           <H3>What to know about secrets</H3>
           <UL>
-            <li>API keys, WhatsApp tokens and tools&rsquo; secrets are stored in the database</li>
+            <li>WhatsApp tokens and tools&rsquo; secrets are stored in the database. The platform&rsquo;s model key is stored encrypted, and no organization ever sees it</li>
             <li>Secret values are exposed to your tool&rsquo;s code at runtime — anyone who can edit the tool can read them</li>
             <li>The assistant is given the names of secrets only, never the values</li>
             <li>Passwords are stored hashed, and cannot be read back by anyone, including an administrator</li>
@@ -11172,7 +11015,6 @@ npm run migrate            # run it`}</Block>
     const [freeOpen, setFreeOpen] = useState(false);
     const [busy, setBusy] = useState('');
     const [error, setError] = useState('');
-    const [keyState, setKeyState] = useState(resumed ? 'ok' : 'idle');   // idle | checking | ok | bad
     const [crawl, setCrawl] = useState(null);                            // { pagesCrawled, pagesFound, status }
     const [built, setBuilt] = useState(null);                            // the agent, once generated
     const [buildAt, setBuildAt] = useState(-1);                          // which build line is running
@@ -11203,18 +11045,6 @@ npm run migrate            # run it`}</Block>
 
     useEffect(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [chat, busy]);
 
-    /* Runs once, on the way in. Nobody waits for it: the answer is needed by
-       the third question and it arrives during the first. */
-    const [keyChecked, setKeyChecked] = useState(false);
-    const [keyWorks, setKeyWorks] = useState(false);
-    const [repairing, setRepairing] = useState(false);   // on the key screen to fix a failed build
-    useEffect(() => {
-      let live = true;
-      if (!accountApiUsable()) { setKeyWorks(false); setKeyChecked(true); return undefined; }
-      verifyApiKey(accountApi()).then(r => { if (live) { setKeyWorks(r.ok); setKeyChecked(true); } });
-      return () => { live = false; };
-    }, []);
-
     /* ── the agent exists from the knowledge screen on, because documents, a
           crawl and a Gmail token all have to hang off something. ── */
     /* One agent per run, even when two things ask for it at once: the id is
@@ -11233,32 +11063,6 @@ npm run migrate            # run it`}</Block>
         return agent.id;
       })();
       return creatingRef.current;
-    }
-
-    /* Saving proves nothing — the server stores whatever it is handed. The key
-       is tried against the provider first, and only a key that answered is
-       saved and stepped past. */
-    async function saveKey() {
-      setKeyState('checking'); setError('');
-      const patch = { provider: w.provider, apiKey: w.apiKey.trim(), ollamaHost: w.ollamaHost.trim() };
-      const tried = await verifyApiKey({ ...patch, model: accountApi().model });
-      if (!tried.ok) {
-        setKeyState('bad');
-        setError(L(`That key was refused: ${tried.why}`, `המפתח נדחה: ${tried.why}`));
-        return false;
-      }
-      try {
-        const saved = await apiSaveSettings(patch);
-        setAccountApi({
-          provider: saved.provider, apiKey: saved.apiKey || patch.apiKey,
-          model: saved.model, ollamaHost: saved.ollamaHost || patch.ollamaHost,
-        });
-        setKeyState('ok');
-        return true;
-      } catch (err) {
-        setKeyState('bad'); setError(err.message);
-        return false;
-      }
     }
 
     async function startCrawl() {
@@ -11455,20 +11259,10 @@ npm run migrate            # run it`}</Block>
        which the account may already have, and connections, which exists only
        when something genuinely needs code — so stepping forward asks the flow,
        never `+ 1`. */
-    /* A filled field is not a key. The account's key is tried against the
-       provider once, in the background, while the first question is on screen;
-       only a key that answered takes screen 3 out of the flow.
-       Latched once known, because supplying the key on screen 3 would
-       otherwise shrink "question 3 of 6" to "of 5" under the person who had
-       just answered it. */
-    const haveKeyRef = useRef(null);
-    if (haveKeyRef.current === null && keyChecked) haveKeyRef.current = keyWorks;
-    const haveKey = haveKeyRef.current === null ? false : haveKeyRef.current;
-    /* The order the person actually walks. The key comes BEFORE the plan when
-       the account has none, because generating the plan is itself a model call
-       and needs the key. Knowledge is dropped once a plan says it is not
+    /* The order the person actually walks. There is no key screen: models
+       come from the platform. Knowledge is dropped once a plan says it is not
        needed; connections only when a tool was proposed. */
-    const FLOW = (haveKey ? [0, 1, 2, 4, 5, 6, 7, 8, 9, 10] : [0, 1, 3, 2, 4, 5, 6, 7, 8, 9, 10])
+    const FLOW = [0, 1, 2, 4, 5, 6, 7, 8, 9, 10]
       .filter(n => n !== 4 || !plan || plan.needsKnowledge)
       .filter(n => n !== 6 || w.tools.length > 0);
     /* Settings arrive on their own schedule, so a step can leave the flow
@@ -11515,9 +11309,6 @@ npm run migrate            # run it`}</Block>
     const canNext = (() => {
       if (w.step === 1) return !!w.biz || !!w.bizFree.trim();
       if (w.step === 2) return !!w.plan && !w.planBusy;
-      // The button is what verifies the key, so it cannot wait for a verified
-      // key to become pressable.
-      if (w.step === 3) return keyState !== 'checking' && !!(w.provider === 'ollama' ? w.ollamaHost.trim() : w.apiKey.trim());
       if (w.step === 4) return Object.keys(w.sources).some(k => w.sources[k]);
       return true;
     })();
@@ -11539,13 +11330,6 @@ npm run migrate            # run it`}</Block>
     }
 
     async function next() {
-      if (w.step === 3) {
-        if (keyState !== 'ok' && !(await saveKey())) return;
-        /* The latch is deliberately not flipped here. */
-        if (repairing) { setRepairing(false); go(8); build(); return; }
-        /* After the key, the plan — unless it is already made (a resumed run). */
-        go(w.plan ? (after ?? 4) : 2); return;
-      }
       if (w.step === 2) { setBusy('plan'); try { await commitPlan(); } finally { setBusy(''); } go(after ?? 5); return; }
       if (w.step === 4) { setBusy('know'); try { await commitKnowledge(); } finally { setBusy(''); } go(after ?? 5); return; }
       if (w.step === 5) { await lookForTools(); return; }
@@ -11819,57 +11603,6 @@ npm run migrate            # run it`}</Block>
                   );
                 })()}
               </React.Fragment>
-            )}
-
-            {/* 3 · the key */}
-            {w.step === 3 && (
-              <div>
-                <ApHeading of={qOf} step={qNum(3)} title={L('Which brain should it have?', 'איזה מוח לתת לו?')}
-                  sub={keyState === 'bad'
-                    ? L('The key on this account was refused by the provider. Paste one that works and we carry on from where we were.',
-                      'המפתח ששמור בחשבון נדחה על ידי הספק. הדבק מפתח שעובד ונמשיך מאיפה שהיינו.')
-                    : L('The chatbot thinks with a model from another company, so it needs a key of your own. This is the only technical step here.',
-                      'הצ\'אטבוט חושב עם מודל של חברה חיצונית, ולכן צריך מפתח משלך. זה הדבר הטכני היחיד כאן.')} />
-                <div style={{ display: 'flex', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
-                  {[{ k: 'claude', l: 'Claude', h: 'Anthropic · ' + L('recommended', 'מומלץ') },
-                    { k: 'openai', l: 'ChatGPT', h: 'OpenAI' },
-                    { k: 'ollama', l: L('My own server', 'שרת משלי'), h: 'Ollama' }].map(p => (
-                    <ApCard key={p.k} on={w.provider === p.k} onClick={() => { set({ provider: p.k }); setKeyState('idle'); }} style={{ flexGrow: 1, flexBasis: 160 }}>
-                      <div style={{ fontSize: 14.5, fontWeight: 700 }}>{p.l}</div>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>{p.h}</div>
-                    </ApCard>
-                  ))}
-                </div>
-                <label className="field-label">{w.provider === 'ollama' ? L('Server address', 'כתובת השרת') : L('The key', 'המפתח')}</label>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <input type={w.provider === 'ollama' ? 'text' : 'password'} dir="ltr"
-                    value={w.provider === 'ollama' ? w.ollamaHost : w.apiKey}
-                    onChange={e => { setKeyState('idle'); set(w.provider === 'ollama' ? { ollamaHost: e.target.value } : { apiKey: e.target.value }); }}
-                    placeholder={w.provider === 'ollama' ? 'http://localhost:11434' : 'sk-ant-api03-…'}
-                    style={{ flexGrow: 1, fontFamily: MONO, fontSize: 13.5 }} />
-                  {keyState === 'ok' && (
-                    <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, padding: '0 14px', height: 44, borderRadius: 12, background: 'rgba(22,163,74,0.10)', color: 'var(--success)', fontSize: 13, fontWeight: 700 }}>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-                      {L('the key works', 'המפתח עובד')}
-                    </div>
-                  )}
-                </div>
-                {w.provider !== 'ollama' && (
-                  <div style={{ marginTop: 16, padding: '18px 20px', borderRadius: 16, background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 11 }}>{L('No key yet? Two minutes.', 'אין לך מפתח? זה לוקח שתי דקות')}</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {[<React.Fragment key="a">{L('Sign up at', 'נכנסים ל־')} <a href={w.provider === 'claude' ? 'https://console.anthropic.com' : 'https://platform.openai.com'} target="_blank" rel="noreferrer">{w.provider === 'claude' ? 'console.anthropic.com' : 'platform.openai.com'}</a></React.Fragment>,
-                        L('Billing — add a starting amount ($5 is plenty)', 'Billing ← טוענים סכום התחלתי (5$ מספיקים להתחלה)'),
-                        L('API Keys — Create Key — copy it and paste it here', 'API Keys ← Create Key ← מעתיקים ומדביקים כאן')].map((line, li) => (
-                        <div key={li} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                          <span style={{ flexShrink: 0, width: 19, height: 19, borderRadius: '50%', background: 'var(--bg-hover)', color: 'var(--text-2)', fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>{li + 1}</span>
-                          <span style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.55, unicodeBidi: 'plaintext' }}>{line}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
             )}
 
             {/* 4 · knowledge */}
@@ -12231,13 +11964,7 @@ npm run migrate            # run it`}</Block>
                 {error && (
                   <div style={{ marginTop: 18, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
                     <span style={{ fontSize: 13, color: 'var(--danger)', unicodeBidi: 'plaintext' }}>{error}</span>
-                    {/* "Try again" against a key the provider has refused is a
-                        loop with no way out of it. */}
-                    {looksLikeKeyProblem(error)
-                      ? <Btn variant="primary" onClick={() => { haveKeyRef.current = false; setKeyState('bad'); setRepairing(true); go(3); }}>
-                          {L('Fix the key', 'תקן את המפתח')}
-                        </Btn>
-                      : <Btn variant="primary" onClick={build}>{L('Try again', 'נסה שוב')}</Btn>}
+                    <Btn variant="primary" onClick={build}>{L('Try again', 'נסה שוב')}</Btn>
                   </div>
                 )}
               </div>
@@ -12938,60 +12665,17 @@ npm run migrate            # run it`}</Block>
 
   // A tool-calling loop over the account's provider for assistants that are not
   // tied to one agent. `execute` receives (name, input) and returns a string.
-  async function callWithToolDefs({ system, history, tools, execute, maxRounds = 8, maxTokens = 4096 }) {
-    const { apiKey, provider, model } = accountApi();
-
-    if (provider === 'claude') {
-      let msgs = [...history];
-      for (let round = 0; round < maxRounds; round++) {
-        const r = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true',
-          },
-          body: JSON.stringify({
-            model, ...claudeRequestShape(model, maxTokens), system, messages: msgs,
-            tools: tools.map(t => ({ name: t.name, description: t.description, input_schema: t.input_schema })),
-          }),
-        });
-        const d = await r.json();
-        if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
-        reportClaudeUsage(d, 'assistant');
-
-        if (d.stop_reason !== 'tool_use') return claudeReplyText(d);
-        const uses = d.content.filter(c => c.type === 'tool_use');
-        const results = [];
-        for (const u of uses) {
-          results.push({ type: 'tool_result', tool_use_id: u.id, content: await execute(u.name, u.input || {}) });
-        }
-        msgs = [...msgs, { role: 'assistant', content: d.content }, { role: 'user', content: results }];
-      }
-      throw new Error(L('Too many tool rounds — try breaking the request up', 'יותר מדי סבבי כלים — נסה לפרק את הבקשה'));
-    }
-
-    // OpenAI and Ollama share the chat-completions shape.
+  async function callWithToolDefs({ system, history, tools, execute, maxRounds = 8, maxTokens = 4096, source = 'assistant' }) {
     const fnTools = tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema } }));
     let msgs = [{ role: 'system', content: system }, ...history];
     for (let round = 0; round < maxRounds; round++) {
-      const body = { model, messages: msgs, tools: fnTools };
-      const r = provider === 'ollama'
-        ? await apiFetch('/api/ollama-proxy', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ host: (accountApi().ollamaHost || '').replace(/\/$/, ''), path: '/v1/chat/completions', body }),
-          })
-        : await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-            body: JSON.stringify(body),
-          });
-      const d = await r.json();
+      const body = { messages: msgs, tools: fnTools, max_tokens: maxTokens };
+      const r = await llmFetch(body, { source });
+      const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
 
       const choice = d.choices[0];
-      if (choice.finish_reason !== 'tool_calls') return choice.message.content || '';
+      if (!(choice.message.tool_calls || []).length) return chatReplyText(d);
 
       const toolMsgs = [];
       for (const tc of choice.message.tool_calls || []) {
@@ -13249,7 +12933,7 @@ npm run migrate            # run it`}</Block>
     '- An AI CHATBOT has: a name and avatar, an opening message, a base prompt, skills, Python tools, a knowledge base, and channels.',
     "- BASE PROMPT vs SKILL is the split that matters when you build one. The base prompt is always active, on every turn of every channel: who the AI Chatbot is, the language and tone it answers in, the rules that always hold, and a short statement of what it can do and when to hand off. A SKILL holds the procedure for ONE task — the steps, what to collect, what to say at each stage. A numbered procedure for a particular task does NOT belong in the base prompt.",
     '- Why it matters mechanically: a skill\'s prompt is only loaded once the AI Chatbot switches to it, so the always-on prompt stays small; knowledge retrieval is scoped to that skill\'s own documents; and the skill can be rewritten later without touching the AI Chatbot\'s identity.',
-    '- The API key, provider and model are ACCOUNT-WIDE, set once in Settings. They are not per AI Chatbot, so never ask the user for a key per AI Chatbot.',
+    '- Models come from the platform: the platform admin chooses the model each organization runs on, and nobody in an organization sets or holds an API key. Never ask the user for a key, and never tell them to add one.',
     '- A SKILL is a focused mode with its own prompt. The AI Chatbot reads a skill\'s description to decide when to switch to it, by calling an internal switch_skill tool with skill_name. In prompt text the convention is #SkillName. Skill prompts are written in English.',
     '- A TOOL is Python that must define `def run(**kwargs)`. Declared parameters arrive in kwargs; secrets come from os.environ; only the standard library plus the packages listed on the tool are available; there is no persistent disk; outbound HTTPS works; return a string, and return a readable error string instead of raising. Reference a tool from a prompt as @tool_name.',
     '- Parameter types are string, number, integer or boolean.',
@@ -13332,7 +13016,7 @@ npm run migrate            # run it`}</Block>
       "· Read your own test conversations with an AI Chatbot (its Manual tests tab) and see what it actually answered",
       '· Delete an AI Chatbot (I will ask first)',
       '',
-      "**What I can't**: connect Gmail, upload knowledge files, or enter the API key — those are done in the UI, and I'll tell you exactly where.",
+      "**What I can't**: connect Gmail or upload knowledge files — those are done in the UI, and I'll tell you exactly where.",
       '',
       'Try something like: "build me a customer support AI Chatbot for an insurance company" or "add a tool to the weather AI Chatbot that fetches a five-day forecast".',
     ].join('\n'),
@@ -13788,8 +13472,8 @@ npm run migrate            # run it`}</Block>
 
         {noKey && (
           <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 'var(--r-md)', padding: '10px 14px', fontSize: 13, color: 'var(--warning)', marginBottom: 12 }}>
-            {L('Set an API key in Settings to use the assistant.',
-                'כדי להשתמש באסיסטנט צריך להגדיר מפתח API במסך Settings.')}
+            {L('The platform has not set up a model for this organization yet, so the assistant cannot answer.',
+                'הפלטפורמה עוד לא הגדירה מודל לארגון, ולכן האסיסטנט לא יכול לענות.')}
           </div>
         )}
 
@@ -13916,7 +13600,7 @@ npm run migrate            # run it`}</Block>
       talking: 'שיחה עם האסיסטנט',
       newChat: 'שיחה חדשה',
       thinking: 'חושב…',
-      noKey: 'כדי להתחיל צריך להגדיר מפתח API במסך Settings.',
+      noKey: 'הפלטפורמה עוד לא הגדירה מודל לארגון.',
       foot: '8Legs.ai בונה את ה-AI Chatbot בפועל — פרומפט, סקילים וכלים — ולא רק מסביר איך.',
       pick: 'או על אחד מהקיימים — לחץ עליו ואז כתוב מה לשנות',
       about: 'על',
@@ -13959,7 +13643,7 @@ npm run migrate            # run it`}</Block>
       talking: 'Talking to the assistant',
       newChat: 'New chat',
       thinking: 'Thinking…',
-      noKey: 'Set an API key in Settings to get started.',
+      noKey: 'The platform has not set up a model for this organization yet.',
       foot: '8Legs.ai builds the AI Chatbot for real — prompt, skills and tools — not just explains how.',
       pick: 'Or about one you already have — pick it, then say what to change',
       about: 'About',
@@ -14919,18 +14603,10 @@ npm run migrate            # run it`}</Block>
   function ApiKeyNote() {
     const cfg = accountApi();
     const missing = !accountApiUsable(cfg);
-    const isOllama = cfg.provider === 'ollama';
-    const headline = {
-      he: missing ? (isOllama ? 'לא הוגדר שרת Ollama' : 'לא הוגדר API Key') : `מוגדר: ${cfg.provider} · ${cfg.model}`,
-      en: missing ? (isOllama ? 'No Ollama server set' : 'No API Key set') : `Using ${cfg.provider} · ${cfg.model}`,
-    };
+    const headline = { he: 'המודלים עוד לא הוגדרו', en: 'Models are not set up yet' };
     const body = {
-      he: missing
-        ? 'הגדירו מפתח אחד במסך Settings — הוא משמש את כל ה-AI Chatbots, כל הערוצים והאסיסטנט. עד אז שום דבר לא יענה.'
-        : 'המפתח מוגדר פעם אחת במסך Settings ומשמש את כל ה-AI Chatbots, כל הערוצים והאסיסטנט.',
-      en: missing
-        ? 'Set one key in Settings — it drives every AI Chatbot, every channel and the assistant. Nothing answers until you do.'
-        : 'The key is set once in Settings and drives every AI Chatbot, every channel and the assistant.',
+      he: 'הארגון רץ על המודלים של הפלטפורמה, ואדמין הפלטפורמה עוד לא סיים להגדיר אותם. עד אז שום דבר לא יענה.',
+      en: 'The organization runs on the platform\'s models, and the platform admin has not finished setting them up. Nothing answers until then.',
     };
     const strongStyle = { color: missing ? 'var(--warning)' : 'var(--text)' };
 
@@ -14995,7 +14671,7 @@ npm run migrate            # run it`}</Block>
             fontFamily: MONO, fontSize: 11.5, fontWeight: 600,
             color: ready ? 'var(--text)' : 'var(--warning)',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>{ready ? cfg.model : 'No API key'}</span>
+          }}>{ready ? cfg.model : L('No model yet', 'אין מודל עדיין')}</span>
         </div>
         <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.5 }}>
           {ready ? 'One key drives every AI Chatbot and channel.' : 'Nothing answers until a key is set.'}
@@ -16073,6 +15749,220 @@ npm run migrate            # run it`}</Block>
   }
 
   /** Every organization on the platform, for the platform admin. */
+  const ADMIN_TABS = [
+    { id: 'orgs', label: 'Organizations' },
+    { id: 'users', label: 'Users' },
+    { id: 'billing', label: 'Billing' },
+    { id: 'history', label: 'Chat history' },
+  ];
+
+  async function apiBilling(method = 'GET', body) {
+    const r = await apiFetch('/api/admin/billing', { method, ...(body ? { body: JSON.stringify(body) } : {}) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `Billing answered ${r.status}`);
+    return d;
+  }
+  async function apiBillingCatalog() {
+    const r = await apiFetch('/api/admin/billing?catalog=1');
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `OpenRouter's model list answered ${r.status}`);
+    return d.models || [];
+  }
+  const usdFmt = (v) => (v === null || v === undefined ? '—' : `$${Number(v).toFixed(Number(v) < 1 ? 4 : 2)}`);
+  const tokensFmt = (n) => {
+    const v = Number(n) || 0;
+    if (v >= 1e6) return `${(v / 1e6).toFixed(v >= 1e7 ? 0 : 1)}M`;
+    if (v >= 1e3) return `${(v / 1e3).toFixed(v >= 1e4 ? 0 : 1)}K`;
+    return String(v);
+  };
+
+  /**
+   * The platform's models: the OpenRouter key, the default model, the monthly
+   * ceiling, the model each organization runs on, and how much of the month's
+   * ceiling each organization used — in tokens and in dollars.
+   */
+  function BillingPanel() {
+    const [data, setData] = useState(null);
+    const [error, setError] = useState('');
+    const [keyDraft, setKeyDraft] = useState('');
+    const [busy, setBusy] = useState('');
+    const [catalog, setCatalog] = useState(null);
+    const [models, setModels] = useState({});   // orgId -> model typed in
+    const [platformDraft, setPlatformDraft] = useState(null);   // { defaultModel, ceilingUsd } while editing
+    const load = useCallback(() => apiBilling().then(d => { setData(d); setError(''); }).catch(e => setError(e.message)), []);
+    useEffect(() => { load(); }, [load]);
+    useEffect(() => { apiBillingCatalog().then(setCatalog).catch(() => setCatalog([])); }, []);
+
+    async function put(what, body, after) {
+      setBusy(what); setError('');
+      try { setData(await apiBilling('PUT', body)); if (after) after(); }
+      catch (e) { setError(e.message); }
+      finally { setBusy(''); }
+    }
+
+    if (!data) return <div style={{ color: error ? 'var(--danger)' : 'var(--text-muted)', fontSize: 13 }}>{error || L('Loading…', 'טוען…')}</div>;
+    const k = data.key;
+    const info = k.info;
+    const card = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '16px 18px', marginBottom: 16 };
+    const byId = new Map((catalog || []).map(m => [m.id, m]));
+    const priceLine = (id) => {
+      const m = byId.get((id || '').trim());
+      if (!m) return (id || '').trim() && catalog && catalog.length ? L('Not in OpenRouter\'s list', 'לא ברשימה של OpenRouter') : '';
+      return `${m.name} · ${L('in', 'קלט')} ${usdFmt(m.inputPerM)} / ${L('out', 'פלט')} ${usdFmt(m.outputPerM)} ${L('per million tokens', 'למיליון טוקנים')}${m.tools ? '' : L(' · no tools: chatbots with tools or tables, Jarvis and the groups will not work', ' · בלי כלים: בוטים עם כלים או טבלאות, Jarvis והקבוצות לא יעבדו')}`;
+    };
+    const pd = platformDraft || { defaultModel: data.defaultModel, ceilingUsd: String(data.ceilingUsd) };
+    const pdDirty = !!platformDraft && (pd.defaultModel.trim() !== data.defaultModel || Number(pd.ceilingUsd) !== data.ceilingUsd);
+    const share = data.month.share;
+    const bar = (frac, tone) => (
+      <div style={{ height: 8, borderRadius: 99, background: 'var(--bg-hover)', overflow: 'hidden', minWidth: 60 }}>
+        <div style={{ width: `${Math.max(0, Math.min(1, frac || 0)) * 100}%`, height: '100%', borderRadius: 99, background: tone }} />
+      </div>
+    );
+    const toneOf = (frac) => (frac >= 1 ? 'var(--danger)' : frac >= 0.8 ? 'var(--warning)' : 'var(--primary)');
+    const th = { padding: '10px 12px', textAlign: 'start', whiteSpace: 'nowrap' };
+    const td = { padding: '10px 12px', fontSize: 13, verticalAlign: 'top', textAlign: 'start', unicodeBidi: 'isolate' };
+    const pct = (frac) => { const v = (frac || 0) * 100; return v > 0 && v < 0.01 ? '<0.01%' : `${v > 0 && v < 1 ? v.toFixed(2) : Math.round(v * 10) / 10}%`; };
+
+    return (
+      <div data-billing>
+        {error && <div style={{ color: 'var(--danger)', fontSize: 12.5, marginBottom: 12, unicodeBidi: 'plaintext' }}>{error}</div>}
+
+        {/* this month */}
+        <div style={card} data-billing-month>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+            <div style={{ fontWeight: 700, fontSize: 15, flex: 1 }}>{L('This month', 'החודש')}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em' }}>
+              {usdFmt(data.month.usd)} <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-2)' }}>{L('of', 'מתוך')} {usdFmt(data.ceilingUsd)} · {pct(share)}</span>
+            </div>
+          </div>
+          {data.ceilingUsd > 0 && bar(share, toneOf(share))}
+          <div style={{ fontSize: 12.5, color: 'var(--text-2)', display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 10 }}>
+            <span>{tokensFmt(data.month.input)} {L('tokens in', 'טוקנים בקלט')}</span>
+            <span>{tokensFmt(data.month.output)} {L('tokens out', 'טוקנים בפלט')}</span>
+            <span>{data.month.calls} {L('calls', 'קריאות')}</span>
+            {info && info.ok && info.usageMonthly !== null && <span>{L('OpenRouter counts', 'OpenRouter סופר')} {usdFmt(info.usageMonthly)}</span>}
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.6 }}>
+            {L('When the month reaches the ceiling, every chatbot, assistant and automation stops with a message until the 1st. Set it at or below the budget on OpenRouter.',
+               'כשהחודש מגיע לתקרה, כל הבוטים, העוזרים והאוטומציות נעצרים עם הודעה עד ה-1 לחודש. כדאי שהתקרה תהיה שווה לתקציב ב-OpenRouter או נמוכה ממנו.')}
+          </div>
+        </div>
+
+        {/* the platform's settings */}
+        <div style={card}>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>{L('Models', 'מודלים')}</div>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+            <div style={{ flex: '2 1 300px' }}>
+              <label className="field-label">{L('Default model', 'מודל ברירת מחדל')}</label>
+              <input list="openrouter-models" dir="ltr" value={pd.defaultModel} placeholder="anthropic/claude-sonnet-4.5"
+                onChange={e => setPlatformDraft({ ...pd, defaultModel: e.target.value })} />
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 5, minHeight: 16 }}>
+                {priceLine(pd.defaultModel) || L('Every organization without a model of its own runs on it.', 'כל ארגון שאין לו מודל משלו רץ עליו.')}
+              </div>
+            </div>
+            <div style={{ flex: '1 1 140px' }}>
+              <label className="field-label">{L('Monthly ceiling ($)', 'תקרה חודשית ($)')}</label>
+              <input inputMode="decimal" dir="ltr" value={pd.ceilingUsd} onChange={e => setPlatformDraft({ ...pd, ceilingUsd: e.target.value })} />
+              {info && info.ok && info.budget && (
+                <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 5 }} data-budget>
+                  {L('OpenRouter budget', 'התקציב ב-OpenRouter')}: {usdFmt(info.budget.limit ?? info.budget.credit_limit)}{info.budget.reset || info.budget.limit_reset ? ` / ${info.budget.reset || info.budget.limit_reset}` : ''}
+                </div>
+              )}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <Btn size="sm" variant="primary" disabled={!pdDirty || busy === 'platform'}
+              onClick={() => put('platform', { defaultModel: pd.defaultModel.trim(), ceilingUsd: Number(pd.ceilingUsd) }, () => setPlatformDraft(null))}>
+              {busy === 'platform' ? L('Saving…', 'שומר…') : L('Save', 'שמור')}
+            </Btn>
+            {pdDirty && <Btn size="sm" onClick={() => setPlatformDraft(null)}>{L('Discard', 'בטל')}</Btn>}
+          </div>
+        </div>
+
+        {/* per organization */}
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, margin: '6px 0 10px' }}>
+          <div style={{ fontWeight: 700, fontSize: 15, flex: 1 }}>{L('Organizations this month', 'ארגונים החודש')}</div>
+        </div>
+        <datalist id="openrouter-models">
+          {(catalog || []).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+        </datalist>
+        <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
+          <table dir={uiDir()} style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                {[L('Organization', 'ארגון'), L('Model', 'מודל'), L('Tokens in', 'טוקנים בקלט'), L('Tokens out', 'טוקנים בפלט'), L('Calls', 'קריאות'), L('Cost', 'עלות'), L(`Share of ${usdFmt(data.ceilingUsd)}`, `חלק מתוך ${usdFmt(data.ceilingUsd)}`)].map(h => (
+                  <th key={h} style={th}><Eyebrow>{h}</Eyebrow></th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data.orgs.map(o => {
+                const typed = models[o.id] ?? o.model;
+                const dirty = typed.trim() !== o.model;
+                return (
+                  <tr key={o.id} data-billing-org={o.id} style={{ borderTop: '1px solid var(--border)' }}>
+                    <td style={{ ...td, fontWeight: 600 }}><span dir="auto">{o.name}</span></td>
+                    <td style={{ ...td, minWidth: 260 }}>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <input list="openrouter-models" dir="ltr" value={typed} style={{ flex: 1, minWidth: 0 }}
+                          placeholder={data.defaultModel ? `${L('default', 'ברירת מחדל')}: ${data.defaultModel}` : L('choose a model', 'בחר מודל')}
+                          onChange={e => setModels(x => ({ ...x, [o.id]: e.target.value }))} />
+                        {dirty && <Btn size="sm" variant="primary" disabled={busy === o.id}
+                          onClick={() => put(o.id, { orgId: o.id, model: typed.trim() }, () => setModels(m => { const n = { ...m }; delete n[o.id]; return n; }))}>
+                          {L('Save', 'שמור')}
+                        </Btn>}
+                      </div>
+                      {typed.trim() && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{priceLine(typed)}</div>}
+                    </td>
+                    <td style={td}>{tokensFmt(o.month.input)}</td>
+                    <td style={td}>{tokensFmt(o.month.output)}</td>
+                    <td style={td}>{o.month.calls}</td>
+                    <td style={{ ...td, fontWeight: 600 }}>{usdFmt(o.month.usd)}</td>
+                    <td style={{ ...td, minWidth: 120 }}>
+                      {o.month.share === null ? '—' : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ flex: 1 }}>{bar(o.month.share, toneOf(o.month.share))}</div>
+                          <span style={{ fontSize: 12, color: 'var(--text-2)', minWidth: 44, textAlign: 'end' }}>{pct(o.month.share)}</span>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* the key */}
+        <div style={card}>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{L('OpenRouter key', 'מפתח OpenRouter')}</div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.6, marginBottom: 12 }}>
+            {L('One key for the whole platform. It stays on the server: no organization ever sees it.',
+               'מפתח אחד לכל הפלטפורמה. הוא נשאר בשרת, ואף ארגון לא רואה אותו.')}
+          </div>
+          {k.set && (
+            <div style={{ fontSize: 13, display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 12 }}>
+              <span>{L('Key', 'מפתח')} <code dir="ltr">…{k.hint}</code></span>
+              {info && info.ok
+                ? (info.label && <span dir="auto">{info.label}</span>)
+                : info && <span style={{ color: 'var(--danger)' }}>{L('OpenRouter refuses it:', 'OpenRouter דוחה אותו:')} {info.why}</span>}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <input type="password" dir="ltr" value={keyDraft} onChange={e => setKeyDraft(e.target.value)} placeholder="sk-or-v1-…" style={{ flex: '1 1 280px' }} />
+            <Btn variant="primary" disabled={!keyDraft.trim() || busy === 'key'} onClick={() => put('key', { key: keyDraft }, () => setKeyDraft(''))}>
+              {busy === 'key' ? L('Checking…', 'בודק…') : k.set ? L('Replace key', 'החלף מפתח') : L('Save key', 'שמור מפתח')}
+            </Btn>
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8 }}>
+            {L('OpenRouter is asked about the key before it is stored; a key it refuses is not saved.',
+               'המפתח נבדק מול OpenRouter לפני שהוא נשמר; מפתח שנדחה לא נשמר.')}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function OrganizationsPanel() {
     const [orgs, setOrgs] = useState(null);
     const [error, setError] = useState('');
@@ -16263,12 +16153,21 @@ npm run migrate            # run it`}</Block>
     if (tab === 'history') {
       return <AdminChatHistoryView onBack={() => setTab('users')} />;
     }
+    if (tab === 'billing') {
+      return (
+        <div>
+          <PageHeader eyebrow="Access" title="Admin"
+            actions={<SegTabs value={tab} onChange={setTab} items={ADMIN_TABS} />} />
+          <BillingPanel />
+        </div>
+      );
+    }
     if (tab === 'orgs') {
       return (
         <div>
           <PageHeader eyebrow="Access" title="Admin"
             actions={<SegTabs value={tab} onChange={setTab}
-              items={[{ id: 'orgs', label: 'Organizations' }, { id: 'users', label: 'Users' }, { id: 'history', label: 'Chat history' }]} />} />
+              items={ADMIN_TABS} />} />
           <OrganizationsPanel />
         </div>
       );
@@ -16286,7 +16185,7 @@ npm run migrate            # run it`}</Block>
           title="Admin"
           actions={
             <SegTabs value={tab} onChange={setTab}
-              items={[{ id: 'orgs', label: 'Organizations' }, { id: 'users', label: 'Users' }, { id: 'history', label: 'Chat history' }]} />
+              items={ADMIN_TABS} />
           }
         />
 
@@ -16704,7 +16603,7 @@ npm run migrate            # run it`}</Block>
                 <input id="jv-label" dir="auto" value={label} onChange={e => setLabel(e.target.value)} placeholder="Jarvis — main" />
               </div>
               <div className="field-group" style={{ marginBottom: 0 }}>
-                <label className="field-label" htmlFor="jv-owner">AI Chatbots and API key from the account</label>
+                <label className="field-label" htmlFor="jv-owner">AI Chatbots from the account</label>
                 <select id="jv-owner" value={owner} onChange={e => setOwner(e.target.value)}>
                   <option value="">Mine</option>
                   {users.map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
@@ -18770,157 +18669,13 @@ npm run migrate            # run it`}</Block>
     );
   }
 
-  /**
-   * How much Claude credit is left. A regular API key cannot read the balance
-   * or the spend from Anthropic, so 8legs counts what it spends itself: every
-   * call it makes with the account's key is priced from the tokens it used,
-   * and taken off the balance the account copied from the Console.
-   */
-  const CREDIT_SOURCES = {
-    agents:      ['AI Chatbots (widget, WhatsApp)', 'AI Chatbots (וידג׳ט, וואטסאפ)'],
-    jarvis:      ['Jarvis', 'Jarvis'],
-    groups:      ['WhatsApp groups', 'קבוצות וואטסאפ'],
-    'group-learning': ['Learning groups from chat exports', 'לימוד קבוצות מייצוא צ׳אט'],
-    knowledge:   ['Knowledge processing', 'עיבוד ידע'],
-    builder:     ['Building agents', 'בניית סוכנים'],
-    'test-chat': ['Test chat', 'צ׳אט בדיקה'],
-    assistant:   ['The assistant', 'האסיסטנט'],
-  };
-
-  function CreditSection({ sectionStyle, sectionHeader }) {
-    const [credit, setCredit] = useState(null);
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState(null);
-    const [balanceDraft, setBalanceDraft] = useState('');
-
-    async function run(method, body) {
-      setBusy(true);
-      setError(null);
-      try { setCredit(await apiCredit(method, body)); return true; }
-      catch (e) { setError(e.message); return false; }
-      finally { setBusy(false); }
-    }
-    useEffect(() => { run('GET'); }, []);
-
-    async function setBalance() {
-      const v = balanceDraft.trim().replace(/[$,\s]/g, '');
-      if (!v || busy) return;
-      if (await run('PUT', { balanceUsd: v })) setBalanceDraft('');
-    }
-
-    const money = (n) => {
-      const v = Number(n) || 0;
-      if (v > 0 && v < 0.01) return '< $0.01';
-      return `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    };
-    const day = (d) => new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-    const label = { fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' };
-    const note = { fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.6 };
-    const c = credit || {};
-    const hasBalance = c.balanceAt !== null && c.balanceAt !== undefined;
-    const remaining = c.remainingUsd;
-    const low = hasBalance && remaining < 5;
-    const sourceName = (id) => (CREDIT_SOURCES[id] ? L(...CREDIT_SOURCES[id]) : id);
-
-    return (
-      <div style={sectionStyle}>
-        <div style={sectionHeader}>{L('Claude credit', 'קרדיט Claude')}</div>
-        <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-            {L('Anthropic shows the balance only in the Console, never to an API key. So copy it here once, and 8legs takes off what it spends with your key from then on.',
-               'Anthropic מציגה את היתרה רק ב-Console, אף פעם לא למפתח API. אז מעתיקים אותה לכאן פעם אחת, ו-8legs מוריד ממנה את מה שהוא מוציא עם המפתח שלך מאותו רגע.')}
-          </div>
-
-          {!credit && !error ? (
-            <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{L('Loading…', 'טוען…')}</div>
-          ) : credit && (
-            <React.Fragment>
-              {hasBalance && (
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-                  <div dir="ltr" style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.02em',
-                                          color: low ? 'var(--warning)' : 'var(--text)' }}>
-                    ≈ {money(Math.max(0, remaining))}
-                  </div>
-                  <div style={{ fontSize: 13, color: 'var(--text-2)' }}>
-                    {remaining < 0 ? L('left — the credit has probably run out', 'נשאר — כנראה שהקרדיט נגמר')
-                                   : L('left', 'נשאר')}
-                  </div>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12.5, color: 'var(--text-2)' }}>
-                {hasBalance && (
-                  <div>
-                    {L('Spent through 8legs since you entered', 'הוצאה דרך 8legs מאז שהזנת')} <span dir="ltr">{money(c.balanceUsd)}</span> {L('on ', 'ב-')}{day(c.balanceAt)}:{' '}
-                    <strong dir="ltr">{money(c.spentSinceUsd)}</strong>
-                  </div>
-                )}
-                <div>{L('Spent through 8legs this month', 'הוצאה דרך 8legs החודש')}: <strong dir="ltr">{money(c.monthUsd)}</strong></div>
-              </div>
-
-              {(c.bySource || []).length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: '10px 12px', borderRadius: 'var(--r-md)',
-                              background: 'var(--bg-panel)', border: '1px solid var(--border)' }}>
-                  <div style={{ ...note, fontWeight: 700, marginBottom: 2 }}>
-                    {hasBalance ? L('Where it went, since the balance', 'לאן זה הלך, מאז היתרה') : L('Where it went, this month', 'לאן זה הלך, החודש')}
-                  </div>
-                  {c.bySource.map(r => (
-                    <div key={r.source} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12.5, color: 'var(--text-2)' }}>
-                      <span>{sourceName(r.source)} <span style={{ color: 'var(--text-muted)' }}>· {r.calls} {L(r.calls === 1 ? 'call' : 'calls', 'קריאות')}</span></span>
-                      <span dir="ltr" style={{ fontWeight: 600 }}>{money(r.usd)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div style={note}>
-                {L('Only what 8legs sends with this key. Anything else on your Anthropic account (Claude Code, the Console playground, other apps) is not counted, so the real balance can be lower.',
-                   'רק מה ש-8legs שולח עם המפתח הזה. שימוש אחר בחשבון Anthropic שלך (Claude Code, ה-playground ב-Console, אפליקציות אחרות) לא נספר, אז היתרה האמיתית יכולה להיות נמוכה יותר.')}
-                {c.countingSince && <> {L('Counting since', 'סופר מאז')} {day(c.countingSince)}.</>}
-                {c.unpricedCalls > 0 && (
-                  <span style={{ color: 'var(--warning)' }}> {L(`${c.unpricedCalls} calls used a model without a known price and are not in the total.`,
-                                                                 `${c.unpricedCalls} קריאות השתמשו במודל בלי מחיר ידוע ולא נכללו בסכום.`)}</span>
-                )}
-              </div>
-
-              <div>
-                <label style={label}>{hasBalance ? L('Update the balance ($)', 'עדכן יתרה ($)') : L('Balance in the Console ($)', 'היתרה ב-Console ($)')}</label>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <input inputMode="decimal" value={balanceDraft} onChange={e => setBalanceDraft(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') setBalance(); }}
-                    placeholder="6.68" dir="ltr" style={{ flex: 1 }} />
-                  <Btn size="sm" variant="primary" onClick={setBalance} disabled={busy || !balanceDraft.trim()}>
-                    {busy ? L('Saving…', 'שומר…') : L('Set balance', 'קבע יתרה')}
-                  </Btn>
-                </div>
-                <div style={{ ...note, marginTop: 7 }}>
-                  {L('The amount under Credit balance in Console › Billing. Enter it again whenever you buy credit.',
-                     'הסכום שמופיע תחת Credit balance ב-Console › Billing. מזינים שוב בכל פעם שקונים קרדיט.')}
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-                <Btn size="sm" onClick={() => run('GET')} disabled={busy}>{L('Refresh', 'רענן')}</Btn>
-                {hasBalance && <Btn size="sm" onClick={() => run('DELETE')} disabled={busy}>{L('Clear balance', 'נקה יתרה')}</Btn>}
-              </div>
-            </React.Fragment>
-          )}
-
-          {error && <div style={{ fontSize: 12, color: 'var(--danger)', lineHeight: 1.5, unicodeBidi: 'plaintext' }}>{error}</div>}
-        </div>
-      </div>
-    );
-  }
-
   function SettingsPanel({ user, onLogout, settings, onSaveSettings, stacked }) {
     const [draft, setDraft] = useState(() => settings || accountApi());
-    const [showKey, setShowKey] = useState(false);
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [error, setError] = useState(null);
     const [section, setSection] = useState('set-model');
-    /* The model settings are the organization's; only its admin changes them. */
-    const canEditModel = !settings || settings.canEditModel !== false;
+    /* Models come from the platform: there is nothing here to set but the language. */
 
     // Adopt the settings once they arrive, unless the user is already editing.
     const dirty = JSON.stringify(draft) !== JSON.stringify(settings || {});
@@ -18928,33 +18683,13 @@ npm run migrate            # run it`}</Block>
 
     function set(key, value) {
       setSaved(false);
-      setDraft(d => {
-        const next = { ...d, [key]: value };
-        // Switching provider without switching model would pair a Claude key
-        // with a GPT model, so move the model to that provider's default.
-        if (key === 'provider' && !(MODELS_BY_PROVIDER[value] || []).includes(next.model)) {
-          next.model = DEFAULT_MODEL[value];
-        }
-        return next;
-      });
+      setDraft(d => ({ ...d, [key]: value }));
     }
 
-    /* The key is tried against the provider before it is stored. This field
-       used to take any string at all, and an account ran for a day with
-       `25102004` in it — everything said "configured" until something asked a
-       model for an answer. */
-    const [keyTried, setKeyTried] = useState(null);   // { ok, why }
     async function save() {
       setSaving(true);
       setError(null);
-      setKeyTried(null);
       try {
-        const tried = await verifyApiKey(draft);
-        setKeyTried(tried);
-        if (!tried.ok) {
-          setError(L(`That key was refused: ${tried.why}`, `המפתח נדחה: ${tried.why}`));
-          return;
-        }
         await onSaveSettings(draft);
         setSaved(true);
       } catch (err) {
@@ -18964,8 +18699,7 @@ npm run migrate            # run it`}</Block>
       }
     }
 
-    const models = MODELS_BY_PROVIDER[draft.provider] || CLAUDE_MODELS;
-    const usable = accountApiUsable(draft) && !(keyTried && !keyTried.ok);
+    const usable = !!(settings ? settings.usable : accountApiUsable());
     const sectionStyle = {
       background: 'var(--bg-card)', borderRadius: 'var(--r-lg)',
       border: '1px solid var(--border)', overflow: 'hidden',
@@ -18983,11 +18717,8 @@ npm run migrate            # run it`}</Block>
       background: 'var(--bg-panel)', border: '1px solid var(--border)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
     };
-    // The credit card prices Claude calls against a Console balance: it means nothing for OpenAI or Ollama.
-    const onClaude = ((settings && settings.provider) || 'claude') === 'claude';
     const SECTIONS = [
-      { id: 'set-model',      label: 'Model & key' },
-      ...(onClaude && canEditModel ? [{ id: 'set-credit', label: L('Claude credit', 'קרדיט Claude') }] : []),
+      { id: 'set-model',      label: L('Model & language', 'מודל ושפה') },
       { id: 'set-tokens',     label: 'Access tokens' },
       { id: 'set-password',   label: L('Password', 'סיסמה') },
       { id: 'set-account',    label: 'Account' },
@@ -19030,60 +18761,22 @@ npm run migrate            # run it`}</Block>
           </div>
 
           <div style={{ flex: 1, minWidth: 0, maxWidth: stacked ? 'none' : 720, display: 'flex', flexDirection: 'column', gap: stacked ? 16 : 22 }}>
-        {/* One key for the whole account */}
+        {/* The model is the platform's; the language is the person's own */}
         <div id="set-model" data-tour="api-key" style={sectionStyle}>
-          <div style={sectionHeader}>AI · Model &amp; API key</div>
+          <div style={sectionHeader}>{L('AI · Model & language', 'AI · מודל ושפה')}</div>
           <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-              {L('This key drives every AI Chatbot in the organization, every channel and the assistant. There is no key to set on each one.', 'המפתח הזה משמש את כל ה-AI Chatbots בארגון, את כל הערוצים ואת האסיסטנט. אין צורך להגדיר מפתח לכל אחד בנפרד.')}
-              {!canEditModel && (
-                <div style={{ marginTop: 6, color: 'var(--text-2)' }}>
-                  {L('Your organization\'s admin manages the key and the model.', 'אדמין הארגון מנהל את המפתח והמודל.')}
-                </div>
-              )}
-            </div>
-
-            <ReadOnlyArea on={!canEditModel} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div>
-              <Eyebrow style={{ marginBottom: 8 }}>Provider</Eyebrow>
-              <SegTabs value={draft.provider} onChange={v => set('provider', v)}
-                items={[
-                  { id: 'claude', label: 'Claude' },
-                  { id: 'openai', label: 'OpenAI' },
-                  { id: 'ollama', label: 'Ollama' },
-                ]} />
-            </div>
-
-            {draft.provider === 'ollama' ? (
-              <div>
-                <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Ollama Server</label>
-                <input type="text" value={draft.ollamaHost || ''} onChange={e => set('ollamaHost', e.target.value)} placeholder="http://192.168.1.100:11434" />
+            <div data-managed-model style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 14px', borderRadius: 'var(--r-md)', background: 'var(--bg-panel)', border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+                {L('Models are provided by the platform', 'המודלים מסופקים על ידי הפלטפורמה')}
               </div>
-            ) : (
-              <div>
-                <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>API Key</label>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <input type={showKey ? 'text' : 'password'} value={draft.apiKey || ''} onChange={e => set('apiKey', e.target.value)} placeholder="sk-..." style={{ flex: 1 }} />
-                  {canEditModel && <button onClick={() => setShowKey(v => !v)} title={showKey ? 'Hide' : 'Show'}
-                    style={{ background: 'var(--bg-input)', color: 'var(--text-2)', padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', fontSize: 16 }}>
-                    {showKey ? '🙈' : '👁'}
-                  </button>}
-                </div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.6 }}>
+                {usable
+                  ? L(`Everything in the organization runs on ${(settings || accountApi()).model}, through the platform's account. There is no key to set here.`,
+                      `כל מה שבארגון רץ על ${(settings || accountApi()).model}, דרך החשבון של הפלטפורמה. אין כאן מפתח להגדיר.`)
+                  : L('The platform admin has not finished setting up models for this organization yet.',
+                      'אדמין הפלטפורמה עוד לא סיים להגדיר מודלים לארגון הזה.')}
               </div>
-            )}
-
-            <div>
-              <label style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4, display: 'block' }}>Model</label>
-              <select value={draft.model || ''} onChange={e => set('model', e.target.value)} style={{ borderRadius: 'var(--r-md)' }}>
-                {models.map(m => <option key={m} value={m}>{m}</option>)}
-                {/* A model saved before the list changed: shown, so the select does not
-                    pretend the first option is the one in use. */}
-                {draft.model && !models.includes(draft.model) && (
-                  <option value={draft.model}>{draft.model} {L('(older model)', '(מודל ישן)')}</option>
-                )}
-              </select>
             </div>
-            </ReadOnlyArea>
 
             <div>
               <Eyebrow style={{ marginBottom: 8 }}>{L('Interface language', 'שפת הממשק')}</Eyebrow>
@@ -19099,13 +18792,8 @@ npm run migrate            # run it`}</Block>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', paddingTop: 4, borderTop: '1px solid var(--border)', marginTop: 4 }}>
-              {saved && !dirty && <span style={{ fontSize: 12, color: 'var(--success)' }}>✓ {L('saved — the key works', 'נשמר — המפתח עובד')}</span>}
+              {saved && !dirty && <span style={{ fontSize: 12, color: 'var(--success)' }}>✓ {L('saved', 'נשמר')}</span>}
               {error && <span style={{ fontSize: 12, color: 'var(--danger)', unicodeBidi: 'plaintext' }}>{error}</span>}
-              {!usable && <span style={{ fontSize: 12, color: 'var(--warning)' }}>
-                {draft.provider === 'ollama'
-                  ? L('Without a host address no AI Chatbot will answer', 'בלי כתובת שרת שום AI Chatbot לא יענה')
-                  : L('Without a key no AI Chatbot will answer', 'בלי מפתח שום AI Chatbot לא יענה')}
-              </span>}
               <div style={{ marginInlineStart: 'auto', display: 'flex', gap: 10, paddingTop: 10 }}>
                 <Btn size="sm" onClick={() => setDraft(settings || accountApi())} disabled={!dirty}>{L('Discard changes', 'בטל שינויים')}</Btn>
                 <Btn size="sm" variant="primary" onClick={save} disabled={saving || !dirty}>
@@ -19115,12 +18803,6 @@ npm run migrate            # run it`}</Block>
             </div>
           </div>
         </div>
-
-        {onClaude && canEditModel && (
-          <div id="set-credit">
-            <CreditSection sectionStyle={sectionStyle} sectionHeader={sectionHeader} />
-          </div>
-        )}
 
         <div id="set-tokens">
           <TokensSection sectionStyle={sectionStyle} sectionHeader={sectionHeader}

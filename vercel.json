@@ -21,6 +21,9 @@
     "api/scrape_browser.js": {
       "maxDuration": 30
     },
+    "api/llm.js": {
+      "maxDuration": 300
+    },
     "api/agents/[id]/crawl.js": {
       "maxDuration": 300
     },

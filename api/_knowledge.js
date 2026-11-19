@@ -1,7 +1,7 @@
 import { sql } from './_db.js';
 import { logError } from './_errorLog.js';
-import { recordUsage } from './_usage.js';
-import { currentClaudeModel, claudeRequestShape, claudeText } from './_claudeModels.js';
+import { llmFetch, replyText } from './_llm.js';
+import { configUsable } from './_settings.js';
 
 /**
  * The knowledge base: how a document is prepared when it arrives, and how it
@@ -92,38 +92,14 @@ export function chunkText(text, { target = CHUNK_TARGET, overlap = CHUNK_OVERLAP
 /* ─────────────────── the model pass ─────────────────── */
 
 async function callModel(apiConfig, { system, user, maxTokens = 4000, agentId = null }) {
-  const provider = apiConfig.provider || 'claude';
-  const model = apiConfig.model;
-
-  if (provider === 'claude') {
-    const claudeModel = currentClaudeModel(model);
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiConfig.apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: claudeModel, ...claudeRequestShape(claudeModel, maxTokens), system, messages: [{ role: 'user', content: user }] }),
-    });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
-    await recordUsage({ agentId, model: d.model || claudeModel, usage: d.usage, source: 'knowledge' });
-    // Fail the whole pass, so a document never loses just the part that was declined.
-    if (d.stop_reason === 'refusal') throw new Error(`Claude declined to rewrite this (${d.stop_details?.category || 'no category given'})`);
-    return claudeText(d);
-  }
-
-  const base = provider === 'ollama'
-    ? `${(apiConfig.ollamaHost || '').replace(/\/$/, '')}/v1/chat/completions`
-    : 'https://api.openai.com/v1/chat/completions';
-  const r = await fetch(base, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(provider === 'ollama' ? {} : { Authorization: `Bearer ${apiConfig.apiKey}` }),
-    },
-    body: JSON.stringify({ model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] }),
+  const { ok, data: d } = await llmFetch({
+    cfg: apiConfig,
+    meta: { orgId: apiConfig.orgId || null, source: 'knowledge', itemType: agentId ? 'agent' : null, itemId: agentId },
+    body: { max_tokens: maxTokens, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] },
   });
-  const d = await r.json();
-  if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
-  return (d.choices?.[0]?.message?.content || '').trim();
+  if (!ok) throw new Error(d.error?.message || JSON.stringify(d));
+  // A refusal comes back as no text; the caller keeps the original rather than store nothing.
+  return replyText(d);
 }
 
 const NORMALIZE_SYSTEM = [
@@ -177,7 +153,7 @@ function sliceForModel(text, limit = 9000) {
  */
 export async function normalizeDocument({ title, content, apiConfig, agentId }) {
   const source = String(content || '');
-  const usable = apiConfig && (apiConfig.provider === 'ollama' ? apiConfig.ollamaHost : apiConfig.apiKey);
+  const usable = configUsable(apiConfig);
   if (!usable || !source.trim()) return { text: source, normalized: false, reason: 'no model configured' };
   if (source.length > MAX_NORMALIZE_CHARS) {
     return { text: source, normalized: false, reason: `too large (${source.length} chars)` };

@@ -159,11 +159,11 @@ globalThis.__db = (text, p) => {
   }
 
   /* settings */
-  if (t.startsWith('select coalesce(o.provider, s.provider)')) {
+  if (t.startsWith("select coalesce(s.assistant_language, 'en')")) {
     const u = userById(p[0]); if (!u) return [];
-    const o = db.orgSettings[u.org_id]; const s = db.userSettings[u.id];
-    return [{ provider: o?.provider, api_key: o?.api_key, model: o?.model, ollama_host: o?.ollama_host,
-              assistant_language: s?.assistant_language || 'en', language_chosen: !!s?.language_chosen, found: !!(o || s) }];
+    const s = db.userSettings[u.id];
+    return [{ assistant_language: s?.assistant_language || 'en', language_chosen: !!s?.language_chosen,
+              org_id: u.org_id, model: 'anthropic/claude-sonnet-4.5', platform_ready: true }];
   }
   if (t.startsWith('insert into user_settings')) { db.userSettings[p[0]] = { assistant_language: p[1], language_chosen: p[2] }; return []; }
   if (t.startsWith('insert into org_settings')) {
@@ -276,14 +276,18 @@ check('and they are gone', !userById('e'));
 check('the last admin cannot be removed by the platform admin either',
       (await call('org/members/[userId].js', 'DELETE', { as: 'p', query: { userId: 'a', org: 'o1' } })).statusCode === 409);
 
-/* ── settings: one key per organization ─────────────────────────────────── */
+/* ── settings: models come from the platform, nobody sets a key ─────────── */
 const memberSave = await call('settings.js', 'PUT', { as: 'v', body: { provider: 'claude', apiKey: 'MEMBER-KEY', assistantLanguage: 'he' } });
 check('a member saving settings changes only their own language',
       memberSave.statusCode === 200 && db.orgSettings.o1.api_key === 'ORG-KEY' && db.userSettings.v.assistant_language === 'he' &&
       memberSave.payload.canEditModel === false);
 const adminSave = await call('settings.js', 'PUT', { as: 'a', body: { provider: 'claude', apiKey: 'NEW-ORG-KEY', assistantLanguage: 'en' } });
-check('the admin changes the organization\'s key', adminSave.payload.canEditModel === true && db.orgSettings.o1.api_key === 'NEW-ORG-KEY');
-check('and every member runs on it', (await call('settings.js', 'GET', { as: 'v' })).payload.apiKey === 'NEW-ORG-KEY');
+check('neither can the organization\'s admin set a key', adminSave.statusCode === 200 && db.orgSettings.o1.api_key === 'ORG-KEY' &&
+      adminSave.payload.canEditModel === false, JSON.stringify(adminSave.payload));
+const memberView = (await call('settings.js', 'GET', { as: 'v' })).payload;
+check('everyone reads the platform\'s model, with no key at all',
+      memberView.provider === 'openrouter' && memberView.model === 'anthropic/claude-sonnet-4.5' && memberView.usable === true &&
+      !('apiKey' in memberView), JSON.stringify(memberView));
 
 /* ── Jarvis: each organization's admin runs its own ─────────────────────── */
 const numbers = async (as) => {

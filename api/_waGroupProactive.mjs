@@ -1,5 +1,5 @@
 import { sql } from './_db.js';
-import { resolveAgentApiConfig } from './_settings.js';
+import { resolveAgentApiConfig, configUsable } from './_settings.js';
 import { getNumber } from './_waControl.js';
 import {
   LATE_MS, contextWindow, describeClaudeError, groupSettingsOf, insertGroupMessage, listDates, logGroupEvent,
@@ -27,7 +27,7 @@ export async function resolveSpeaker(number, group) {
   const [agentRow] = agentId ? await sql`select id, data, user_id from agents where id = ${agentId} and user_id = ${number.owner_user_id}` : [];
   if (!agentRow) return { error: 'No AI Chatbot is set for this group or this number.' };
   const apiConfig = await resolveAgentApiConfig(agentRow);
-  if (apiConfig.provider !== 'claude' || !apiConfig.apiKey) return { error: 'Groups need a Claude API key in the owner account’s Settings.' };
+  if (!configUsable(apiConfig)) return { error: 'The platform has not chosen a model for this account yet.' };
   return { agentRow, apiConfig };
 }
 

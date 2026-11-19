@@ -14,8 +14,7 @@ import { sendMail, searchMail } from './_mail.js';
 import { getTable, listRows, addRow, updateRow } from './_tables.js';
 import { runAgentTurn } from './_agentRunner.js';
 import { getUserSettings, resolveApiConfig, resolveAgentApiConfig, configUsable } from './_settings.js';
-import { currentClaudeModel, claudeRequestShape, claudeText, CLAUDE_MODELS } from './_claudeModels.js';
-import { recordUsage } from './_usage.js';
+import { llmFetch, replyText } from './_llm.js';
 import { fieldsToObject, waitSeconds } from './_automationSpec.js';
 
 const source = (ctx) => `automation:${ctx.automationId || ''}`;
@@ -168,39 +167,22 @@ function parseJsonReply(text) {
 /** One prompt to the organization's model, answered as text or as JSON. */
 async function ai(config, ctx) {
   const cfg = resolveApiConfig(await getUserSettings(ctx.ownerId), null);
-  if (!configUsable(cfg)) throw new Error('the organization has no model key set — add one under Settings');
+  if (!configUsable(cfg)) throw new Error('the platform has not finished setting up models for this organization');
   const prompt = String(config.prompt ?? '').trim();
   if (!prompt) throw new Error('has no prompt');
   const wantsJson = !!config.json;
   const system = wantsJson
     ? 'Answer with a single JSON value and nothing else: no explanation, no code fence.'
     : 'Answer directly, with no preamble.';
-  const doFetch = ctx.fetch || fetch;
-  let text;
-
-  if (cfg.provider === 'claude') {
-    const model = currentClaudeModel(CLAUDE_MODELS.includes(config.model) ? config.model : cfg.model);
-    const r = await doFetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model, ...claudeRequestShape(model, 4000), system, messages: [{ role: 'user', content: prompt }] }),
-    });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error((d.error && d.error.message) || `the model answered ${r.status}`);
-    await recordUsage({ userId: ctx.ownerId, model: d.model || model, usage: d.usage, source: 'automation' });
-    if (d.stop_reason === 'refusal') throw new Error('the model declined to answer this');
-    text = claudeText(d);
-  } else {
-    const base = cfg.provider === 'ollama' ? `${cfg.ollamaHost}/v1/chat/completions` : 'https://api.openai.com/v1/chat/completions';
-    const r = await doFetch(base, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(cfg.provider === 'ollama' ? {} : { Authorization: `Bearer ${cfg.apiKey}` }) },
-      body: JSON.stringify({ model: cfg.model, messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }] }),
-    });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error((d.error && d.error.message) || `the model answered ${r.status}`);
-    text = ((d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content) || '').trim();
-  }
+  const fetchImpl = ctx.fetch || fetch;
+  const meta = { orgId: ctx.orgId || cfg.orgId || null, ownerId: ctx.ownerId, source: 'automation', itemType: 'automation', itemId: ctx.automationId || null };
+  const { ok, status, data: d } = await llmFetch({
+    cfg, meta, fetchImpl,
+    body: { max_tokens: 4000, messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }] },
+  });
+  if (!ok) throw new Error((d.error && d.error.message) || `the model answered ${status}`);
+  const text = replyText(d);
+  if (!text) throw new Error('the model returned no answer');
   return { output: wantsJson ? parseJsonReply(text) : { text }, port: 'out' };
 }
 

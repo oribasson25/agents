@@ -1,8 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { sql } from './_db.js';
 import { nowBlock, PLATFORM_TZ } from './_now.js';
-import { getUserSettings, resolveApiConfig } from './_settings.js';
-import { recordUsage } from './_usage.js';
+import { getUserSettings, resolveApiConfig, configUsable } from './_settings.js';
+import { llmFetch, replyText, webSearch } from './_llm.js';
 
 /*
  * Jarvis: a private personal assistant for one person on a linked WhatsApp
@@ -14,8 +13,10 @@ import { recordUsage } from './_usage.js';
  * goes to chat_sessions, so none of it shows up in Interactions or in an
  * admin's chat history. One person's Jarvis cannot see another's.
  *
- * The model and key are the number owner's account settings, like every other
- * channel in 8Legs. Jarvis needs Claude: it relies on tool use and web search.
+ * The model is the one the platform chose for the number owner's
+ * organization, reached through the platform's OpenRouter key like every
+ * other channel in 8Legs. Jarvis relies on tool use, so that model must
+ * support tools; web search is a tool of its own (api/_llm.js webSearch).
  */
 
 /* What a Jarvis may do, unless an admin turned it off for this person. */
@@ -40,10 +41,6 @@ const MAX_FACTS = 200;
 const MAX_ROUNDS = 8;
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 
-// Models that take the dynamic-filtering web search; older ones keep the basic tool.
-const NEW_SEARCH = /^claude-(fable|mythos|opus-5|sonnet-5|opus-4-[678]|sonnet-4-6)/;
-// Models that may decline on safety grounds and take a server-side fallback.
-const FALLBACK_MODELS = /^claude-(fable-5-[12]|opus-5-5|opus-5$|sonnet-5-5)/;
 
 export async function recordAssistantMessage(personId, content) {
   await sql`insert into jarvis_messages (person_id, role, content) values (${personId}, 'assistant', ${content})`;
@@ -208,7 +205,7 @@ async function runTool(personId, name, input) {
   return { error: `Unknown tool: ${name}` };
 }
 
-/** Claude needs user/assistant turns to alternate and to start with the user. */
+/** Turns must alternate and start with the person; consecutive ones are joined. */
 function alternate(history) {
   const out = [];
   for (const m of history) {
@@ -220,102 +217,97 @@ function alternate(history) {
   return out;
 }
 
-function attachmentBlocks(attachments) {
-  const blocks = [];
+/** What they sent besides text, as chat-completions content parts. */
+function attachmentParts(attachments) {
+  const parts = [];
   for (const a of attachments || []) {
-    if (IMAGE_TYPES.has(a.mime)) blocks.push({ type: 'image', source: { type: 'base64', media_type: a.mime, data: a.data } });
-    else if (a.mime === 'application/pdf') blocks.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: a.data } });
+    if (IMAGE_TYPES.has(a.mime)) parts.push({ type: 'image_url', image_url: { url: `data:${a.mime};base64,${a.data}` } });
+    else if (a.mime === 'application/pdf') parts.push({ type: 'file', file: { filename: a.name || 'document.pdf', file_data: `data:application/pdf;base64,${a.data}` } });
   }
-  return blocks;
+  return parts;
 }
 
+const WEB_SEARCH_TOOL = {
+  name: 'web_search',
+  description: 'Search the web for something current: news, prices, opening hours, schedules, facts that may have changed. Returns an answer from the results and the pages it came from.',
+  input_schema: {
+    type: 'object',
+    properties: { query: { type: 'string', description: 'What to look up, as a full question or search phrase.' } },
+    required: ['query'],
+  },
+};
+
+const asFunction = (t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema } });
+
 /**
- * One turn of a person's Jarvis: stores what they wrote, asks Claude (with
+ * One turn of a person's Jarvis: stores what they wrote, asks the model (with
  * memory, reminders and web search as tools), stores and returns the reply.
  */
 export async function runJarvisTurn({ person, number, texts, attachments = [] }) {
   const userText = texts.join('\n').trim() || '[attachment]';
   await recordUserMessage(person.id, userText);
 
-  const cfg = resolveApiConfig(await getUserSettings(number.owner_user_id), null);
-  if (cfg.provider !== 'claude' || !cfg.apiKey) {
-    const reply = 'Jarvis needs a Claude API key in the 8Legs account settings before it can answer.';
+  const cfg = resolveApiConfig(await getUserSettings(number.owner_user_id));
+  if (!configUsable(cfg)) {
+    const reply = 'Jarvis is not set up yet: the 8Legs admin has not chosen a model for this account.';
     await recordAssistantMessage(person.id, reply);
     return reply;
   }
+  const meta = { orgId: cfg.orgId, ownerId: number.owner_user_id, source: 'jarvis', itemType: 'number', itemId: number.id };
 
   const context = await loadContext(person.id);
-  const messages = alternate(context.history);
+  const messages = [{ role: 'system', content: buildSystem(person, context) }, ...alternate(context.history)];
   // The stored history ends with what they just wrote; give that turn its attachments.
-  const blocks = attachmentBlocks(attachments);
-  if (blocks.length && messages.length && messages[messages.length - 1].role === 'user') {
-    const last = messages[messages.length - 1];
-    last.content = [...blocks, { type: 'text', text: last.content }];
+  const parts = attachmentParts(attachments);
+  const last = messages[messages.length - 1];
+  if (parts.length && last && last.role === 'user') {
+    last.content = [{ type: 'text', text: last.content }, ...parts];
   }
 
-  const model = cfg.model;
-  const tools = [...CLIENT_TOOLS];
-  if (capabilityOn(person, 'web')) {
-    tools.push({ type: NEW_SEARCH.test(model) ? 'web_search_20260209' : 'web_search_20250305', name: 'web_search', max_uses: 5 });
-  }
-  const fallback = FALLBACK_MODELS.test(model)
-    ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }
-    : {};
-
-  const client = new Anthropic({ apiKey: cfg.apiKey });
-  const system = buildSystem(person, context);
+  const tools = [...CLIENT_TOOLS, ...(capabilityOn(person, 'web') ? [WEB_SEARCH_TOOL] : [])].map(asFunction);
 
   let reply = '';
   try {
     for (let round = 0; round < MAX_ROUNDS; round++) {
-      const response = await client.beta.messages.create({
-        model,
-        max_tokens: 16000,
-        system,
-        tools,
-        messages,
-        ...fallback,
-      });
-      // The number owner's key paid for it, whoever on the list was talking.
-      await recordUsage({ userId: number.owner_user_id, model: response.model || model, usage: response.usage, source: 'jarvis' });
-
-      if (response.stop_reason === 'pause_turn') {
-        messages.push({ role: 'assistant', content: response.content });
-        continue;
-      }
-      if (response.stop_reason === 'tool_use') {
-        messages.push({ role: 'assistant', content: response.content });
-        const results = [];
-        for (const block of response.content) {
-          if (block.type !== 'tool_use') continue;
-          const out = await runTool(person.id, block.name, block.input).catch((err) => ({ error: err.message }));
-          results.push({
-            type: 'tool_result',
-            tool_use_id: block.id,
-            content: out.error || out.ok,
-            ...(out.error && { is_error: true }),
-          });
+      const { ok, status, data } = await llmFetch({ cfg, meta, body: { messages, tools, max_tokens: 4000 } });
+      if (!ok) {
+        const code = data && data.error && data.error.code;
+        if (code === 'BUDGET') reply = 'I can\'t answer right now: this month\'s budget for the assistant is used up.';
+        else if (status === 429) reply = "I'm a bit overloaded right now. Try me again in a minute.";
+        else {
+          console.error(`[jarvis ${person.id}] the model answered ${status}:`, data && data.error && data.error.message);
+          reply = 'Sorry, something went wrong on my side. Please try again in a moment.';
         }
-        messages.push({ role: 'user', content: results });
-        continue;
-      }
-      if (response.stop_reason === 'refusal') {
-        reply = "Sorry, I can't help with that one.";
         break;
       }
-      reply = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
-      break;
+      const message = data.choices[0].message || {};
+      const calls = message.tool_calls || [];
+      if (!calls.length) {
+        reply = replyText(data);
+        break;
+      }
+      messages.push(message);
+      for (const call of calls) {
+        let input = {};
+        try { input = JSON.parse(call.function.arguments || '{}'); } catch { /* an empty call */ }
+        let out;
+        if (call.function.name === 'web_search' && capabilityOn(person, 'web')) {
+          const found = await webSearch({ cfg, query: input.query, meta });
+          out = found.error
+            ? { error: found.error }
+            : { ok: [found.answer, ...found.sources.map((x) => `- ${x.title ? `${x.title}: ` : ''}${x.url}`)].join('\n') };
+        } else {
+          out = await runTool(person.id, call.function.name, input).catch((err) => ({ error: err.message }));
+        }
+        messages.push({ role: 'tool', tool_call_id: call.id, content: out.error ? `Error: ${out.error}` : out.ok });
+      }
     }
     if (!reply) reply = 'Sorry, I got stuck on that one. Could you ask again?';
   } catch (err) {
-    if (err instanceof Anthropic.AuthenticationError) {
-      reply = 'The Claude API key in the 8Legs account settings was rejected, so I cannot answer right now.';
-    } else if (err instanceof Anthropic.RateLimitError) {
-      reply = "I'm a bit overloaded right now. Try me again in a minute.";
-    } else {
-      console.error(`[jarvis ${person.id}] turn failed:`, err instanceof Anthropic.APIError ? `${err.status} ${err.message}` : err.message);
-      reply = 'Sorry, something went wrong on my side. Please try again in a moment.';
-    }
+    console.error(`[jarvis ${person.id}] turn failed:`, err.message);
+    reply = err.code === 'BUDGET'
+      ? 'I can\'t answer right now: this month\'s budget for the assistant is used up.'
+      : 'Sorry, something went wrong on my side. Please try again in a moment.';
   }
 
   await recordAssistantMessage(person.id, reply);

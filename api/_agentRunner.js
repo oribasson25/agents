@@ -6,8 +6,8 @@ import { logError } from './_errorLog.js';
 import { TABLE_TOOLS, runAgentTableTool } from './_tables.js';
 import { AUTOMATION_TOOLS, runAgentAutomationTool } from './_automationTools.js';
 import { internalSecret } from './_auth.js';
-import { recordUsage } from './_usage.js';
-import { DEFAULT_CLAUDE_MODEL, currentClaudeModel, claudeRequestShape, claudeText } from './_claudeModels.js';
+import { llmFetch, replyText } from './_llm.js';
+import { configUsable } from './_settings.js';
 
 /* This runs server-side with no logged-in user, so it proves it is the
    platform to the tool runner and the scraper with the internal secret
@@ -90,53 +90,6 @@ const END_CONVERSATION_TOOL = {
   name: 'end_conversation',
   description: 'End this conversation. Call it when the person asks to end, stop or close the conversation, or says goodbye with nothing left open. Then reply with a short goodbye: their next message starts a new conversation that does not remember this one.',
 };
-
-function buildClaudeTools(agent) {
-  const toolDefs = (agent.tools || []).filter(t => t.name !== 'switch_skill' && !(agent.canEndConversation && t.name === END_CONVERSATION_TOOL.name));
-  const tools = toolDefs.map(t => {
-    const predefinedUrls = (agent.scrapeUrls || (agent.scrapeUrl ? [agent.scrapeUrl] : [])).map(u => u.trim()).filter(Boolean);
-    const hasPredefinedUrl = t.name === 'scrape_website' && predefinedUrls.length > 0;
-    const params = hasPredefinedUrl ? (t.parameters || []).filter(p => p.name !== 'url') : (t.parameters || []);
-    return {
-      name: t.name,
-      description: t.description + (hasPredefinedUrl ? ' (URL is preconfigured; call with no arguments.)' : ''),
-      input_schema: {
-        type: 'object',
-        properties: Object.fromEntries(params.map(p => [p.name, { type: p.type || 'string', description: p.description || '' }])),
-        required: params.map(p => p.name),
-      },
-    };
-  });
-
-  if (agent.emailEnabled) {
-    tools.push({
-      name: 'send_email',
-      description: EMAIL_TOOL.description,
-      input_schema: {
-        type: 'object',
-        properties: Object.fromEntries(
-          Object.entries(EMAIL_TOOL.parameters).map(([name, description]) => [name, { type: 'string', description }])
-        ),
-        required: Object.keys(EMAIL_TOOL.parameters),
-      },
-    });
-  }
-
-  if ((agent.tables || []).length > 0) {
-    for (const t of TABLE_TOOLS) {
-      tools.push({ name: t.name, description: t.description, input_schema: t.schema });
-    }
-  }
-  if ((agent.automations || []).length > 0) {
-    for (const t of AUTOMATION_TOOLS) {
-      tools.push({ name: t.name, description: t.description, input_schema: t.schema });
-    }
-  }
-  if (agent.canEndConversation) {
-    tools.push({ ...END_CONVERSATION_TOOL, input_schema: { type: 'object', properties: {} } });
-  }
-  return tools;
-}
 
 function buildOpenAITools(agent) {
   const toolDefs = (agent.tools || []).filter(t => t.name !== 'switch_skill' && !(agent.canEndConversation && t.name === END_CONVERSATION_TOOL.name));
@@ -294,18 +247,16 @@ export async function runAgentTurn({ agent, agentId, messages, baseUrl }) {
   const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || '';
   const ragChunks = lastUserMsg.trim() ? await retrieveRagChunks(agentId, lastUserMsg) : [];
   const systemPrompt = buildSystemPrompt(agent, ragChunks);
-  const apiKey     = (agent.apiConfig && agent.apiConfig.apiKey)     || '';
-  const provider   = (agent.apiConfig && agent.apiConfig.provider)   || 'claude';
-  const model      = (agent.apiConfig && agent.apiConfig.model)      || DEFAULT_CLAUDE_MODEL;
-  const ollamaHost = ((agent.apiConfig && agent.apiConfig.ollamaHost) || 'http://localhost:11434').replace(/\/$/, '');
-  const dlp        = agent.dlp || {};
+  const cfg = agent.apiConfig || {};
+  const dlp = agent.dlp || {};
   const safeMessages = dlpMessages(messages, dlp);
 
-  if (!apiKey && provider !== 'ollama') {
-    const err = new Error('Agent is not configured with an API key. Contact the site owner.');
+  if (!configUsable(cfg)) {
+    const err = new Error('The platform has not set up a model for this AI Chatbot\'s organization yet.');
     err.code = 'NO_API_KEY';
     throw err;
   }
+  const meta = { orgId: cfg.orgId || null, source: 'agents', itemType: 'agent', itemId: agentId };
 
   let ended = false;
   const runTool = async (name, inputs) => {
@@ -316,104 +267,31 @@ export async function runAgentTurn({ agent, agentId, messages, baseUrl }) {
     return executeTool(name, inputs, agent, baseUrl, agentId);
   };
 
-  if (provider === 'claude') {
-    let msgs = [...safeMessages];
-    const claudeModel = currentClaudeModel(model);
+  let msgs = [{ role: 'system', content: systemPrompt }, ...safeMessages];
 
-    for (let round = 0; round < 10; round++) {
-      const body = { model: claudeModel, ...claudeRequestShape(claudeModel, 1024), system: systemPrompt, messages: msgs };
-      const claudeTools = buildClaudeTools(agent);
-      if (claudeTools.length > 0) body.tools = claudeTools;
+  for (let round = 0; round < 10; round++) {
+    const body = { messages: msgs, max_tokens: 2048 };
+    const openAITools = buildOpenAITools(agent);
+    if (openAITools.length > 0) body.tools = openAITools;
 
-      const llmRes = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify(body),
-      });
-      const d = await llmRes.json();
-      if (!llmRes.ok) throw new Error(d.error?.message || JSON.stringify(d));
-      await recordUsage({ agentId, model: d.model || claudeModel, usage: d.usage, source: 'agents' });
+    const { ok, data: d } = await llmFetch({ cfg, body, meta });
+    if (!ok) throw new Error(d.error?.message || JSON.stringify(d));
 
-      // A declined request can carry the start of a reply; none of it goes out.
-      // The callers turn an empty reply into their own apology.
-      if (d.stop_reason === 'refusal') {
-        await logError({ agentId, source: 'provider', message: `Claude declined to answer (${d.stop_details?.category || 'no category given'})`, context: { model: d.model || claudeModel } });
-        return { text: '', safeMessages, ended };
-      }
-      if (d.stop_reason !== 'tool_use') {
-        return { text: claudeText(d), safeMessages, ended };
-      }
-
-      const toolUses = d.content.filter(c => c.type === 'tool_use');
-      const toolResults = await Promise.all(toolUses.map(async tu => {
-        const result = await runTool(tu.name, tu.input);
-        return { type: 'tool_result', tool_use_id: tu.id, content: result };
-      }));
-
-      msgs = [...msgs, { role: 'assistant', content: d.content }, { role: 'user', content: toolResults }];
+    const choice = d.choices[0];
+    const calls = (choice.message && choice.message.tool_calls) || [];
+    if (!calls.length) {
+      // A refusal or an empty answer: the callers turn '' into their own apology.
+      return { text: replyText(d), safeMessages, ended };
     }
-    throw new Error('Too many tool call rounds (max 10)');
 
-  } else if (provider === 'ollama') {
-    let msgs = [{ role: 'system', content: systemPrompt }, ...safeMessages];
+    const toolResultMsgs = await Promise.all(calls.map(async tc => {
+      let inputs = {};
+      try { inputs = JSON.parse(tc.function.arguments || '{}'); } catch { /* a model that wrote broken JSON gets an empty call */ }
+      const result = await runTool(tc.function.name, inputs);
+      return { role: 'tool', tool_call_id: tc.id, content: String(result) };
+    }));
 
-    for (let round = 0; round < 10; round++) {
-      const body = { model, messages: msgs };
-      const openAITools = buildOpenAITools(agent);
-      if (openAITools.length > 0) body.tools = openAITools;
-
-      const llmRes = await fetch(`${ollamaHost}/v1/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const d = await llmRes.json();
-      if (!llmRes.ok) throw new Error(d.error?.message || JSON.stringify(d));
-
-      const choice = d.choices[0];
-      if (choice.finish_reason !== 'tool_calls') {
-        return { text: choice.message.content, safeMessages, ended };
-      }
-
-      const toolResultMsgs = await Promise.all((choice.message.tool_calls || []).map(async tc => {
-        const inputs = JSON.parse(tc.function.arguments);
-        const result = await runTool(tc.function.name, inputs);
-        return { role: 'tool', tool_call_id: tc.id, content: result };
-      }));
-
-      msgs = [...msgs, choice.message, ...toolResultMsgs];
-    }
-    throw new Error('Too many tool call rounds (max 10)');
-
-  } else {
-    let msgs = [{ role: 'system', content: systemPrompt }, ...safeMessages];
-
-    for (let round = 0; round < 10; round++) {
-      const body = { model, messages: msgs };
-      const openAITools = buildOpenAITools(agent);
-      if (openAITools.length > 0) body.tools = openAITools;
-
-      const llmRes = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body: JSON.stringify(body),
-      });
-      const d = await llmRes.json();
-      if (!llmRes.ok) throw new Error(d.error?.message || JSON.stringify(d));
-
-      const choice = d.choices[0];
-      if (choice.finish_reason !== 'tool_calls') {
-        return { text: choice.message.content, safeMessages, ended };
-      }
-
-      const toolResultMsgs = await Promise.all((choice.message.tool_calls || []).map(async tc => {
-        const inputs = JSON.parse(tc.function.arguments);
-        const result = await runTool(tc.function.name, inputs);
-        return { role: 'tool', tool_call_id: tc.id, content: result };
-      }));
-
-      msgs = [...msgs, choice.message, ...toolResultMsgs];
-    }
-    throw new Error('Too many tool call rounds (max 10)');
+    msgs = [...msgs, choice.message, ...toolResultMsgs];
   }
+  throw new Error('Too many tool call rounds (max 10)');
 }

@@ -1,7 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { searchDocuments } from './_knowledge.js';
-import { recordUsage } from './_usage.js';
-import { claudeRequestShape, currentClaudeModel } from './_claudeModels.js';
+import { llmFetch, replyText, modelInfo } from './_llm.js';
 
 /*
  * What the number does about the latest messages in a group: reply, react with
@@ -160,6 +158,19 @@ function turnBlock({ mode, addressed, newRows, mine, engagement, rationed, passa
 }
 
 /** Reads the decision out of a reply that was not schema-constrained. */
+/* Prompt caching through OpenRouter is Anthropic's: a cache_control mark on a
+   content part. Other providers cache on their own, or not at all, and are
+   not handed a field they do not know. */
+const caches = (model) => /^anthropic\//.test(String(model || ''));
+const cached = (model, part) => (caches(model) ? { ...part, cache_control: { type: 'ephemeral' } } : part);
+
+/** The token counts the activity log shows, from OpenRouter's usage. */
+function usageOf(data) {
+  const u = (data && data.usage) || {};
+  const d = u.prompt_tokens_details || {};
+  return { input: u.prompt_tokens || 0, output: u.completion_tokens || 0, cacheRead: d.cached_tokens || 0, cacheWrite: d.cache_write_tokens || 0 };
+}
+
 function parseLoose(text) {
   const m = /\{[\s\S]*\}/.exec(text || '');
   if (!m) throw new Error(`unparseable decision: ${String(text).slice(0, 200)}`);
@@ -167,10 +178,10 @@ function parseLoose(text) {
 }
 
 /**
- * Asks Claude what to do about the latest messages in a group.
+ * Asks the model what to do about the latest messages in a group.
  *
  * @param {object} p
- * @param {object} p.apiConfig   the owner's { apiKey, model } (provider must be Claude)
+ * @param {object} p.apiConfig   the owner's resolved config (the organization's model on OpenRouter)
  * @param {object} p.agent       the AI Chatbot's data
  * @param {string} p.agentId
  * @param {string} p.ownerId     whose credit pays for it
@@ -191,7 +202,7 @@ export async function decideGroup({ apiConfig, agent, agentId, ownerId, group, s
   const content = [];
   for (let i = 0; i < lines.length; i += CHUNK) content.push({ type: 'text', text: lines.slice(i, i + CHUNK).join('\n') });
   const lastFull = Math.floor(lines.length / CHUNK) - 1;
-  if (lastFull >= 0) content[lastFull].cache_control = { type: 'ephemeral' };
+  if (lastFull >= 0) content[lastFull] = cached(apiConfig.model, content[lastFull]);
   if (!content.length) content.push({ type: 'text', text: '(the group is empty so far)' });
 
   const query = newRows.map((r) => r.text).join('\n').slice(0, 2000);
@@ -207,52 +218,38 @@ export async function decideGroup({ apiConfig, agent, agentId, ownerId, group, s
   });
 
   const allowReactions = group.allow_reactions !== false;
-  const client = new Anthropic({ apiKey: apiConfig.apiKey });
-  const model = currentClaudeModel(apiConfig.model);
-  // Claude 5 models think by default; this keeps it light and leaves room for the decision.
-  const shape = claudeRequestShape(model, 4000);
-  const request = {
-    model,
-    max_tokens: shape.max_tokens,
+  const model = apiConfig.model;
+  /* A model that takes a JSON schema answers in exactly that shape; any other
+     is asked for the same JSON in words and read leniently. */
+  const structured = !!(await modelInfo(model))?.structured;
+  const system = buildSystem({ name, agent, group, allowReactions, replyLength: group.reply_length });
+  const body = {
+    max_tokens: 4000,
     // Cached on its own: with a learned profile it is most of the prompt, and it rarely changes.
-    system: [{ type: 'text', text: buildSystem({ name, agent, group, allowReactions, replyLength: group.reply_length }), cache_control: { type: 'ephemeral' } }],
-    messages: [{ role: 'user', content }],
-    output_config: { ...shape.output_config, format: { type: 'json_schema', schema: DECISION_SCHEMA } },
+    messages: [
+      { role: 'system', content: [cached(model, { type: 'text', text: system })] },
+      { role: 'user', content: structured ? content : [...content, { type: 'text', text: 'Answer with only a JSON object with the keys action, text, emoji, quote, options, hours and why, as described.' }] },
+    ],
+    ...(structured && { response_format: { type: 'json_schema', json_schema: { name: 'decision', strict: true, schema: DECISION_SCHEMA } } }),
   };
 
-  let response;
-  let structured = true;
-  try {
-    response = await client.messages.create(request);
-  } catch (err) {
-    // A model without structured outputs: ask for the same JSON in words instead.
-    if (!(err instanceof Anthropic.BadRequestError) || !/output_config|format|json_schema|structured/i.test(err.message)) throw err;
-    structured = false;
-    const { output_config: { format: _drop, ...rest }, ...plain } = request;
-    if (Object.keys(rest).length) plain.output_config = rest;
-    plain.messages = [{ role: 'user', content: [...content, { type: 'text', text: `Answer with only a JSON object with the keys action, text, emoji, quote, options, hours and why, as described.` }] }];
-    response = await client.messages.create(plain);
-  }
-  await recordUsage({ userId: ownerId, model: response.model || model, usage: response.usage, source: 'groups' });
+  const { ok, status, data } = await llmFetch({
+    cfg: apiConfig, body,
+    meta: { orgId: apiConfig.orgId, ownerId, source: 'groups', itemType: 'agent', itemId: agentId },
+  });
+  if (!ok) throw new Error((data.error && data.error.message) || `the model answered ${status}`);
 
-  const meta = {
-    model: response.model,
-    usage: {
-      input: response.usage?.input_tokens || 0,
-      output: response.usage?.output_tokens || 0,
-      cacheRead: response.usage?.cache_read_input_tokens || 0,
-      cacheWrite: response.usage?.cache_creation_input_tokens || 0,
-    },
-  };
-  if (response.stop_reason === 'refusal') return { action: 'silent', text: '', emoji: '', target: null, why: 'The model declined.', ...meta };
-  if (response.stop_reason === 'max_tokens') throw new Error('The model ran out of room before deciding.');
+  const choice = data.choices[0];
+  const meta = { model: data.model || model, usage: usageOf(data) };
+  if (choice.message && choice.message.refusal) return { action: 'silent', text: '', emoji: '', target: null, why: 'The model declined.', ...meta };
+  if (choice.finish_reason === 'length') throw new Error('The model ran out of room before deciding.');
 
-  const textBlock = (response.content || []).find((b) => b.type === 'text');
+  const answer = replyText(data);
   let decision;
   try {
-    decision = structured ? JSON.parse(textBlock?.text ?? '') : parseLoose(textBlock?.text);
+    decision = JSON.parse(answer);
   } catch {
-    decision = parseLoose(textBlock?.text);
+    decision = parseLoose(answer);
   }
 
   const target = rows.find((r) => r.id === Number(decision.quote)) || null;
@@ -307,19 +304,21 @@ Defaults (your instructions override these):
       : '(no recent messages in the group)' },
     { type: 'text', text: `---\nCurrent time: ${nowFmt(tz).format(new Date())}.\n${brief}\nWrite the message now.` },
   ];
-  const client = new Anthropic({ apiKey: apiConfig.apiKey });
-  const model = currentClaudeModel(apiConfig.model);
-  const shape = claudeRequestShape(model, recap ? 3000 : 1500);
-  const response = await client.messages.create({
-    model,
-    max_tokens: shape.max_tokens,
-    system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
-    messages: [{ role: 'user', content }],
-    ...(shape.output_config && { output_config: shape.output_config }),
+  const model = apiConfig.model;
+  const { ok, status, data } = await llmFetch({
+    cfg: apiConfig,
+    meta: { orgId: apiConfig.orgId, ownerId, source: 'groups' },
+    body: {
+      max_tokens: recap ? 3000 : 1500,
+      messages: [
+        { role: 'system', content: [cached(model, { type: 'text', text: system })] },
+        { role: 'user', content },
+      ],
+    },
   });
-  await recordUsage({ userId: ownerId, model: response.model || model, usage: response.usage, source: 'groups' });
-  if (response.stop_reason === 'refusal') throw new Error('The model declined to write this message.');
-  const text = (response.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+  if (!ok) throw new Error((data.error && data.error.message) || `the model answered ${status}`);
+  if (data.choices[0].message && data.choices[0].message.refusal) throw new Error('The model declined to write this message.');
+  const text = replyText(data);
   if (!text) throw new Error('The model returned no message.');
-  return { text, model: response.model || model };
+  return { text, model: data.model || model };
 }

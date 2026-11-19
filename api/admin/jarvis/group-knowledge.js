@@ -1,6 +1,6 @@
 import { waitUntil } from '@vercel/functions';
 import { jarvisGate, numberInScope, ownerInScope } from '../../_jarvisAccess.js';
-import { getUserSettings, resolveApiConfig } from '../../_settings.js';
+import { getUserSettings, resolveApiConfig, configUsable } from '../../_settings.js';
 import { getNumber } from '../../_waControl.js';
 import { describeClaudeError, getGroup } from '../../_waGroups.js';
 import { buildKnowledge, digestPart, jobState, setKnowledge } from '../../_waGroupKnowledge.js';
@@ -49,9 +49,9 @@ export default async function handler(req, res) {
 
   if (req.method !== 'POST') return res.status(405).end();
 
-  const cfg = resolveApiConfig(await getUserSettings(number.owner_user_id), null);
-  if (cfg.provider !== 'claude' || !cfg.apiKey) {
-    return res.status(400).json({ error: 'Learning a group needs a Claude API key in the owner account’s Settings.' });
+  const cfg = resolveApiConfig(await getUserSettings(number.owner_user_id));
+  if (!configUsable(cfg)) {
+    return res.status(400).json({ error: 'The platform has not chosen a model for this account yet.' });
   }
   const body = req.body || {};
 
@@ -60,7 +60,7 @@ export default async function handler(req, res) {
     if (!text.trim() || text.length > 150_000) return res.status(400).json({ error: 'A part must be 1–150,000 characters.' });
     try {
       const out = await digestPart({
-        apiKey: cfg.apiKey, ownerId: number.owner_user_id, chatName: group.name,
+        cfg, ownerId: number.owner_user_id, chatName: group.name,
         part: Number(body.part) || 1, parts: Number(body.parts) || 1,
         from: String(body.from || ''), to: String(body.to || ''), text,
       });
@@ -79,7 +79,7 @@ export default async function handler(req, res) {
     // Mark it as building before answering, so the screen's first poll sees it.
     await setKnowledge(numberId, jid, { ...(k || {}), job: { status: 'building', startedAt: Date.now() } });
     waitUntil(buildKnowledge({
-      apiKey: cfg.apiKey, ownerId: number.owner_user_id, numberId, group,
+      cfg, ownerId: number.owner_user_id, numberId, group,
       notes,
       recent: String(body.recent || '').slice(0, 120_000),
       samples: String(body.samples || '').slice(0, 30_000),
