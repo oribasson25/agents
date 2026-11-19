@@ -120,10 +120,10 @@ r = await verify('1158201444');
 ok(r.statusCode === 200 && r.body === '1158201444' && /text\/plain/.test(r.headers['content-type']) && r.headers['x-content-type-options'] === 'nosniff',
   "Meta's numeric challenge is echoed as plain text with nosniff");
 const verifySql = db.log.filter((l) => l.t.includes("verifyToken'") && l.t.startsWith('select 1 from agents')).at(-1)?.t || '';
-ok(verifySql.includes("data->'whatsapp'->>'enabled' = 'true'"), 'only an enabled WhatsApp chatbot answers the handshake');
+ok(!verifySql.includes("'enabled'"), 'a chatbot answers the handshake before its channel is switched on (Meta\'s Verify comes first)');
 db.throttle.length = 0;
 r = await verify('42', false);
-ok(r.statusCode === 403 && db.throttle.some((b) => b.startsWith('wa-verify:203.0.113.9')), 'a wrong verify token counts against the caller\'s address');
+ok(r.statusCode === 403 && db.throttle.some((b) => b.startsWith('rl:wa-verify-miss:203.0.113.9')), 'a wrong verify token counts against the caller\'s address');
 
 /* ── 2. deliveries: 500 until the message is really answered ─────────────── */
 const SECRET = 'app-secret';

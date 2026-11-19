@@ -2,7 +2,7 @@ import { sql } from './_db.js';
 import { loadAppById, mayOpen } from './_apps.js';
 import { linkId, aiOf } from './_appFiles.js';
 import { getTable, listRows, addRow, updateRow, deleteRow } from './_tables.js';
-import { runAgentTurn, saveSession, claimSession, publicHistory, validSessionId, appBaseUrl } from './_agentRunner.js';
+import { runAgentTurn, saveSession, claimSession, publicHistory, storedTranscript, validSessionId, appBaseUrl } from './_agentRunner.js';
 import { getUserSettings, resolveApiConfig, configUsable } from './_settings.js';
 import { llmFetch, replyText, isStopped, stopMessage } from './_llm.js';
 import { branchForSession, loadForConversation } from './_branches.js';
@@ -21,6 +21,12 @@ const HANDOVER_AT_MS = 50 * 1000;    /* steps hand the run over to the cron afte
 const AI_PER_IP_PER_MINUTE = 20;
 const SEND_PER_IP_PER_MINUTE = 20;
 const SEND_PER_SESSION_PER_MINUTE = 10;
+/* Writes to a table can set off automations (onRowAdded), and running an
+   automation can send mail, WhatsApp messages and call models: a visitor of
+   a public app may not loop either. These two open when the count can't be
+   read: what they cost is bounded further down (model holds, chain depth). */
+const WRITE_PER_IP_PER_MINUTE = 60;
+const RUN_PER_IP_PER_MINUTE = 10;
 
 async function overLimit(res, checks) {
   const ok = await Promise.all(checks);
@@ -136,7 +142,7 @@ export default async function handler(req, res) {
       try {
         const { text, safeMessages } = await runAgentTurn({ agent, agentId, messages: history.messages, baseUrl: appBaseUrl(req) });
         if (sessionId) {
-          await saveSession(sessionId, agentId, [...safeMessages, { role: 'assistant', content: text }], 'app', chosen.branchId);
+          await saveSession(sessionId, agentId, storedTranscript(history, safeMessages, text, agent.dlp), 'app', chosen.branchId);
         }
         return res.json({ content: text });
       } catch (err) {
@@ -170,6 +176,9 @@ export default async function handler(req, res) {
         return res.json({ rows, total, columns: table.columns });
       }
       if (readonly) return res.status(403).json({ error: `"${name}" is linked read-only` });
+      if (op === 'table.add' || op === 'table.update' || op === 'table.remove') {
+        if (await overLimit(res, [rateLimit(`app-write:${app.id}:${clientIp(req)}`, WRITE_PER_IP_PER_MINUTE, 60, { failOpen: true })])) return;
+      }
       if (op === 'table.add') return res.json(await addRow(table, body.row || {}, by));
       if (op === 'table.update') {
         if (!body.rowId) return res.status(400).json({ error: 'rowId is required' });
@@ -185,6 +194,7 @@ export default async function handler(req, res) {
     if (op === 'automation.run') {
       const id = linkId((app.automations || {})[name]);
       if (!id) return res.status(404).json({ error: `This app has no automation linked as "${name}"` });
+      if (await overLimit(res, [rateLimit(`app-run:${app.id}:${clientIp(req)}`, RUN_PER_IP_PER_MINUTE, 60, { failOpen: true })])) return;
       const [auto] = await sql`select * from automations where id = ${id} and org_id = ${orgId}`;
       if (!auto) return res.status(404).json({ error: `The automation linked as "${name}" no longer exists` });
       if (!auto.published || !auto.enabled) {

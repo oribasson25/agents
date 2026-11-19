@@ -201,10 +201,19 @@ function connectionsNamed(def) {
  * checked when its steps run.)
  */
 async function assertConnectionsUsable(def, orgId, user) {
-  if (user && user.system) return;
   for (const name of connectionsNamed(def)) {
     const [row] = await sql`select * from connections where org_id = ${orgId} and (lower(name) = lower(${name}) or id = ${name})`;
-    if (row && !(await canUseConnection(row, user && user.userId))) {
+    if (!row) continue;
+    /* A git push arrives as the platform, not as a person: whoever pushed
+       is not known, and the run would act as the previous publisher. So a
+       push may only name connections the whole organization shares. */
+    if (user && user.system) {
+      if (!row.shared) {
+        throw fail(`The connection "${row.name}" is not shared with the organization, so a git push cannot publish a step that uses it. Publish from the editor instead, or ask the admin to share it under Connections.`, 'NOT_SHARED', 403);
+      }
+      continue;
+    }
+    if (!(await canUseConnection(row, user && user.userId))) {
       throw fail(`The connection "${row.name}" has not been shared with you. The organization's admin can share it under Connections.`, 'NOT_SHARED', 403);
     }
   }

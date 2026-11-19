@@ -104,7 +104,14 @@ export async function poll(numberId) {
       returning old.command
     )
     select (select command from taken) as command,
-           exists (select 1 from wa_outbox where number_id = ${numberId} and status = 'queued') as outbox
+           /* A row a dead worker left in 'sending' counts too: otherwise it waits
+              for the next queued message to wake the sender (requeueStuck runs
+              there) and, on a quiet number, is never sent. Same window as
+              requeueStuck. */
+           exists (select 1 from wa_outbox where number_id = ${numberId}
+                     and (status = 'queued'
+                          or (status = 'sending' and created_at < now() - interval '3 minutes'
+                              and created_at > now() - interval '1 hour'))) as outbox
   `;
   return { command: row?.command || null, outbox: !!row?.outbox };
 }

@@ -198,4 +198,19 @@ await check('the prompt runs from what never changes to what changes every minut
   assert.ok(at('BASE') === 0 && at('BASE') < at('SKILL') && at('SKILL') < at('[SECURITY NOTICE]') && at('[SECURITY NOTICE]') < at('RAG') && at('RAG') < at('## Right now'), sys);
 });
 
+await check('the model sees the last 20 turns, but the whole conversation is stored (masked)', async () => {
+  const long = [];
+  for (let i = 0; i < 30; i++) long.push({ role: 'user', content: `q${i} card 4580 1234 5678 9012` }, { role: 'assistant', content: `a${i}` });
+  long.push({ role: 'user', content: 'last' });
+  const h = runner.publicHistory(long);
+  assert.ok(h.messages.length <= 20 && h.all.length === 61, `${h.messages.length} / ${h.all.length}`);
+  const dlp = { creditCard: true };
+  const stored = runner.storedTranscript(h, runner.dlpMessages(h.messages, dlp), 'reply', dlp);
+  assert.equal(stored.length, 62);
+  assert.equal(stored[stored.length - 1].content, 'reply');
+  assert.ok(stored[0].content.startsWith('q0') && stored[0].content.includes('[MASKED]') && !stored[0].content.includes('4580'), stored[0].content);
+  const plain = runner.storedTranscript(h, h.messages, 'reply', {});
+  assert.equal(plain.length, 62);
+});
+
 console.log(`${process.exitCode ? '✗' : '✓'} chat-security-probe: ${passed} checks passed`);

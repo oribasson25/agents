@@ -425,9 +425,14 @@ async function reserve({ p, orgId, meta, est }) {
   };
   const refusedScope = SCOPE_ORDER.find((sc) => wanted.some((w) => w.scope === sc) && !heldScopes.has(sc));
   const balance = row && row.balance !== null && row.balance !== undefined ? Number(row.balance) : null;
+  /* `balance` is the statement's starting snapshot, so under a race it can
+     still read positive after another call took the last of it; the `bal`
+     update re-checks after the row lock. An organization that has a balance
+     and got no hold is out of money, whatever the snapshot says. */
+  const balanceHeld = !!row && row.balance_hold !== null && row.balance_hold !== undefined;
   let refusal = null;
   if (refusedScope === 'platform' || refusedScope === 'org-public') refusal = SCOPE_REFUSALS[refusedScope]();
-  else if (balance !== null && balance <= 0 && !hold.balanceHold) refusal = fail(ORG_BALANCE_MESSAGE, 'ORG_BALANCE', 402);
+  else if (balance !== null && !balanceHeld) refusal = fail(ORG_BALANCE_MESSAGE, 'ORG_BALANCE', 402);
   else if (refusedScope) refusal = SCOPE_REFUSALS[refusedScope]();
   if (refusal) {
     await release(hold);

@@ -22,8 +22,10 @@ const INTERNAL_HEADERS = { 'Content-Type': 'application/json', 'x-internal-secre
  * address this request came in on.
  */
 export function appBaseUrl(req) {
-  const fixed = String(process.env.APP_URL || '').trim().replace(/\/+$/, '');
-  if (fixed) return fixed;
+  /* Normalised like _gmail.js's: a value pasted without its scheme, or with a
+     stray newline, has been set before and must not break these calls. */
+  const fixed = String(process.env.APP_URL || '').replace(/[\s\u0000-\u001f\u007f]+/g, '').replace(/\/+$/, '');
+  if (fixed) return /^https?:\/\//i.test(fixed) ? fixed : `https://${fixed}`;
   const proto = String((req && req.headers && req.headers['x-forwarded-proto']) || 'https').split(',')[0].trim() === 'http' ? 'http' : 'https';
   return `${proto}://${req && req.headers ? req.headers.host : ''}`;
 }
@@ -49,9 +51,10 @@ const MAX_INCOMING = 500;
  */
 export function publicHistory(messages) {
   if (!Array.isArray(messages) || messages.length === 0) return { error: 'messages array required' };
-  if (messages.length > MAX_INCOMING) return { error: 'Too many messages in one request' };
+  /* A long conversation is not refused: only its latest MAX_INCOMING
+     messages are read (and stored). */
   const kept = [];
-  for (const m of messages) {
+  for (const m of messages.slice(-MAX_INCOMING)) {
     if (!m || typeof m !== 'object') return { error: 'Every message must be an object with a role and text content' };
     if (m.role !== 'user' && m.role !== 'assistant') continue;
     if (typeof m.content !== 'string') return { error: 'Message content must be text' };
@@ -66,7 +69,17 @@ export function publicHistory(messages) {
   if (!recent.length || recent[recent.length - 1].role !== 'user' || !recent[recent.length - 1].content.trim()) {
     return { error: 'The last message must be the person\'s, with some text' };
   }
-  return { messages: recent };
+  return { messages: recent, all: kept };
+}
+
+/**
+ * What a public conversation stores: the whole transcript the visitor's page
+ * holds, masked like the turn was, not only the window the model was shown —
+ * otherwise Interactions would keep just the last twenty messages.
+ */
+export function storedTranscript(history, safeMessages, reply, dlp) {
+  const older = history.all.slice(0, history.all.length - history.messages.length);
+  return [...dlpMessages(older, dlp || {}), ...safeMessages, { role: 'assistant', content: reply }].slice(-MAX_INCOMING);
 }
 
 /* What any channel hands a turn: text turns of a person and the chatbot, nothing else. */

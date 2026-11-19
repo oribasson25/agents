@@ -1,5 +1,5 @@
 import { sql } from '../../_db.js';
-import { runAgentTurn, saveSession, claimSession, publicHistory, validSessionId, appBaseUrl } from '../../_agentRunner.js';
+import { runAgentTurn, saveSession, claimSession, publicHistory, storedTranscript, validSessionId, appBaseUrl } from '../../_agentRunner.js';
 import { getUserSettings, resolveApiConfig } from '../../_settings.js';
 import { logError } from '../../_errorLog.js';
 import { isStopped, stopMessage } from '../../_llm.js';
@@ -68,7 +68,7 @@ export default async function handler(req, res) {
     const baseUrl = appBaseUrl(req);
 
     const { text, safeMessages } = await runAgentTurn({ agent, agentId, messages: history.messages, baseUrl });
-    const finalMessages = [...safeMessages, { role: 'assistant', content: text }];
+    const finalMessages = storedTranscript(history, safeMessages, text, agent.dlp);
     if (sessionId) await saveSession(sessionId, agentId, finalMessages, 'widget', chosen.branchId);
     return res.json({ content: text });
 

@@ -6,7 +6,7 @@ import { logError } from '../_errorLog.js';
 import { isStopped, stopMessage } from '../_llm.js';
 import { branchForSession, loadForConversation } from '../_branches.js';
 import { appendExchange, normalizeHistory, recentMessages } from '../_waHistory.js';
-import { clientIp, isLocked, recordFailure } from '../_throttle.js';
+import { clientIp, rateLimit } from '../_throttle.js';
 
 const GRAPH = 'https://graph.facebook.com/v20.0';
 
@@ -71,21 +71,22 @@ async function handleVerify(req, res) {
 
   if (mode !== 'subscribe' || !token || !/^\d{1,64}$/.test(challenge)) return res.status(400).send('Bad request');
 
-  const bucket = `wa-verify:${clientIp(req)}`;
-  if (await isLocked(bucket)) return res.status(429).send('Too many attempts');
-
+  /* Any chatbot with this verify token, switched on or not: Meta's "Verify"
+     button is usually pressed before the channel is enabled, and answering
+     the digits it sent reveals nothing. A right token always passes. Wrong
+     ones are counted per address, generously, because Meta calls from
+     addresses every customer shares: one customer's typos must not lock out
+     the others. (A verify token grants nothing beyond this handshake, so
+     guessing one gains nothing.) */
   const [hit] = await sql`
     select 1 from agents
     where data->'whatsapp'->>'verifyToken' = ${token}
       and coalesce(data->'whatsapp'->>'verifyToken', '') <> ''
-      and data->'whatsapp'->>'enabled' = 'true'
     limit 1
   `;
-  if (!hit) {
-    await recordFailure(bucket);
-    return res.status(403).send('Verification failed');
-  }
-  return res.status(200).send(challenge);
+  if (hit) return res.status(200).send(challenge);
+  const allowed = await rateLimit(`wa-verify-miss:${clientIp(req)}`, 60, 3600, { failOpen: true });
+  return res.status(allowed ? 403 : 429).send(allowed ? 'Verification failed' : 'Too many attempts');
 }
 
 async function handleInbound(req, res) {

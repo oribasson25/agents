@@ -14,6 +14,8 @@
  */
 import { internalSecret } from './_auth.js';
 
+let warnedFallback = false;
+
 /** Where code goes, and the secret that proves the caller is the platform. */
 export function toolRunnerTarget(baseUrl) {
   const external = String(process.env.TOOL_RUNNER_URL || '').trim().replace(/\/+$/, '');
@@ -23,6 +25,10 @@ export function toolRunnerTarget(baseUrl) {
     return { url: `${external}/api/run-tool`, secret };
   }
   if (!baseUrl) throw new Error('The code runner cannot be reached from here');
+  if (process.env.VERCEL_ENV === 'production' && !warnedFallback) {
+    warnedFallback = true;
+    console.error('[tool runner] TOOL_RUNNER_URL is not set: customers\' tool code runs in this deployment, where a child process can read the platform\'s secrets through /proc. Deploy tool-runner/ and set TOOL_RUNNER_URL and TOOL_RUNNER_SECRET.');
+  }
   return { url: `${String(baseUrl).replace(/\/+$/, '')}/api/run-tool`, secret: internalSecret() };
 }
 

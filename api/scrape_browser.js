@@ -8,7 +8,7 @@
 import chromium from '@sparticuz/chromium';
 import { chromium as playwright } from 'playwright-core';
 import { checkInternalOrAuth } from './_auth.js';
-import { checkPublicUrl } from './_netGuard.js';
+import { checkPublicUrl, safeFetch } from './_netGuard.js';
 
 const INSIDE = 'That address is inside the platform\'s network and cannot be read.';
 
@@ -74,12 +74,38 @@ export default async function handler(req, res) {
 
     const page = await browser.newPage();
     await page.setExtraHTTPHeaders({ 'Accept-Language': 'he,en-US,en;q=0.9' });
+    /* Chromium never opens a connection of its own: every http(s) request
+       the page makes is fetched here through safeFetch (checked, pinned to
+       the checked address) and handed back. Otherwise Chromium resolves the
+       name again after our check (DNS rebinding), and a redirect hop is not
+       shown to a route handler at all. Redirects go back to the page as they
+       are, so the next hop comes through here and is checked too. Images,
+       media and fonts are not needed to read a page's text. */
     await page.route('**/*', async (route) => {
-      const target = route.request().url();
-      if (await gate.allowed(target)) return route.continue();
-      gate.refuse(target);
-      return route.abort('blockedbyclient');
+      const request = route.request();
+      const target = request.url();
+      let parsed;
+      try { parsed = new URL(target); } catch { return route.abort('blockedbyclient'); }
+      if (parsed.protocol === 'data:' || parsed.protocol === 'blob:') return route.continue();
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') { gate.refuse(target); return route.abort('blockedbyclient'); }
+      if (['image', 'media', 'font'].includes(request.resourceType())) return route.abort('blockedbyclient');
+      try {
+        const sent = { ...request.headers() };
+        for (const k of ['host', 'content-length', 'accept-encoding', 'connection']) delete sent[k];
+        const answer = await safeFetch(target, {
+          method: request.method(), headers: sent, body: request.postDataBuffer() || undefined,
+          redirect: 'manual', timeoutMs: 15000, maxBytes: 5 * 1048576, truncate: true,
+        });
+        const headers = {};
+        answer.headers.forEach((v, k) => { if (k !== 'set-cookie') headers[k] = v; });
+        return route.fulfill({ status: answer.status, headers, body: Buffer.from(await answer.arrayBuffer()) });
+      } catch (err) {
+        if (/inside the platform|user name or password|Only http/.test(String(err && err.message))) gate.refuse(target);
+        return route.abort('failed');
+      }
     });
+    /* Nor through a WebSocket, which a route handler does not see. */
+    if (typeof page.routeWebSocket === 'function') await page.routeWebSocket(/.*/, (ws) => ws.close());
     page.on('request', (request) => gate.watch(request.url()));
 
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });

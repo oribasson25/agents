@@ -42,6 +42,10 @@ export default async function handler(req, res) {
                        token_version = token_version + 1
       where id = ${user.userId}
     `;
+    /* A password is changed most often because it leaked; a personal access
+       token minted with it would otherwise outlive the change by a year. The
+       CLI signs in again. */
+    await sql`update api_tokens set revoked_at = now() where user_id = ${user.userId} and revoked_at is null`;
     const [fresh] = await sql`select id, username, is_admin, token_version from users where id = ${user.userId}`;
     const token = fresh ? sessionToken(fresh) : undefined;
     return res.json({ ok: true, ...(token ? { token } : {}), ...(await sessionInfo(user.userId)) });

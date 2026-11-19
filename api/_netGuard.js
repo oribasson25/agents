@@ -149,7 +149,14 @@ function tooLarge(maxBytes) {
 function pinnedRequest(url, { method, headers, body, address, family, signal, maxBytes, truncate }) {
   return new Promise((resolve, reject) => {
     const mod = url.protocol === 'https:' ? https : http;
-    const hdrs = { 'accept-encoding': 'gzip, deflate, br', ...headers };
+    /* What fetch() would send if the caller says nothing: some servers refuse
+       a request with no User-Agent (api.github.com answers 403), and one with
+       a chunked body and no length (411). */
+    const payload = body === undefined || body === null ? null
+      : (typeof body === 'string' || Buffer.isBuffer(body) || body instanceof Uint8Array ? body : String(body));
+    const hdrs = { 'user-agent': 'node', accept: '*/*', 'accept-encoding': 'gzip, deflate, br', ...headers };
+    if (payload !== null) hdrs['content-length'] = String(typeof payload === 'string' ? Buffer.byteLength(payload) : payload.length);
+    else if (!['GET', 'HEAD', 'OPTIONS', 'DELETE'].includes(method)) hdrs['content-length'] = '0';
     let settled = false;
     const fail = (err) => { if (!settled) { settled = true; reject(err); } };
     const req = mod.request(url, {
@@ -194,7 +201,7 @@ function pinnedRequest(url, { method, headers, body, address, family, signal, ma
       res.on('error', (err) => { if (!cut) fail(err); });
     });
     req.on('error', fail);
-    if (body !== undefined && body !== null) req.write(typeof body === 'string' || Buffer.isBuffer(body) || body instanceof Uint8Array ? body : String(body));
+    if (payload !== null) req.write(payload);
     req.end();
   });
 }
@@ -248,12 +255,13 @@ function toResponse(raw, finalUrl) {
  *   maxBytes      the most it reads, after decompression (default 5 MB);
  *                 over it throws, or with `truncate` keeps the first maxBytes
  *   maxRedirects  default 5
+ *   redirect      'follow' (default) or 'manual': hand a 3xx back as it is
  *   fetch         a transport for probes (answers like fetch, redirect:'manual')
  *   allowPrivate  probes only
  */
 export async function safeFetch(rawUrl, {
   method = 'GET', headers, body, timeoutMs = 30000, maxBytes = 5 * 1048576, truncate = false,
-  maxRedirects = 5, signal, fetch: transport, allowPrivate = false,
+  maxRedirects = 5, redirect = 'follow', signal, fetch: transport, allowPrivate = false,
 } = {}) {
   const deadline = AbortSignal.timeout(Math.max(1, timeoutMs));
   const sig = signal ? AbortSignal.any([signal, deadline]) : deadline;
@@ -270,7 +278,7 @@ export async function safeFetch(rawUrl, {
         ? await viaTransport(via, target.url, opts)
         : await pinnedRequest(target.url, { ...opts, address: target.address, family: target.family });
       const location = raw.status >= 300 && raw.status < 400 && raw.headers.location;
-      if (!location) return toResponse(raw, target.url.toString());
+      if (!location || redirect === 'manual') return toResponse(raw, target.url.toString());
       if (hop >= maxRedirects) throw new Error('Too many redirects');
       const next = new URL(Array.isArray(location) ? location[0] : location, target.url);
       if (next.origin !== target.url.origin) {

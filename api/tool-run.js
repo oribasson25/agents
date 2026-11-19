@@ -2,6 +2,7 @@ import { sql } from './_db.js';
 import { requireSession } from './_auth.js';
 import { accessTo, allows } from './_access.js';
 import { runToolCode } from './_toolRunner.js';
+import { appBaseUrl } from './_agentRunner.js';
 
 /**
  * A person running one of a chatbot's tools from the platform: the tool panel
@@ -53,8 +54,7 @@ export default async function handler(req, res) {
     envVars = savedEnv;
   }
 
-  const proto = String(req.headers['x-forwarded-proto'] || 'https').split(',')[0].trim();
-  const baseUrl = process.env.APP_URL || `${proto}://${req.headers.host}`;
+  const baseUrl = appBaseUrl(req);
   try {
     const data = await runToolCode({ code, inputs, packages, envVars, baseUrl });
     if (data.error !== undefined) return res.json({ error: String(data.error) });
