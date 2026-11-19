@@ -146,6 +146,14 @@ export async function openRouterModels({ fetchImpl = fetch } = {}) {
       images: inputs.includes('image'),
       files: inputs.includes('file'),
       maxOutput: (m.top_provider && Number(m.top_provider.max_completion_tokens)) || null,
+      // For the admin's model picker: when OpenRouter added it, the start of
+      // its description, and the day OpenRouter stops serving it, if set.
+      created: Number(m.created) || null,
+      about: String(m.description || '')
+        .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')   // markdown links → their words
+        .replace(/[*_`#]+/g, '')
+        .replace(/\s+/g, ' ').trim().slice(0, 220),
+      expires: m.expiration_date || null,
     };
   }).sort((a, b) => a.id.localeCompare(b.id));
   catalogCache = { at: Date.now(), models };

@@ -151,6 +151,20 @@ await check('web search: OpenRouter\'s web plugin on the organization\'s model, 
   assert.deepEqual(out.sources, [{ url: 'https://shop.example/hours', title: 'Hours' }]);
 });
 
+await check('the model list carries what the picker shows: prices, date, a plain description, the end date', async () => {
+  const { openRouterModels } = await fresh();
+  const { fetchImpl } = recorder({ json: { data: [{ id: 'openai/gpt-x', name: 'OpenAI: GPT X', created: 1790000000, context_length: 400000,
+    description: 'The **same** model as [GPT Y](https://openrouter.ai/openai/gpt-y),\n served faster.', expiration_date: '2026-12-31',
+    pricing: { prompt: '0.00000125', completion: '0.00001' }, supported_parameters: ['tools'], architecture: { input_modalities: ['text', 'image'] } },
+    { id: 'openrouter/auto', name: 'Auto Router', pricing: { prompt: '-1', completion: '-1' } }] } });
+  const list = await openRouterModels({ fetchImpl });
+  const m = list.find((x) => x.id === 'openai/gpt-x');
+  const auto = list.find((x) => x.id === 'openrouter/auto');
+  assert.equal(m.about, 'The same model as GPT Y, served faster.');
+  assert.deepEqual([m.created, m.expires, m.inputPerM, m.outputPerM, m.tools, m.images], [1790000000, '2026-12-31', 1.25, 10, true, true]);
+  assert.deepEqual([auto.inputPerM, auto.outputPerM, auto.expires], [null, null, null], 'a router priced per request has no per-token price');
+});
+
 await check('chatUsage and replyText read OpenRouter\'s answer, and tolerate junk', async () => {
   assert.deepEqual(chatUsage({ prompt_tokens: 5, completion_tokens: 2, prompt_tokens_details: { cached_tokens: 3, cache_write_tokens: 1 }, cost: 0.5 }),
     { input: 5, output: 2, read: 3, write: 1, cost: 0.5 });

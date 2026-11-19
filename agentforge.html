@@ -15776,6 +15776,314 @@ npm run migrate            # run it`}</Block>
     return String(v);
   };
 
+  /* ── choosing a model ── */
+
+  /** Who makes a model, from its OpenRouter id: '~anthropic/claude-sonnet-latest' → 'anthropic'. */
+  const modelMaker = (id) => String(id || '').replace(/^~/, '').split('/')[0];
+  const MODEL_MAKERS = {
+    anthropic: ['Anthropic', '#C96442'], openai: ['OpenAI', '#0E8C6B'], google: ['Google', '#1A73E8'],
+    'meta-llama': ['Meta', '#0866FF'], meta: ['Meta', '#0866FF'], mistralai: ['Mistral', '#E8590C'],
+    deepseek: ['DeepSeek', '#4D6BFE'], 'x-ai': ['xAI', '#334155'], qwen: ['Qwen', '#615CED'],
+    moonshotai: ['Moonshot', '#0F766E'], 'z-ai': ['Z.ai', '#1E3A8A'], nvidia: ['NVIDIA', '#5E9400'],
+    cohere: ['Cohere', '#39594D'], amazon: ['Amazon', '#C77700'], perplexity: ['Perplexity', '#20808D'],
+    microsoft: ['Microsoft', '#0078D4'], minimax: ['MiniMax', '#D6336C'], openrouter: ['OpenRouter', '#6467F2'],
+    tencent: ['Tencent', '#0052D9'], xiaomi: ['Xiaomi', '#E85D04'],
+  };
+  const MAKER_TONES = ['#7C3AED', '#0891B2', '#DB2777', '#65A30D', '#EA580C', '#4F46E5', '#0D9488', '#B45309'];
+  /** A maker's name and colour. Makers not listed take the name OpenRouter puts before the colon. */
+  function makerLook(id, catalog) {
+    const key = modelMaker(id);
+    if (MODEL_MAKERS[key]) return { key, name: MODEL_MAKERS[key][0], tone: MODEL_MAKERS[key][1] };
+    const named = (catalog || []).find(m => modelMaker(m.id) === key && m.name.includes(': '));
+    let h = 0;
+    for (const c of key) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    return { key, name: named ? named.name.split(': ')[0] : key, tone: MAKER_TONES[h % MAKER_TONES.length] };
+  }
+  /** 'Anthropic: Claude Sonnet 4.5' → 'Claude Sonnet 4.5'. */
+  const shortModelName = (m) => (m.name.includes(': ') ? m.name.split(': ').slice(1).join(': ') : m.name);
+  /** USD per million tokens: $3, $0.15, Free; — when OpenRouter prices it per request. */
+  const perMFmt = (v) => {
+    if (v === null || v === undefined) return '—';
+    const n = Number(v);
+    if (n === 0) return L('Free', 'חינם');
+    return `$${n >= 1 ? Number(n.toPrecision(3)) : n.toFixed(n < 0.01 ? 4 : n < 0.1 ? 3 : 2)}`;
+  };
+  const contextFmt = (n) => (!n ? '' : n >= 1e6 ? `${Number((n / 1e6).toFixed(1))}M` : `${Math.round(n / 1e3)}K`);
+
+  function MakerBadge({ look, size = 32 }) {
+    return (
+      <span aria-hidden="true" title={look.name} style={{
+        width: size, height: size, borderRadius: Math.round(size * 0.3), flexShrink: 0,
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        background: `${look.tone}1A`, color: look.tone, border: `1px solid ${look.tone}38`,
+        fontWeight: 800, fontSize: Math.round(size * 0.44), lineHeight: 1,
+      }}>{(look.name.match(/[A-Za-z0-9]/) || ['?'])[0].toUpperCase()}</span>
+    );
+  }
+
+  /** What a model can do, as small tags. */
+  function ModelCaps({ m }) {
+    const tag = (text, tone, title) => (
+      <span key={text} title={title} style={{
+        fontSize: 10.5, fontWeight: 600, padding: '1px 7px', borderRadius: 99, whiteSpace: 'nowrap',
+        background: tone === 'danger' ? 'rgba(220,38,38,0.08)' : 'var(--bg-hover)',
+        color: tone === 'danger' ? 'var(--danger)' : 'var(--text-2)',
+      }}>{text}</span>
+    );
+    return [
+      m.tools ? tag(L('Tools', 'כלים'), '', L('Can call tools: chatbots with tools and tables, Jarvis, the groups', 'יודע להפעיל כלים: בוטים עם כלים וטבלאות, Jarvis, הקבוצות'))
+              : tag(L('No tools', 'בלי כלים'), 'danger', L('Chatbots with tools or tables, Jarvis and the groups will not work on it', 'בוטים עם כלים או טבלאות, Jarvis והקבוצות לא יעבדו עליו')),
+      m.images && tag(L('Images', 'תמונות')),
+      m.files && tag('PDF'),
+      m.structured && tag('JSON', '', L('Strict JSON answers', 'תשובות JSON מדויקות')),
+      m.contextLength && tag(`${contextFmt(m.contextLength)} ${L('context', 'הקשר')}`, '', L('How much text it reads at once, in tokens', 'כמה טקסט הוא קורא בבת אחת, בטוקנים')),
+    ].filter(Boolean);
+  }
+
+  /** The chosen model, as a button that opens the picker. Empty: the platform's default. */
+  function ModelField({ catalog, value, defaultModel, onOpen, busy, testId }) {
+    const id = value || defaultModel || '';
+    const m = (catalog || []).find(x => x.id === id);
+    const look = makerLook(id, catalog);
+    const unknown = !!value && catalog && catalog.length > 0 && !m;
+    return (
+      <button type="button" onClick={onOpen} disabled={busy} data-model-field={testId || ''} style={{
+        display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'start', padding: '8px 12px',
+        borderRadius: 'var(--r-md)', border: `1px solid ${unknown ? 'var(--danger)' : 'var(--border)'}`, background: 'var(--bg-input)',
+        cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1, fontFamily: 'inherit', color: 'var(--text)',
+      }}>
+        {id ? <MakerBadge look={look} size={28} />
+            : <span style={{ width: 28, height: 28, borderRadius: 8, border: '1px dashed var(--border)', flexShrink: 0 }} />}
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13 }}>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {!id ? L('Choose a model', 'בחר מודל') : m ? shortModelName(m) : id}
+            </span>
+            {!value && id && <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>· {L('platform default', 'ברירת המחדל')}</span>}
+          </span>
+          <span style={{ display: 'block', fontSize: 11, color: unknown ? 'var(--danger)' : 'var(--text-muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {unknown ? L('Not in OpenRouter\'s list', 'לא ברשימה של OpenRouter')
+              : m ? <>{look.name} · <span dir="ltr">{perMFmt(m.inputPerM)} / {perMFmt(m.outputPerM)}</span> {L('per 1M tokens', 'ל-1M טוקנים')}</>
+              : id ? <span dir="ltr" style={{ fontFamily: MONO }}>{id}</span> : ''}
+          </span>
+        </span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--primary)', whiteSpace: 'nowrap' }}>{L('Change', 'החלפה')}</span>
+      </button>
+    );
+  }
+
+  /**
+   * OpenRouter's models as a list to choose from: search, the maker, what the
+   * model must be able to do, and an order. Picking one calls onPick(id).
+   * withDefault puts "the platform's default" on top, which picks ''.
+   */
+  function ModelPicker({ catalog, value, onPick, onClose, title, withDefault, defaultModel }) {
+    const [q, setQ] = useState('');
+    const [maker, setMaker] = useState('');
+    const [need, setNeed] = useState({ tools: true, images: false, files: false, free: false });
+    const [sort, setSort] = useState('new');
+    const [limit, setLimit] = useState(120);
+    const [active, setActive] = useState(0);
+    const searchRef = useRef(null);
+    const listRef = useRef(null);
+    // On a phone the keyboard would cover half the list before anyone asked to type.
+    useEffect(() => { if (searchRef.current && !window.matchMedia('(pointer: coarse)').matches) searchRef.current.focus(); }, []);
+
+    // The :batch copies answer only OpenRouter's batch API, never a chat.
+    const all = React.useMemo(() => (catalog || []).filter(m => !/:batch$/.test(m.id)), [catalog]);
+    const makers = React.useMemo(() => {
+      const count = new Map();
+      for (const m of all) { const k = modelMaker(m.id); count.set(k, (count.get(k) || 0) + 1); }
+      return [...count.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => ({ ...makerLook(k + '/x', all), n }));
+    }, [all]);
+    const list = React.useMemo(() => {
+      const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      const out = all.filter(m => {
+        if (maker && modelMaker(m.id) !== maker) return false;
+        if (need.tools && !m.tools) return false;
+        if (need.images && !m.images) return false;
+        if (need.files && !m.files) return false;
+        if (need.free && !(m.inputPerM === 0 && m.outputPerM === 0)) return false;
+        if (words.length) {
+          const hay = `${m.id} ${m.name} ${makerLook(m.id, all).name}`.toLowerCase();
+          if (!words.every(w => hay.includes(w))) return false;
+        }
+        return true;
+      });
+      // A blend of three parts reading to one part writing, roughly what a chat costs.
+      const price = (m) => (m.inputPerM === null || m.outputPerM === null ? Infinity : (3 * m.inputPerM + m.outputPerM) / 4);
+      const by = {
+        new: (a, b) => (b.created || 0) - (a.created || 0),
+        cheap: (a, b) => price(a) - price(b),
+        name: (a, b) => shortModelName(a).localeCompare(shortModelName(b)),
+      }[sort];
+      return out.sort(by);
+    }, [all, q, maker, need, sort]);
+    useEffect(() => { setActive(0); setLimit(120); }, [q, maker, need, sort]);
+    useEffect(() => {
+      const el = listRef.current && listRef.current.querySelector(`[data-model-row="${active}"]`);
+      if (el) el.scrollIntoView({ block: 'nearest' });
+    }, [active]);
+
+    const shown = list.slice(0, limit);
+    const typedId = q.trim();
+    const canUseTyped = all.length === 0 && /^[~\w.-]+\/[\w.:-]+$/.test(typedId);
+    function onKey(e) {
+      if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); setActive(i => Math.min(i + 1, shown.length - 1)); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(i => Math.max(i - 1, 0)); }
+      else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (shown[active]) onPick(shown[active].id);
+        else if (canUseTyped) onPick(typedId);
+      }
+    }
+    const now = Date.now() / 1000;
+    const toggle = (k, label, hint) => (
+      <button type="button" key={k} title={hint} onClick={() => setNeed(n => ({ ...n, [k]: !n[k] }))} style={{
+        padding: '5px 11px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit',
+        background: need[k] ? 'var(--primary-dim)' : 'var(--bg-card)', color: need[k] ? 'var(--text)' : 'var(--text-2)',
+        border: `1px solid ${need[k] ? 'rgba(239,159,39,0.5)' : 'var(--border)'}`,
+      }}>{need[k] ? '✓ ' : ''}{label}</button>
+    );
+    const makerChip = (mk) => {
+      const on = maker === mk.key;
+      return (
+        <button type="button" key={mk.key} onClick={() => setMaker(on ? '' : mk.key)} data-maker={mk.key} style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px 4px 5px', borderRadius: 99, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+          fontSize: 12, fontWeight: 600, fontFamily: 'inherit', color: 'var(--text)',
+          background: on ? `${mk.tone}1A` : 'var(--bg-card)', border: `1px solid ${on ? mk.tone : 'var(--border)'}`,
+        }}><MakerBadge look={mk} size={20} />{mk.name}<span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>{mk.n}</span></button>
+      );
+    };
+    const TOP = 10;
+    const topMakers = makers.slice(0, TOP);
+    const moreMakers = makers.slice(TOP);
+    const defaultInfo = all.find(m => m.id === defaultModel);
+
+    return (
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(13,15,20,0.4)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'min(30px, 3vw)' }}>
+        <div className="fade-in" role="dialog" aria-label={title} data-model-picker onClick={e => e.stopPropagation()} dir={uiDir()} style={{
+          width: 'min(860px, 100%)', height: 'min(760px, 100%)', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+          background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-xl)', boxShadow: 'var(--shadow-lg)',
+        }}>
+          {/* search and filters */}
+          <div style={{ padding: '16px 18px 12px', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ fontWeight: 800, fontSize: 16, flex: 1 }}>{title}</div>
+              <button type="button" onClick={onClose} aria-label={L('Close', 'סגירה')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--text-muted)', padding: 4, lineHeight: 1 }}>✕</button>
+            </div>
+            <input ref={searchRef} value={q} onChange={e => setQ(e.target.value)} onKeyDown={onKey} data-model-search
+              placeholder={L(`Search ${all.length} models: name, maker or id`, `חיפוש ב-${all.length} מודלים: שם, יצרן או מזהה`)} />
+            <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
+              <button type="button" onClick={() => setMaker('')} style={{
+                padding: '4px 12px', borderRadius: 99, cursor: 'pointer', fontSize: 12, fontWeight: 600, flexShrink: 0, fontFamily: 'inherit',
+                background: !maker ? 'var(--text)' : 'var(--bg-card)', color: !maker ? 'var(--bg-card)' : 'var(--text)', border: `1px solid ${!maker ? 'var(--text)' : 'var(--border)'}`,
+              }}>{L('All makers', 'כל היצרנים')}</button>
+              {topMakers.map(makerChip)}
+              {moreMakers.some(mk => mk.key === maker) && makerChip(makers.find(mk => mk.key === maker))}
+              {moreMakers.length > 0 && (
+                <select value="" onChange={e => e.target.value && setMaker(e.target.value)} style={{ width: 'auto', flexShrink: 0, fontSize: 12, padding: '4px 8px', borderRadius: 99 }}>
+                  <option value="">{L(`${moreMakers.length} more…`, `עוד ${moreMakers.length}…`)}</option>
+                  {moreMakers.map(mk => <option key={mk.key} value={mk.key}>{mk.name} ({mk.n})</option>)}
+                </select>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              {toggle('tools', L('Calls tools', 'מפעיל כלים'), L('Needed by chatbots with tools or tables, Jarvis and the groups', 'נדרש לבוטים עם כלים או טבלאות, ל-Jarvis ולקבוצות'))}
+              {toggle('images', L('Reads images', 'קורא תמונות'))}
+              {toggle('files', L('Reads PDFs', 'קורא PDF'))}
+              {toggle('free', L('Free', 'חינם'))}
+              <span style={{ flex: 1 }} />
+              <SegTabs value={sort} onChange={setSort} items={[
+                { id: 'new', label: L('Newest', 'החדשים') },
+                { id: 'cheap', label: L('Cheapest', 'הזולים') },
+                { id: 'name', label: L('A–Z', 'א–ת') },
+              ]} />
+            </div>
+          </div>
+
+          {/* the models */}
+          <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: '8px 10px 14px' }}>
+            {withDefault && !q.trim() && (
+              <button type="button" data-model-row="default" onClick={() => onPick('')} style={{
+                display: 'flex', gap: 12, alignItems: 'center', width: '100%', textAlign: 'start', padding: '10px 12px', marginBottom: 6, borderRadius: 'var(--r-md)', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text)',
+                background: !value ? 'var(--primary-dim)' : 'var(--bg-panel)', border: `1px dashed ${!value ? 'rgba(239,159,39,0.55)' : 'var(--border)'}`,
+              }}>
+                <span style={{ width: 32, height: 32, borderRadius: 10, border: '1px dashed var(--text-muted)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', flexShrink: 0 }}>↺</span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'block', fontWeight: 700, fontSize: 13.5 }}>{L('The platform\'s default', 'ברירת המחדל של הפלטפורמה')}{!value ? ` · ${L('chosen', 'נבחר')}` : ''}</span>
+                  <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                    {defaultInfo ? shortModelName(defaultInfo) : defaultModel || L('none set', 'לא נקבעה')} · {L('follows the default when you change it', 'משתנה כשמשנים את ברירת המחדל')}
+                  </span>
+                </span>
+              </button>
+            )}
+            {catalog === null && <div style={{ padding: 20, color: 'var(--text-muted)', fontSize: 13 }}>{L('Loading OpenRouter\'s models…', 'טוען את המודלים של OpenRouter…')}</div>}
+            {catalog && all.length === 0 && (
+              <div style={{ padding: 16, color: 'var(--text-2)', fontSize: 13, lineHeight: 1.6 }}>
+                {L('OpenRouter\'s list could not be read right now. Type an exact model id (like anthropic/claude-sonnet-4.5) and press Enter.',
+                   'לא הצלחתי לקרוא את הרשימה של OpenRouter כרגע. אפשר להקליד מזהה מודל מדויק (למשל anthropic/claude-sonnet-4.5) וללחוץ Enter.')}
+                {canUseTyped && <div style={{ marginTop: 10 }}><Btn size="sm" variant="primary" onClick={() => onPick(typedId)}>{L('Use', 'השתמש ב')} {typedId}</Btn></div>}
+              </div>
+            )}
+            {catalog && all.length > 0 && list.length === 0 && (
+              <div style={{ padding: 20, color: 'var(--text-muted)', fontSize: 13 }}>{L('No model matches. Clear a filter or the search.', 'אין מודל שמתאים. נקה מסנן או את החיפוש.')}</div>
+            )}
+            {shown.map((m, i) => {
+              const look = makerLook(m.id, all);
+              const chosen = m.id === value;
+              const fresh = m.created && now - m.created < 30 * 86400;
+              const tiny = { fontSize: 10.5, padding: '1px 8px' };
+              return (
+                <button type="button" key={m.id} data-model-row={i} data-model-id={m.id} title={m.about || ''}
+                  onClick={() => onPick(m.id)} onMouseMove={() => active !== i && setActive(i)} style={{
+                    display: 'flex', gap: 12, alignItems: 'center', width: '100%', textAlign: 'start', padding: '10px 12px', marginBottom: 2,
+                    borderRadius: 'var(--r-md)', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text)',
+                    background: chosen ? 'var(--primary-dim)' : i === active ? 'var(--bg-panel)' : 'transparent',
+                    border: `1px solid ${chosen ? 'rgba(239,159,39,0.5)' : i === active ? 'var(--border)' : 'transparent'}`,
+                  }}>
+                  <MakerBadge look={look} />
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 700, fontSize: 13.5 }}>{shortModelName(m)}</span>
+                      <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{look.name}</span>
+                      {m.id.startsWith('~') && <Chip tone="teal" style={tiny}>{L('Always the newest', 'תמיד העדכני')}</Chip>}
+                      {fresh && <Chip tone="live" style={tiny}>{L('New', 'חדש')}</Chip>}
+                      {m.expires && <Chip tone="danger" style={tiny}>{L(`Leaves ${m.expires}`, `יוצא ב-${m.expires}`)}</Chip>}
+                      {chosen && <Chip tone="tools" style={tiny}>✓ {L('Chosen', 'נבחר')}</Chip>}
+                    </span>
+                    {m.about && <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-2)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.about}</span>}
+                    <span style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center', marginTop: 5 }}>
+                      <span dir="ltr" style={{ fontFamily: MONO, fontSize: 10.5, color: 'var(--text-muted)' }}>{m.id}</span>
+                      <ModelCaps m={m} />
+                    </span>
+                  </span>
+                  <span style={{ textAlign: 'end', flexShrink: 0, minWidth: 92 }}>
+                    <span dir="ltr" style={{ display: 'block', fontWeight: 700, fontSize: 13.5 }}>{perMFmt(m.inputPerM)} / {perMFmt(m.outputPerM)}</span>
+                    <span style={{ display: 'block', fontSize: 10.5, color: 'var(--text-muted)', marginTop: 1 }}>{L('per 1M in / out', 'ל-1M קלט / פלט')}</span>
+                  </span>
+                </button>
+              );
+            })}
+            {list.length > shown.length && (
+              <div style={{ textAlign: 'center', padding: 10 }}>
+                <Btn size="sm" onClick={() => setLimit(n => n + 200)}>{L(`Show ${Math.min(200, list.length - shown.length)} more of ${list.length - shown.length}`, `הצג עוד ${Math.min(200, list.length - shown.length)} מתוך ${list.length - shown.length}`)}</Btn>
+              </div>
+            )}
+          </div>
+
+          <div style={{ padding: '8px 18px', borderTop: '1px solid var(--border)', fontSize: 11.5, color: 'var(--text-muted)', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <span>{L(`${list.length} of ${all.length} models`, `${list.length} מתוך ${all.length} מודלים`)}</span>
+            <span>{L('Prices are what OpenRouter charges, in USD per million tokens.', 'המחירים הם מה ש-OpenRouter גובה, בדולרים למיליון טוקנים.')}</span>
+            <span style={{ flex: 1 }} />
+            <span>{L('↑↓ to move · Enter to choose · Esc to close', '↑↓ לתנועה · Enter לבחירה · Esc לסגירה')}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   /**
    * The platform's models: the OpenRouter key, the default model, the monthly
    * ceiling, the model each organization runs on, and how much of the month's
@@ -15787,7 +16095,7 @@ npm run migrate            # run it`}</Block>
     const [keyDraft, setKeyDraft] = useState('');
     const [busy, setBusy] = useState('');
     const [catalog, setCatalog] = useState(null);
-    const [models, setModels] = useState({});   // orgId -> model typed in
+    const [picker, setPicker] = useState(null);   // 'default' or an organization's id, while its picker is open
     const [platformDraft, setPlatformDraft] = useState(null);   // { defaultModel, ceilingUsd } while editing
     const load = useCallback(() => apiBilling().then(d => { setData(d); setError(''); }).catch(e => setError(e.message)), []);
     useEffect(() => { load(); }, [load]);
@@ -15805,11 +16113,7 @@ npm run migrate            # run it`}</Block>
     const info = k.info;
     const card = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '16px 18px', marginBottom: 16 };
     const byId = new Map((catalog || []).map(m => [m.id, m]));
-    const priceLine = (id) => {
-      const m = byId.get((id || '').trim());
-      if (!m) return (id || '').trim() && catalog && catalog.length ? L('Not in OpenRouter\'s list', 'לא ברשימה של OpenRouter') : '';
-      return `${m.name} · ${L('in', 'קלט')} ${usdFmt(m.inputPerM)} / ${L('out', 'פלט')} ${usdFmt(m.outputPerM)} ${L('per million tokens', 'למיליון טוקנים')}${m.tools ? '' : L(' · no tools: chatbots with tools or tables, Jarvis and the groups will not work', ' · בלי כלים: בוטים עם כלים או טבלאות, Jarvis והקבוצות לא יעבדו')}`;
-    };
+    const noTools = (id) => { const m = byId.get((id || '').trim()); return !!m && !m.tools; };
     const pd = platformDraft || { defaultModel: data.defaultModel, ceilingUsd: String(data.ceilingUsd) };
     const pdDirty = !!platformDraft && (pd.defaultModel.trim() !== data.defaultModel || Number(pd.ceilingUsd) !== data.ceilingUsd);
     const share = data.month.share;
@@ -15854,10 +16158,11 @@ npm run migrate            # run it`}</Block>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
             <div style={{ flex: '2 1 300px' }}>
               <label className="field-label">{L('Default model', 'מודל ברירת מחדל')}</label>
-              <input list="openrouter-models" dir="ltr" value={pd.defaultModel} placeholder="anthropic/claude-sonnet-4.5"
-                onChange={e => setPlatformDraft({ ...pd, defaultModel: e.target.value })} />
-              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 5, minHeight: 16 }}>
-                {priceLine(pd.defaultModel) || L('Every organization without a model of its own runs on it.', 'כל ארגון שאין לו מודל משלו רץ עליו.')}
+              <ModelField catalog={catalog} value={pd.defaultModel} testId="default" onOpen={() => setPicker('default')} />
+              <div style={{ fontSize: 11.5, color: noTools(pd.defaultModel) ? 'var(--danger)' : 'var(--text-muted)', marginTop: 5, minHeight: 16 }}>
+                {noTools(pd.defaultModel)
+                  ? L('This model cannot call tools: chatbots with tools or tables, Jarvis and the groups will not work on it.', 'המודל הזה לא מפעיל כלים: בוטים עם כלים או טבלאות, Jarvis והקבוצות לא יעבדו עליו.')
+                  : L('Every organization without a model of its own runs on it.', 'כל ארגון שאין לו מודל משלו רץ עליו.')}
               </div>
             </div>
             <div style={{ flex: '1 1 140px' }}>
@@ -15883,9 +16188,6 @@ npm run migrate            # run it`}</Block>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, margin: '6px 0 10px' }}>
           <div style={{ fontWeight: 700, fontSize: 15, flex: 1 }}>{L('Organizations this month', 'ארגונים החודש')}</div>
         </div>
-        <datalist id="openrouter-models">
-          {(catalog || []).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-        </datalist>
         <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
           <table dir={uiDir()} style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
             <thead>
@@ -15897,22 +16199,12 @@ npm run migrate            # run it`}</Block>
             </thead>
             <tbody>
               {data.orgs.map(o => {
-                const typed = models[o.id] ?? o.model;
-                const dirty = typed.trim() !== o.model;
                 return (
                   <tr key={o.id} data-billing-org={o.id} style={{ borderTop: '1px solid var(--border)' }}>
                     <td style={{ ...td, fontWeight: 600 }}><span dir="auto">{o.name}</span></td>
                     <td style={{ ...td, minWidth: 260 }}>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <input list="openrouter-models" dir="ltr" value={typed} style={{ flex: 1, minWidth: 0 }}
-                          placeholder={data.defaultModel ? `${L('default', 'ברירת מחדל')}: ${data.defaultModel}` : L('choose a model', 'בחר מודל')}
-                          onChange={e => setModels(x => ({ ...x, [o.id]: e.target.value }))} />
-                        {dirty && <Btn size="sm" variant="primary" disabled={busy === o.id}
-                          onClick={() => put(o.id, { orgId: o.id, model: typed.trim() }, () => setModels(m => { const n = { ...m }; delete n[o.id]; return n; }))}>
-                          {L('Save', 'שמור')}
-                        </Btn>}
-                      </div>
-                      {typed.trim() && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{priceLine(typed)}</div>}
+                      <ModelField catalog={catalog} value={o.model} defaultModel={data.defaultModel} testId={o.id}
+                        busy={busy === o.id} onOpen={() => setPicker(o.id)} />
                     </td>
                     <td style={td}>{tokensFmt(o.month.input)}</td>
                     <td style={td}>{tokensFmt(o.month.output)}</td>
@@ -15959,6 +16251,21 @@ npm run migrate            # run it`}</Block>
                'המפתח נבדק מול OpenRouter לפני שהוא נשמר; מפתח שנדחה לא נשמר.')}
           </div>
         </div>
+
+        {picker && (() => {
+          const org = picker === 'default' ? null : data.orgs.find(o => o.id === picker);
+          return (
+            <ModelPicker catalog={catalog} withDefault={!!org} defaultModel={data.defaultModel}
+              value={org ? org.model : pd.defaultModel}
+              title={org ? L(`The model for ${org.name}`, `המודל של ${org.name}`) : L('The platform\'s default model', 'מודל ברירת המחדל של הפלטפורמה')}
+              onClose={() => setPicker(null)}
+              onPick={(id) => {
+                setPicker(null);
+                if (org) { if (id !== org.model) put(org.id, { orgId: org.id, model: id }); }
+                else setPlatformDraft({ ...pd, defaultModel: id });
+              }} />
+          );
+        })()}
       </div>
     );
   }
