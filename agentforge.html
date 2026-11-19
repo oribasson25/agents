@@ -586,6 +586,10 @@
       ? L('The organization\'s model balance is used up. Ask the platform admin to top it up.', 'יתרת המודלים של הארגון נגמרה. בקשו מאדמין הפלטפורמה לטעון אותה.')
       : code === 'BUDGET'
       ? L('The platform\'s model budget for this month is used up. It starts again on the 1st.', 'תקציב המודלים של הפלטפורמה לחודש הזה נגמר. הוא מתחדש ב-1 לחודש.')
+      : code === 'ITEM_LIMIT'
+      ? L('This reached its monthly model limit. It starts again on the 1st, or when the organization\'s admin raises it.', 'זה הגיע למגבלת המודלים החודשית שלו. היא מתחדשת ב-1 לחודש, או כשהאדמין של הארגון מעלה אותה.')
+      : code === 'MEMBER_LIMIT'
+      ? L('You reached your monthly model limit. Ask your organization\'s admin to raise it.', 'הגעת למגבלת המודלים החודשית שלך. בקש מהאדמין של הארגון להעלות אותה.')
       : null;
     if (!said) return r;
     return new Response(JSON.stringify({ error: { ...d.error, message: said } }), { status: 402, headers: { 'Content-Type': 'application/json' } });
@@ -1762,26 +1766,17 @@ function markSvgString(color, size = 30) {
           </div>
         </div>
 
-        {/* The key, provider and model are account-wide — see Settings */}
-        <div style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: '16px 24px', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 18 }}>🔑</span>
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>{L('Model', 'מודל')}</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.6 }}>
-              {accountApiUsable()
-                ? L(`Every AI Chatbot in this organization runs on ${accountApi().model}, provided by the platform.`,
-                    `כל ה-AI Chatbots בארגון רצים על ${accountApi().model}, דרך הפלטפורמה.`)
-                : L('The platform admin has not finished setting up models for this organization. Until then, no AI Chatbot will answer.',
-                    'אדמין הפלטפורמה עוד לא סיים להגדיר מודלים לארגון. עד אז אף AI Chatbot לא יענה.')}
-            </div>
+        {/* The model: one of the organization's, chosen here; the platform provides it */}
+        <div data-agent-model style={{ background: 'var(--bg-panel)', borderRadius: 'var(--r-lg)', padding: '16px 24px', border: '1px solid var(--border)' }}>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{L('Model', 'מודל')}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.6 }}>
+            {accountApiUsable()
+              ? L('Every channel this AI Chatbot answers on runs on this model, from the list the platform gave the organization.',
+                  'כל ערוץ שה-AI Chatbot הזה עונה בו רץ על המודל הזה, מתוך הרשימה שהפלטפורמה נתנה לארגון.')
+              : L('The platform admin has not finished setting up models for this organization. Until then, no AI Chatbot will answer.',
+                  'אדמין הפלטפורמה עוד לא סיים להגדיר מודלים לארגון. עד אז אף AI Chatbot לא יענה.')}
           </div>
-          <span style={{
-            fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 'var(--r-sm)',
-            background: accountApiUsable() ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.14)',
-            color: accountApiUsable() ? 'var(--success)' : 'var(--warning)',
-          }}>
-            {accountApiUsable() ? L('Set', 'מוגדר') : L('No key', 'חסר מפתח')}
-          </span>
+          <ItemModelField value={agent.model || ''} onChange={v => update(['model'], v)} what={L('this AI Chatbot', 'ה-AI Chatbot הזה')} />
         </div>
 
         {/* DLP */}
@@ -3455,7 +3450,8 @@ function markSvgString(color, size = 30) {
       return String(data.result ?? data.error ?? 'No output');
     }
 
-    const meta = { source: 'test-chat', itemType: 'agent', itemId: agent.id };
+    // The model chosen in the editor, saved or not; the server keeps it only if the organization's list has it.
+    const meta = { source: 'test-chat', itemType: 'agent', itemId: agent.id, model: agent.model || '' };
 
     let msgs = [{ role: 'system', content: systemPrompt }, ...dlpMessages(history, dlp)];
 
@@ -5777,11 +5773,13 @@ function markSvgString(color, size = 30) {
           <P>The final prompt the model receives is this, then the knowledge pulled in for the conversation, then every skill under a <Code>## Skill: name</Code> heading.</P>
           <Tip>Say the language, the tone, what is allowed and what is not, and what to do when there is no answer. A detailed prompt invents less.</Tip>
 
-          <H3>The model — chosen by the platform</H3>
-          <P>Every chatbot, channel and assistant runs on <strong>one model per organization</strong>, reached through the platform&rsquo;s own OpenRouter account. The platform admin chooses it (or leaves the organization on the platform&rsquo;s default); nobody in an organization sets or holds an API key, and there is no per-chatbot setting yet. Settings shows which model the organization runs on.</P>
+          <H3>The model</H3>
+          <P>Models come from the platform&rsquo;s own OpenRouter account; nobody in an organization sets or holds an API key. The platform admin gives the organization a <strong>default model</strong> and a <strong>list</strong> of others it may use. The <strong>Model</strong> card on the Settings tab of a chatbot picks one from that list, with what it costs per million tokens; left alone, the chatbot runs on the default. An automation&rsquo;s AI step and an app&rsquo;s AI have the same choice.</P>
+          <P>The choice is part of the chatbot like its prompt: it lands on the draft and goes live when you publish, and the test chat already runs on it. If the platform admin later takes the model off the list, the chatbot moves to the default on its own.</P>
           <P>The same screen carries the <strong>interface language</strong> — English or Hebrew — which is the same setting the first screen asks about.</P>
           <Warn>Until the platform has set up a model for the organization, no chatbot answers on any channel and the assistants are locked. The note in the top corner shows the state on every screen. When the platform&rsquo;s monthly budget is used up, everything stops with a message until the 1st.</Warn>
           <P><strong>Balance.</strong> The platform admin may give the organization a balance in dollars and top it up. Every call to a model then comes off it, and when it reaches zero everything in the organization stops: chatbots, automations, Jarvis and the assistants. People writing to its chatbots on the website or WhatsApp get a short &ldquo;not available right now&rdquo; message instead of an answer, and a banner across the top tells everyone in the organization. The organization&rsquo;s admin sees the balance, every top-up, and what this month was charged for, item by item, in <strong>Settings › Model usage</strong>; a banner warns them when less than a fifth of the last top-up is left.</P>
+          <P><strong>Monthly limits.</strong> In the same place the organization&rsquo;s admin can cap what one chatbot, app, automation or WhatsApp agent may be charged in a month, and what one member may set off in the platform. A chatbot at its limit answers with the short &ldquo;not available&rdquo; message until the 1st or until the limit is raised; a member at theirs is told so, and nobody else is stopped.</P>
 
           <H3>DLP — keeping sensitive data out</H3>
           <P>Two optional filters: <strong>credit card numbers</strong> (16 digits, with or without separators) and <strong>national ID numbers</strong> (9 digits). When they are on:</P>
@@ -6379,6 +6377,13 @@ await leads.add({ name: 'Dana' });
 await leads.update(rowId, { status: 'won' });
 await leads.remove(rowId);`}</Block>
           <P>A table can be linked <strong>read-only</strong>, and then the app can list its rows and nothing else.</P>
+
+          <H3>Asking a model directly</H3>
+          <P>Switch on <strong>AI</strong> in the app&rsquo;s Links (or put <Code>"ai": true</Code> in <Code>app.json</Code>) and the page can ask a model with no chatbot around it. It runs on the model chosen there, from the organization&rsquo;s list, or on the organization&rsquo;s default.</P>
+          <Block>{`const summary = await legs.ai('Summarise in one line: ' + text);
+const fields = await legs.ai({ system: 'You extract fields.', prompt: text, json: true });  // parsed JSON
+const reply = await legs.ai({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 500 });`}</Block>
+          <Warn>Anyone who can open the app can make it call the model, and every call is charged to the organization. Switch AI on only for an app that needs it, and give it a monthly limit in Settings › Model usage.</Warn>
 
           <H3>Versions</H3>
           <P>Every save and every push is kept as a version, and exactly one is live. The <strong>Versions</strong> tab makes an earlier one live again at once; nothing is deleted by going back.</P>
@@ -8282,6 +8287,9 @@ npm run migrate            # run it`}</Block>
               <AutoExpr multiline rows={8} value={c.prompt} onChange={v => set({ prompt: v })}
                 placeholder={L('Is this message a complaint, a question or an order? Message: {{trigger.text}}', 'האם ההודעה הזו היא תלונה, שאלה או הזמנה? ההודעה: {{trigger.text}}')} />
             </AutoField>
+            <AutoField label={L('Model', 'מודל')}>
+              <ItemModelField value={c.model || ''} onChange={v => set({ model: v })} what={L('this step', 'הצעד הזה')} />
+            </AutoField>
             <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5, cursor: 'pointer' }}>
               <input type="checkbox" checked={!!c.json} onChange={e => set({ json: e.target.checked })} style={{ width: 'auto', marginTop: 2 }} />
               <span>{L('Answer as JSON — say in the prompt which fields you want, and later steps read them as {{' + node.id + '.field}}', 'לענות כ-JSON: מציינים בפרומפט אילו שדות רוצים, וצעדים מאוחרים קוראים אותם כ-{{' + node.id + '.field}}')}</span>
@@ -9595,9 +9603,9 @@ npm run migrate            # run it`}</Block>
     appsCall(`/api/apps/${id}/versions`, { method: 'POST', body: JSON.stringify({ versionId }) }, 'switch version');
 
   /* The parts of an app the screen edits, in one comparable shape. */
-  const APP_EDITABLE = ['name', 'description', 'entry', 'agents', 'tables', 'automations', 'files'];
+  const APP_EDITABLE = ['name', 'description', 'entry', 'agents', 'tables', 'automations', 'ai', 'files'];
   function appDraft(app) {
-    return Object.fromEntries(APP_EDITABLE.map(k => [k, app[k] === undefined ? (['files', 'agents', 'tables', 'automations'].includes(k) ? {} : '') : app[k]]));
+    return Object.fromEntries(APP_EDITABLE.map(k => [k, app[k] === undefined ? (['files', 'agents', 'tables', 'automations'].includes(k) ? {} : k === 'ai' ? null : '') : app[k]]));
   }
 
   function AccessChip({ access }) {
@@ -10063,6 +10071,26 @@ npm run migrate            # run it`}</Block>
                 'האפליקציה יכולה לקרוא את השורות של אלה שתקשר, ולהוסיף, לשנות ולמחוק אותן אלא אם סימנת קריאה בלבד.'),
               tables.map(t => ({ id: t.id, name: t.name })),
               alias => `const { rows } = await legs.table('${alias}').rows()`)}
+        <div data-app-ai>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{L('AI', 'AI')}</div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.65, marginBottom: 10 }}>
+            {L('Lets the app ask a model directly with legs.ai(), with no AI Chatbot around it. Anyone who can open the app can make it call the model, and every call is charged to the organization.',
+               'מאפשר לאפליקציה לשאול מודל ישירות עם legs.ai(), בלי AI Chatbot מסביב. כל מי שיכול לפתוח את האפליקציה יכול לגרום לה לקרוא למודל, וכל קריאה מחויבת לארגון.')}
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer', marginBottom: draft.ai ? 10 : 0 }}>
+            <input type="checkbox" style={{ width: 'auto' }} checked={!!draft.ai}
+              onChange={e => onChange({ ...draft, ai: e.target.checked ? { model: '' } : null })} />
+            {L('This app may call a model', 'האפליקציה יכולה לקרוא למודל')}
+          </label>
+          {draft.ai && (
+            <div style={{ maxWidth: 460 }}>
+              <ItemModelField value={(draft.ai && draft.ai.model) || ''} onChange={v => onChange({ ...draft, ai: { model: v } })} what={L('the app', 'האפליקציה')} />
+              <div dir="ltr" style={{ marginTop: 10, fontFamily: MONO, fontSize: 12, color: 'var(--teal)', background: 'var(--bg-hover)', borderRadius: 'var(--r-sm)', padding: '8px 10px', overflowX: 'auto', whiteSpace: 'nowrap' }}>
+                {"const answer = await legs.ai('Summarise: ' + text)"}
+              </div>
+            </div>
+          )}
+        </div>
         {automations !== null && section('automations', 'Automations',
               L('The app can run the ones you link and gets back what their Output returns. Anyone who can open the app can run them — link only what that is safe for. An automation runs only while it is published and switched on.',
                 'האפליקציה יכולה להריץ את אלה שתקשר ומקבלת את מה שה-Output שלהן מחזיר. כל מי שיכול לפתוח את האפליקציה יכול להריץ אותן, אז מקשרים רק מה שבטוח לכך. אוטומציה רצה רק כשהיא מפורסמת ומופעלת.'),
@@ -15853,7 +15881,7 @@ npm run migrate            # run it`}</Block>
   }
 
   /** The chosen model, as a button that opens the picker. Empty: the platform's default. */
-  function ModelField({ catalog, value, defaultModel, onOpen, busy, testId }) {
+  function ModelField({ catalog, value, defaultModel, onOpen, busy, testId, defaultTag }) {
     const id = value || defaultModel || '';
     const m = (catalog || []).find(x => x.id === id);
     const look = makerLook(id, catalog);
@@ -15871,7 +15899,7 @@ npm run migrate            # run it`}</Block>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {!id ? L('Choose a model', 'בחר מודל') : m ? shortModelName(m) : id}
             </span>
-            {!value && id && <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>· {L('platform default', 'ברירת המחדל')}</span>}
+            {!value && id && <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>· {defaultTag || L('platform default', 'ברירת המחדל')}</span>}
           </span>
           <span style={{ display: 'block', fontSize: 11, color: unknown ? 'var(--danger)' : 'var(--text-muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {unknown ? L('Not in OpenRouter\'s list', 'לא ברשימה של OpenRouter')
@@ -15884,15 +15912,69 @@ npm run migrate            # run it`}</Block>
     );
   }
 
+  /* The organization's models, for the pickers on its items. Read once per page. */
+  let ORG_MODELS = null;
+  function apiOrgModels() {
+    if (!ORG_MODELS) {
+      ORG_MODELS = apiFetch('/api/models').then(r => (r.ok ? r.json() : { defaultModel: '', models: [] }))
+        .catch(() => ({ defaultModel: '', models: [] }));
+    }
+    return ORG_MODELS;
+  }
+
+  /**
+   * The model an AI Chatbot, an app or an automation's AI step runs on, chosen
+   * from the organization's list. '' is the organization's default. A model
+   * that left the list is shown as such: the server runs the default instead.
+   */
+  function ItemModelField({ value, onChange, disabled, what }) {
+    const [org, setOrg] = useState(null);
+    const [open, setOpen] = useState(false);
+    useEffect(() => { let live = true; apiOrgModels().then(o => { if (live) setOrg(o); }); return () => { live = false; }; }, []);
+    const v = String(value || '');
+    const list = org ? org.models : null;
+    const gone = !!v && !!org && !org.models.some(m => m.id === v);
+    const only = !!org && org.models.length <= 1;
+    return (
+      <div data-item-model>
+        <ModelField catalog={list} value={gone ? '' : v} defaultModel={org ? org.defaultModel : ''} busy={disabled || !org}
+          defaultTag={L('organization default', 'ברירת המחדל של הארגון')} onOpen={() => setOpen(true)} />
+        {gone && (
+          <div style={{ fontSize: 11.5, color: 'var(--warning)', marginTop: 5, lineHeight: 1.5 }}>
+            {L(`${v} is no longer on the organization's list, so ${what || 'this'} runs on the default.`, `${v} כבר לא ברשימה של הארגון, אז ${what || 'זה'} רץ על ברירת המחדל.`)}
+          </div>
+        )}
+        {only && !gone && (
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 5, lineHeight: 1.5 }}>
+            {L('The platform admin has not given the organization other models to choose from yet.', 'אדמין הפלטפורמה עוד לא נתן לארגון מודלים נוספים לבחירה.')}
+          </div>
+        )}
+        {open && org && (
+          <ModelPicker catalog={list} value={gone ? '' : v} withDefault defaultModel={org.defaultModel} toolsFirst={false}
+            title={L('Which model', 'איזה מודל')}
+            defaultLabel={L('The organization\'s default', 'ברירת המחדל של הארגון')}
+            defaultNote={L('follows it when the platform admin changes it', 'משתנה כשאדמין הפלטפורמה משנה אותה')}
+            priceNote={L('Prices are what the organization is charged, in USD per million tokens.', 'המחירים הם מה שהארגון משלם, בדולרים למיליון טוקנים.')}
+            onClose={() => setOpen(false)} onPick={(id) => { setOpen(false); if (id !== v) onChange(id); }} />
+        )}
+      </div>
+    );
+  }
+
   /**
    * OpenRouter's models as a list to choose from: search, the maker, what the
    * model must be able to do, and an order. Picking one calls onPick(id).
-   * withDefault puts "the platform's default" on top, which picks ''.
+   * withDefault puts "the platform's default" (or defaultLabel) on top, which
+   * picks ''. With `multi`, a click adds or removes the model (onToggle) and
+   * the picker stays open: the platform admin building an organization's list.
    */
-  function ModelPicker({ catalog, value, onPick, onClose, title, withDefault, defaultModel }) {
+  function ModelPicker({ catalog, value, onPick, onClose, title, withDefault, defaultModel,
+                         multi, selected, onToggle, defaultLabel, defaultNote, priceNote, toolsFirst = true }) {
     const [q, setQ] = useState('');
     const [maker, setMaker] = useState('');
-    const [need, setNeed] = useState({ tools: true, images: false, files: false, free: false });
+    const [need, setNeed] = useState({ tools: toolsFirst, images: false, files: false, free: false });
+    const take = (id) => (multi ? onToggle(id) : onPick(id));
+    const isChosen = (id) => (multi ? (selected || []).includes(id) : id === value);
     const [sort, setSort] = useState('new');
     const [limit, setLimit] = useState(120);
     const [active, setActive] = useState(0);
@@ -15941,13 +16023,14 @@ npm run migrate            # run it`}</Block>
     const typedId = q.trim();
     const canUseTyped = all.length === 0 && /^[~\w.-]+\/[\w.:-]+$/.test(typedId);
     function onKey(e) {
-      if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+      // Esc closes this picker and nothing under it (a dialog that opened it listens on the window).
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); }
       else if (e.key === 'ArrowDown') { e.preventDefault(); setActive(i => Math.min(i + 1, shown.length - 1)); }
       else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(i => Math.max(i - 1, 0)); }
       else if (e.key === 'Enter') {
         e.preventDefault();
-        if (shown[active]) onPick(shown[active].id);
-        else if (canUseTyped) onPick(typedId);
+        if (shown[active]) take(shown[active].id);
+        else if (canUseTyped) take(typedId);
       }
     }
     const now = Date.now() / 1000;
@@ -16024,9 +16107,9 @@ npm run migrate            # run it`}</Block>
               }}>
                 <span style={{ width: 32, height: 32, borderRadius: 10, border: '1px dashed var(--text-muted)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', flexShrink: 0 }}>↺</span>
                 <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: 'block', fontWeight: 700, fontSize: 13.5 }}>{L('The platform\'s default', 'ברירת המחדל של הפלטפורמה')}{!value ? ` · ${L('chosen', 'נבחר')}` : ''}</span>
+                  <span style={{ display: 'block', fontWeight: 700, fontSize: 13.5 }}>{defaultLabel || L('The platform\'s default', 'ברירת המחדל של הפלטפורמה')}{!value ? ` · ${L('chosen', 'נבחר')}` : ''}</span>
                   <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
-                    {defaultInfo ? shortModelName(defaultInfo) : defaultModel || L('none set', 'לא נקבעה')} · {L('follows the default when you change it', 'משתנה כשמשנים את ברירת המחדל')}
+                    {defaultInfo ? shortModelName(defaultInfo) : defaultModel || L('none set', 'לא נקבעה')} · {defaultNote || L('follows the default when you change it', 'משתנה כשמשנים את ברירת המחדל')}
                   </span>
                 </span>
               </button>
@@ -16036,7 +16119,7 @@ npm run migrate            # run it`}</Block>
               <div style={{ padding: 16, color: 'var(--text-2)', fontSize: 13, lineHeight: 1.6 }}>
                 {L('OpenRouter\'s list could not be read right now. Type an exact model id (like anthropic/claude-sonnet-4.5) and press Enter.',
                    'לא הצלחתי לקרוא את הרשימה של OpenRouter כרגע. אפשר להקליד מזהה מודל מדויק (למשל anthropic/claude-sonnet-4.5) וללחוץ Enter.')}
-                {canUseTyped && <div style={{ marginTop: 10 }}><Btn size="sm" variant="primary" onClick={() => onPick(typedId)}>{L('Use', 'השתמש ב')} {typedId}</Btn></div>}
+                {canUseTyped && <div style={{ marginTop: 10 }}><Btn size="sm" variant="primary" onClick={() => take(typedId)}>{L('Use', 'השתמש ב')} {typedId}</Btn></div>}
               </div>
             )}
             {catalog && all.length > 0 && list.length === 0 && (
@@ -16044,12 +16127,12 @@ npm run migrate            # run it`}</Block>
             )}
             {shown.map((m, i) => {
               const look = makerLook(m.id, all);
-              const chosen = m.id === value;
+              const chosen = isChosen(m.id);
               const fresh = m.created && now - m.created < 30 * 86400;
               const tiny = { fontSize: 10.5, padding: '1px 8px' };
               return (
                 <button type="button" key={m.id} data-model-row={i} data-model-id={m.id} title={m.about || ''}
-                  onClick={() => onPick(m.id)} onMouseMove={() => active !== i && setActive(i)} style={{
+                  onClick={() => take(m.id)} onMouseMove={() => active !== i && setActive(i)} style={{
                     display: 'flex', gap: 12, alignItems: 'center', width: '100%', textAlign: 'start', padding: '10px 12px', marginBottom: 2,
                     borderRadius: 'var(--r-md)', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text)',
                     background: chosen ? 'var(--primary-dim)' : i === active ? 'var(--bg-panel)' : 'transparent',
@@ -16063,7 +16146,7 @@ npm run migrate            # run it`}</Block>
                       {m.id.startsWith('~') && <Chip tone="teal" style={tiny}>{L('Always the newest', 'תמיד העדכני')}</Chip>}
                       {fresh && <Chip tone="live" style={tiny}>{L('New', 'חדש')}</Chip>}
                       {m.expires && <Chip tone="danger" style={tiny}>{L(`Leaves ${m.expires}`, `יוצא ב-${m.expires}`)}</Chip>}
-                      {chosen && <Chip tone="tools" style={tiny}>✓ {L('Chosen', 'נבחר')}</Chip>}
+                      {chosen && <Chip tone="tools" style={tiny}>✓ {multi ? L('In the list', 'ברשימה') : L('Chosen', 'נבחר')}</Chip>}
                     </span>
                     {m.about && <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-2)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.about}</span>}
                     <span style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center', marginTop: 5 }}>
@@ -16087,9 +16170,11 @@ npm run migrate            # run it`}</Block>
 
           <div style={{ padding: '8px 18px', borderTop: '1px solid var(--border)', fontSize: 11.5, color: 'var(--text-muted)', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <span>{L(`${list.length} of ${all.length} models`, `${list.length} מתוך ${all.length} מודלים`)}</span>
-            <span>{L('Prices are what OpenRouter charges, in USD per million tokens.', 'המחירים הם מה ש-OpenRouter גובה, בדולרים למיליון טוקנים.')}</span>
+            <span>{priceNote || L('Prices are what OpenRouter charges, in USD per million tokens.', 'המחירים הם מה ש-OpenRouter גובה, בדולרים למיליון טוקנים.')}</span>
             <span style={{ flex: 1 }} />
-            <span>{L('↑↓ to move · Enter to choose · Esc to close', '↑↓ לתנועה · Enter לבחירה · Esc לסגירה')}</span>
+            {multi
+              ? <Btn size="sm" variant="primary" onClick={onClose}>{L(`Done · ${(selected || []).length} in the list`, `סיום · ${(selected || []).length} ברשימה`)}</Btn>
+              : <span>{L('↑↓ to move · Enter to choose · Esc to close', '↑↓ לתנועה · Enter לבחירה · Esc לסגירה')}</span>}
           </div>
         </div>
       </div>
@@ -16143,8 +16228,16 @@ npm run migrate            # run it`}</Block>
    * and every top-up so far. Every change saves on its own and comes back in
    * `org`, so what is shown is what is stored.
    */
-  function OrgMoneyDialog({ org, onClose, put, busy, error }) {
+  function OrgMoneyDialog({ org, onClose, put, busy, error, catalog }) {
     const [amount, setAmount] = useState('');
+    /* The list is kept here as well, so two quick clicks in the picker both
+       count: each save sends the whole list as it now stands. */
+    const [list, setList] = useState(org.models || []);
+    const [picking, setPicking] = useState(false);
+    useEffect(() => { setList(org.models || []); }, [JSON.stringify(org.models || [])]);
+    const saveList = (next) => { setList(next); put('models', { orgId: org.id, models: next }); };
+    const byId = new Map((catalog || []).map(m => [m.id, m]));
+    const factor = 1 + (Number(org.markupPct) || 0) / 100;
     const [note, setNote] = useState('');
     const [markup, setMarkup] = useState(String(org.markupPct));
     const [history, setHistory] = useState(null);
@@ -16152,10 +16245,11 @@ npm run migrate            # run it`}</Block>
     useEffect(() => { apiBillingTopups(org.id).then(setHistory).catch(() => setHistory([])); }, [org.id, org.balance]);
     useEffect(() => { setMarkup(String(org.markupPct)); }, [org.markupPct]);
     useEffect(() => {
-      const esc = (e) => { if (e.key === 'Escape') onClose(); };
+      // While the picker is open, Esc is the picker's.
+      const esc = (e) => { if (e.key === 'Escape' && !picking) onClose(); };
       window.addEventListener('keydown', esc);
       return () => window.removeEventListener('keydown', esc);
-    }, [onClose]);
+    }, [onClose, picking]);
 
     const amt = Number(amount);
     const amtOk = amount.trim() !== '' && Number.isFinite(amt) && amt !== 0 && Math.abs(amt) <= 100000;
@@ -16230,6 +16324,39 @@ npm run migrate            # run it`}</Block>
             </div>
           </div>
 
+          {/* the models its items may choose */}
+          <div style={block} data-org-models>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+              <div style={{ fontWeight: 700, fontSize: 13.5, flex: 1 }}>{L('Models it can choose', 'מודלים שהוא יכול לבחור')}</div>
+              <Btn size="sm" onClick={() => setPicking(true)}>{L('Add or remove', 'הוספה והסרה')}</Btn>
+            </div>
+            <div style={{ ...sub, marginTop: 0, marginBottom: 8 }}>
+              {L(`Its AI Chatbots, apps and automation AI steps can run on any of these. Anything that picks none, or one you take off, runs on its default: ${org.runsOn || '—'}. Prices are with its ${org.markupPct}% markup.`,
+                 `הבוטים, האפליקציות וצעדי ה-AI באוטומציות שלו יכולים לרוץ על כל אחד מאלה. מה שלא בחר, או בחר מודל שהסרת, רץ על ברירת המחדל שלו: ${org.runsOn || '—'}. המחירים כוללים את התוספת שלו (${org.markupPct}%).`)}
+            </div>
+            {list.length === 0
+              ? <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{L('None yet: everything runs on its default.', 'עוד אין: הכל רץ על ברירת המחדל.')}</div>
+              : <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {list.map(id => {
+                    const m = byId.get(id);
+                    const look = makerLook(id, catalog);
+                    return (
+                      <div key={id} data-org-model={id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg-panel)' }}>
+                        <MakerBadge look={look} size={24} />
+                        <span style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ display: 'block', fontWeight: 600, fontSize: 12.5 }}>{m ? shortModelName(m) : id}</span>
+                          <span dir="ltr" style={{ display: 'block', fontFamily: MONO, fontSize: 10.5, color: 'var(--text-muted)' }}>{id}</span>
+                        </span>
+                        {m && <span dir="ltr" style={{ fontSize: 12, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
+                          {perMFmt(m.inputPerM === null ? null : m.inputPerM * factor)} / {perMFmt(m.outputPerM === null ? null : m.outputPerM * factor)}
+                        </span>}
+                        <IconBtn danger title={L('Take it off the list', 'הסרה מהרשימה')} onClick={() => saveList(list.filter(x => x !== id))}>✕</IconBtn>
+                      </div>
+                    );
+                  })}
+                </div>}
+          </div>
+
           {error && <div style={{ ...block, color: 'var(--danger)', fontSize: 12.5, unicodeBidi: 'plaintext' }}>{error}</div>}
 
           {/* history */}
@@ -16250,6 +16377,13 @@ npm run migrate            # run it`}</Block>
             </div>
           )}
         </div>
+        {picking && (
+          <div onClick={e => e.stopPropagation()}>
+          <ModelPicker catalog={catalog} multi selected={list} onClose={() => setPicking(false)}
+            title={L(`Models for ${org.name}`, `מודלים ל-${org.name}`)}
+            onToggle={(id) => saveList(list.includes(id) ? list.filter(x => x !== id) : [...list, id])} />
+          </div>
+        )}
       </div>
     );
   }
@@ -16289,11 +16423,58 @@ npm run migrate            # run it`}</Block>
     number: L('WhatsApp agent', 'סוכן WhatsApp'), platform: L('Platform', 'פלטפורמה'),
   });
 
-  /** For the organization's admin: what is left, what this month was charged for, and the top-ups. */
+  /** A monthly limit on one item or member: shown with what it used, and edited in place. */
+  function LimitCell({ limit, used, onSave }) {
+    const [editing, setEditing] = useState(false);
+    const [draft, setDraft] = useState('');
+    const [busy, setBusy] = useState(false);
+    async function save(value) {
+      setBusy(true);
+      try { await onSave(value); setEditing(false); } finally { setBusy(false); }
+    }
+    if (editing) {
+      const n = Number(draft);
+      const okDraft = draft.trim() !== '' && Number.isFinite(n) && n >= 0 && n <= 100000;
+      return (
+        <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }} data-limit-edit>
+          <input autoFocus inputMode="decimal" dir="ltr" value={draft} onChange={e => setDraft(e.target.value)} placeholder="10" style={{ width: 72, padding: '4px 8px', fontSize: 12.5 }}
+            onKeyDown={e => { if (e.key === 'Enter' && okDraft) save(n); if (e.key === 'Escape') setEditing(false); }} />
+          <Btn size="sm" variant="primary" disabled={!okDraft || busy} onClick={() => save(n)}>{L('Save', 'שמור')}</Btn>
+          {limit !== null && <Btn size="sm" disabled={busy} onClick={() => save(null)}>{L('Remove', 'הסר')}</Btn>}
+          <IconBtn title={L('Cancel', 'ביטול')} onClick={() => setEditing(false)}>✕</IconBtn>
+        </span>
+      );
+    }
+    const over = limit !== null && used >= limit;
+    return (
+      <button type="button" data-limit onClick={() => { setDraft(limit === null ? '' : String(limit)); setEditing(true); }}
+        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, textAlign: 'start' }}>
+        {limit === null
+          ? <span style={{ color: 'var(--primary)', fontWeight: 700 }}>{L('Set a limit', 'הגדרת מגבלה')}</span>
+          : <span style={{ color: over ? 'var(--danger)' : 'var(--text-2)', fontWeight: 600 }}>
+              <span dir="ltr">{usdMoney(limit)}</span>{L(' / month', ' לחודש')}{over ? L(' · reached', ' · הגיע') : ''}
+            </span>}
+      </button>
+    );
+  }
+
+  /**
+   * For the organization's admin: what is left, what this month was charged
+   * for, item by item and member by member with a monthly limit on any of
+   * them, and the top-ups.
+   */
   function OrgUsageSection({ sectionStyle, sectionHeader }) {
     const [d, setD] = useState(null);
     const [error, setError] = useState('');
+    const [everything, setEverything] = useState(false);
     useEffect(() => { apiOrgBilling().then(setD).catch(e => setError(e.message)); }, []);
+    async function setLimit(kind, targetId, monthlyUsd) {
+      setError('');
+      const r = await apiFetch('/api/org/billing', { method: 'PUT', body: JSON.stringify({ kind, targetId, monthlyUsd }) });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) { setError(body.error || `Could not save the limit (${r.status})`); throw new Error(body.error || 'failed'); }
+      setD(body);
+    }
     const kinds = USAGE_KIND();
     const stat = (label, value, note, tone) => (
       <div style={{ flex: '1 1 180px', padding: '12px 14px', borderRadius: 'var(--r-md)', background: 'var(--bg-panel)', border: '1px solid var(--border)' }}>
@@ -16302,11 +16483,15 @@ npm run migrate            # run it`}</Block>
         {note && <div style={{ fontSize: 11.5, color: 'var(--text-2)', marginTop: 2 }}>{note}</div>}
       </div>
     );
+    const cell = { padding: '7px 8px', verticalAlign: 'middle' };
+    const items = d ? d.month.items : [];
+    const busyItems = items.filter(it => it.calls > 0 || it.limit !== null);
+    const shownItems = everything ? items : busyItems;
     return (
       <div id="set-usage" style={sectionStyle} data-org-usage>
         <div style={sectionHeader}>{L('Model usage', 'שימוש במודלים')}</div>
-        <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {error && <div style={{ color: 'var(--danger)', fontSize: 12.5 }}>{error}</div>}
+        <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {error && <div style={{ color: 'var(--danger)', fontSize: 12.5, unicodeBidi: 'plaintext' }}>{error}</div>}
           {!d && !error && <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{L('Loading…', 'טוען…')}</div>}
           {d && <>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -16317,23 +16502,59 @@ npm run migrate            # run it`}</Block>
             </div>
 
             <div>
-              <Eyebrow style={{ marginBottom: 6 }}>{L('This month, by what used it', 'החודש, לפי מה שהשתמש')}</Eyebrow>
-              {d.month.items.length === 0
+              <Eyebrow style={{ marginBottom: 4 }}>{L('This month, by what used it', 'החודש, לפי מה שהשתמש')}</Eyebrow>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 6, lineHeight: 1.6 }}>
+                {L('A limit stops that one item for the rest of the month once it has been charged that much; people writing to it get the platform\'s short "not available" message.',
+                   'מגבלה עוצרת את הפריט הזה עד סוף החודש כשהוא חויב בסכום הזה; מי שכותב לו מקבל את ההודעה הקצרה של הפלטפורמה שהשירות לא זמין.')}
+              </div>
+              {shownItems.length === 0
                 ? <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{L('Nothing yet this month.', 'עוד כלום החודש.')}</div>
                 : <div style={{ overflowX: 'auto' }}>
                     <table dir={uiDir()} style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                       <tbody>
-                        {d.month.items.slice(0, 40).map((it, i) => (
-                          <tr key={`${it.kind}:${it.id}`} style={{ borderTop: i ? '1px solid var(--border)' : 'none' }}>
-                            <td style={{ padding: '7px 8px 7px 0', fontWeight: 600 }}><span dir="auto">{it.name}</span></td>
-                            <td style={{ padding: '7px 8px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{kinds[it.kind] || it.kind}</td>
-                            <td style={{ padding: '7px 8px', color: 'var(--text-2)', whiteSpace: 'nowrap', textAlign: 'end' }}>{it.calls} {L('calls', 'קריאות')}</td>
-                            <td style={{ padding: '7px 0 7px 8px', fontWeight: 700, whiteSpace: 'nowrap', textAlign: 'end' }}><span dir="ltr">{usdFmt(it.charged)}</span></td>
+                        {shownItems.map((it, i) => (
+                          <tr key={`${it.kind}:${it.id}`} data-usage-item={`${it.kind}:${it.id}`} style={{ borderTop: i ? '1px solid var(--border)' : 'none' }}>
+                            <td style={{ ...cell, paddingInlineStart: 0, fontWeight: 600 }}><span dir="auto">{it.name}</span></td>
+                            <td style={{ ...cell, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{kinds[it.kind] || it.kind}</td>
+                            <td style={{ ...cell, color: 'var(--text-2)', whiteSpace: 'nowrap', textAlign: 'end' }}>{it.calls} {L('calls', 'קריאות')}</td>
+                            <td style={{ ...cell, fontWeight: 700, whiteSpace: 'nowrap', textAlign: 'end' }}><span dir="ltr">{usdFmt(it.charged)}</span></td>
+                            <td style={{ ...cell, paddingInlineEnd: 0, whiteSpace: 'nowrap', textAlign: 'end' }}>
+                              {it.kind === 'platform' ? null : <LimitCell limit={it.limit} used={it.charged} onSave={v => setLimit(it.kind, it.id, v)} />}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>}
+              {items.length > busyItems.length && (
+                <button type="button" onClick={() => setEverything(v => !v)} style={{ background: 'none', border: 'none', padding: '6px 0 0', cursor: 'pointer', color: 'var(--primary)', fontWeight: 700, fontSize: 12, fontFamily: 'inherit' }}>
+                  {everything ? L('Only what was used', 'רק מה שהשתמש') : L(`Everything in the organization (${items.length})`, `כל מה שבארגון (${items.length})`)}
+                </button>
+              )}
+            </div>
+
+            <div>
+              <Eyebrow style={{ marginBottom: 4 }}>{L('Members', 'משתמשים')}</Eyebrow>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 6, lineHeight: 1.6 }}>
+                {L('What each person set off in the platform: the home chat, testing AI Chatbots, building with the assistant. A limit stops only them.',
+                   'מה שכל אחד הפעיל בפלטפורמה: הצ׳אט בבית, בדיקת בוטים, בנייה עם העוזר. מגבלה עוצרת רק אותו.')}
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table dir={uiDir()} style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                  <tbody>
+                    {d.month.members.map((m, i) => (
+                      <tr key={m.id} data-usage-member={m.id} style={{ borderTop: i ? '1px solid var(--border)' : 'none' }}>
+                        <td style={{ ...cell, paddingInlineStart: 0, fontWeight: 600 }}><span dir="auto">{m.username}</span></td>
+                        <td style={{ ...cell, color: 'var(--text-2)', whiteSpace: 'nowrap', textAlign: 'end' }}>{m.calls} {L('calls', 'קריאות')}</td>
+                        <td style={{ ...cell, fontWeight: 700, whiteSpace: 'nowrap', textAlign: 'end' }}><span dir="ltr">{usdFmt(m.charged)}</span></td>
+                        <td style={{ ...cell, paddingInlineEnd: 0, whiteSpace: 'nowrap', textAlign: 'end' }}>
+                          <LimitCell limit={m.limit} used={m.charged} onSave={v => setLimit('member', m.id, v)} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             <div>
@@ -16578,7 +16799,7 @@ npm run migrate            # run it`}</Block>
         </div>
 
         {moneyFor && data.orgs.some(o => o.id === moneyFor) && (
-          <OrgMoneyDialog org={data.orgs.find(o => o.id === moneyFor)} put={put} busy={busy} error={error}
+          <OrgMoneyDialog org={data.orgs.find(o => o.id === moneyFor)} put={put} busy={busy} error={error} catalog={catalog}
             onClose={() => setMoneyFor(null)} />
         )}
         {picker && (() => {

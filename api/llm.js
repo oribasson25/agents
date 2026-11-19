@@ -9,12 +9,16 @@ import { llmFetch, pingConfig } from './_llm.js';
  * on the platform's OpenRouter key, on the model chosen for the caller's
  * organization.
  *
- *   POST { body, source, itemType?, itemId? } → OpenRouter's answer, with its status
+ *   POST { body, source, itemType?, itemId?, model? } → OpenRouter's answer, with its status
  *   POST { ping: true } → { ok, why } — can this organization reach a model now?
  *
  * `body` is a chat-completions request. Any member may call it: a member who
  * can only view a chatbot can still test it. Calls are written to llm_usage
  * against the caller.
+ *
+ * `model` is the model of the item being tried (the chatbot open in the
+ * editor, saved or not). It is used only if it is in the organization's list;
+ * anything else runs on the organization's default.
  */
 const SOURCES = new Set(['builder', 'test-chat', 'assistant', 'autopilot', 'home']);
 const ITEM_TYPES = new Set(['agent', 'automation', 'app']);
@@ -27,8 +31,8 @@ export default async function handler(req, res) {
   const me = await member(user);
   if (!me || !me.orgId) return res.status(401).json({ error: { message: 'unauthorized' } });
 
-  const cfg = resolveApiConfig(await getUserSettings(user.userId));
   const b = req.body || {};
+  const cfg = resolveApiConfig(await getUserSettings(user.userId), { model: typeof b.model === 'string' ? b.model : '' });
 
   if (b.ping) return res.json(await pingConfig(cfg));
 

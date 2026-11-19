@@ -17,6 +17,7 @@ import {
  *   PUT { key }                 → stores the key once OpenRouter has accepted it ('' removes it)
  *   PUT { defaultModel?, ceilingUsd?, stopMessage?: { he?, en? } }
  *   PUT { orgId, model }        → the organization's own model ('' = the platform's default)
+ *   PUT { orgId, models: [ids] } → the models its items may choose from (its default always may)
  *   PUT { orgId, topupUsd, note? }  → adds to its balance (negative corrects it). The first
  *                                   one gives an organization with no limit a balance.
  *   PUT { orgId, markupPct }    → percent added to OpenRouter's cost for that organization
@@ -79,6 +80,21 @@ export default async function handler(req, res) {
           await sql`
             insert into org_billing (org_id, markup_pct, updated_at) values (${orgId}, ${pct}, now())
             on conflict (org_id) do update set markup_pct = excluded.markup_pct, updated_at = now()
+          `;
+          return res.json(await view());
+        }
+        if (has('models')) {
+          if (!Array.isArray(b.models) || b.models.length > 200) {
+            return res.status(400).json({ error: 'models must be a list of OpenRouter model ids.' });
+          }
+          const ids = [...new Set(b.models.map((m) => String(m || '').trim()).filter(Boolean))];
+          for (const id of ids) {
+            const bad = await unknownModel(id);
+            if (bad) return res.status(400).json({ error: bad });
+          }
+          await sql`
+            insert into org_billing (org_id, allowed_models, updated_at) values (${orgId}, ${ids}, now())
+            on conflict (org_id) do update set allowed_models = excluded.allowed_models, updated_at = now()
           `;
           return res.json(await view());
         }
@@ -162,7 +178,7 @@ async function view() {
   const [orgs, billing, usage] = await Promise.all([
     listOrgs(),
     sql`
-      select b.org_id, b.default_model, b.balance_usd, b.markup_pct,
+      select b.org_id, b.default_model, b.balance_usd, b.markup_pct, b.allowed_models,
              (select t.amount_usd from org_topups t where t.org_id = b.org_id and t.amount_usd > 0 order by t.at desc, t.id desc limit 1) as last_topup
       from org_billing b
     `,
@@ -201,6 +217,8 @@ async function view() {
         agents: o.agents,
         model: own.get(o.id) || '',
         runsOn: own.get(o.id) || defaultModel,
+        // What its AI Chatbots, apps and automations may choose from, besides runsOn.
+        models: (m && Array.isArray(m.allowed_models)) ? m.allowed_models : [],
         // null: no limit of its own. Otherwise what it has left, in USD as it is charged.
         balance,
         markupPct,

@@ -3,7 +3,8 @@ import { loadApp, saveApp, deleteApp, linkProblems, appUrl } from '../../_apps.j
 import { appToFiles, filesToApp } from '../../_appFiles.js';
 import { mirrorLinked } from '../../_github.js';
 
-const EDITABLE = ['name', 'description', 'entry', 'agents', 'tables', 'automations', 'files'];
+// `ai`: whether legs.ai may call a model, and on which (null switches it off).
+const EDITABLE = ['name', 'description', 'entry', 'agents', 'tables', 'automations', 'ai', 'files'];
 
 /**
  * One app, as the Apps screen reads and edits it.

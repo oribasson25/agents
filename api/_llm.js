@@ -11,11 +11,12 @@
  * Every call that succeeds is written to llm_usage with the cost OpenRouter
  * reports, and with what the organization is charged for it: that cost plus
  * the organization's markup, taken from its balance in the same statement.
- * Before each call two things are checked, and either one refuses it with a
- * message: the platform's spend this month against its monthly ceiling (the
- * platform stops itself rather than wait for OpenRouter's own budget to refuse
- * it), and the organization's balance, when it has one. Nothing here throws
- * over bookkeeping.
+ * Before each call these are checked, and any one refuses it with a message:
+ * the platform's spend this month against its monthly ceiling (the platform
+ * stops itself rather than wait for OpenRouter's own budget to refuse it), the
+ * organization's balance when it has one, and the monthly limits its admin set
+ * on the item being run and on the member who set the call off. Nothing here
+ * throws over bookkeeping.
  */
 import { sql } from './_db.js';
 import { seal, unseal } from './_connections.js';
@@ -203,6 +204,8 @@ export async function monthSpendUsd({ fresh = false } = {}) {
 
 export const BUDGET_MESSAGE = 'The platform\'s model budget for this month is used up. It starts again on the 1st.';
 export const ORG_BALANCE_MESSAGE = 'Your organization\'s model balance is used up. Ask the platform admin to top it up.';
+export const ITEM_LIMIT_MESSAGE = 'This reached its monthly model limit. It starts again on the 1st, or when the organization\'s admin raises it.';
+export const MEMBER_LIMIT_MESSAGE = 'You reached your monthly model limit. Ask your organization\'s admin to raise it.';
 
 /* ─────────────────── the organization's balance ─────────────────── */
 
@@ -243,8 +246,47 @@ export async function topUpOrg(orgId, amount, note, userId) {
   return row ? Number(row.balance_after) : null;
 }
 
-/** Whether an error is the platform or the organization being out of money. */
-export const isStopped = (err) => !!err && (err.code === 'BUDGET' || err.code === 'ORG_BALANCE');
+/**
+ * Refuses a call the organization may not make right now: its balance is used
+ * up, or the item or member reached the monthly limit its admin set. One
+ * round trip, and a second only when a limit applies.
+ */
+async function gate(orgId, meta = {}) {
+  if (!orgId) return;
+  const itemType = meta.itemType ? String(meta.itemType) : null;
+  const itemId = meta.itemId ? String(meta.itemId) : null;
+  const userId = meta.userId ? String(meta.userId) : null;
+  let row;
+  try {
+    [row] = await sql`
+      select (select balance_usd from org_billing where org_id = ${orgId}) as balance,
+             (select monthly_usd from usage_limits where org_id = ${orgId} and kind = ${itemType} and target_id = ${itemId}) as item_limit,
+             (select monthly_usd from usage_limits where org_id = ${orgId} and kind = 'member' and target_id = ${userId}) as member_limit
+    `;
+  } catch (err) {
+    console.warn('[llm] could not read the organization\'s balance and limits:', err.message);
+    return;
+  }
+  if (!row) return;
+  if (row.balance !== null && row.balance !== undefined && Number(row.balance) <= 0) throw fail(ORG_BALANCE_MESSAGE, 'ORG_BALANCE', 402);
+  const itemLimit = row.item_limit === null || row.item_limit === undefined ? null : Number(row.item_limit);
+  const memberLimit = row.member_limit === null || row.member_limit === undefined ? null : Number(row.member_limit);
+  if (itemLimit === null && memberLimit === null) return;
+  const [used] = await sql`
+    select coalesce(sum(charged_usd) filter (where item_type = ${itemType} and item_id = ${itemId}), 0) as item,
+           coalesce(sum(charged_usd) filter (where user_id = ${userId}), 0) as member
+    from llm_usage where org_id = ${orgId} and at >= ${monthStart()}
+  `;
+  if (itemLimit !== null && Number(used.item) >= itemLimit) throw fail(ITEM_LIMIT_MESSAGE, 'ITEM_LIMIT', 402);
+  if (memberLimit !== null && Number(used.member) >= memberLimit) throw fail(MEMBER_LIMIT_MESSAGE, 'MEMBER_LIMIT', 402);
+}
+
+/**
+ * Whether an error means a stranger should get the stop message: the platform
+ * or the organization is out of money, or the item reached its monthly limit.
+ * (A member's own limit only ever stops calls that member set off.)
+ */
+export const isStopped = (err) => !!err && (err.code === 'BUDGET' || err.code === 'ORG_BALANCE' || err.code === 'ITEM_LIMIT');
 
 export const STOP_MESSAGE_DEFAULT = {
   he: 'השירות לא זמין כרגע. נסו שוב מאוחר יותר.',
@@ -269,9 +311,9 @@ export async function stopMessage(theirText) {
  * Sends one chat-completions request on the platform's key and returns
  * `{ ok, status, data }` — `data` is OpenRouter's JSON (an error body when not
  * ok). Throws only when the call cannot be made at all; `err.code` is
- * NO_MODEL, NO_PLATFORM_KEY, BUDGET (the platform's ceiling) or ORG_BALANCE
- * (the organization's balance is used up), and `err.status` says how to
- * answer it.
+ * NO_MODEL, NO_PLATFORM_KEY, BUDGET (the platform's ceiling), ORG_BALANCE
+ * (the organization's balance is used up), ITEM_LIMIT or MEMBER_LIMIT (a
+ * monthly limit its admin set), and `err.status` says how to answer it.
  *
  * @param {object} p
  * @param {object} p.cfg      what resolveApiConfig returns: { model, ready, orgId }
@@ -284,8 +326,7 @@ export async function llmFetch({ cfg, body, meta = {}, fetchImpl = fetch }) {
   if (!cfg || !cfg.model) throw fail('The platform has not chosen a model for this organization yet.', 'NO_MODEL', 400);
   if (p.ceiling > 0 && (await monthSpendUsd()) >= p.ceiling) throw fail(BUDGET_MESSAGE, 'BUDGET', 402);
   const orgId = await orgFor(cfg, meta);
-  const balance = await orgBalanceUsd(orgId);
-  if (balance !== null && balance <= 0) throw fail(ORG_BALANCE_MESSAGE, 'ORG_BALANCE', 402);
+  await gate(orgId, meta);
 
   const request = { ...body, model: cfg.model };
   const r = await fetchImpl(`${OPENROUTER_BASE}/chat/completions`, { method: 'POST', headers: orHeaders(p.key), body: JSON.stringify(request) });

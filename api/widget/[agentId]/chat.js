@@ -29,7 +29,7 @@ export default async function handler(req, res) {
   const chosen = await loadForConversation(agentId, branchId);
 
   // The key, provider and model come from the owner's account settings.
-  const agent = { ...chosen.agent, apiConfig: await resolveAgentApiConfig(row) };
+  const agent = { ...chosen.agent, apiConfig: await resolveAgentApiConfig(row, chosen.agent) };
   const proto = req.headers['x-forwarded-proto'] || 'https';
   const baseUrl = `${proto}://${req.headers.host}`;
 

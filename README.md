@@ -140,6 +140,25 @@ admin sees the balance, top-ups and this month's charges by item in Settings ›
 the month's charges and profit (counting only calls made since balances existed), and warns when
 the balances handed out can buy more at OpenRouter than is left under the ceiling.
 
+### Models per item, and monthly limits
+
+The platform admin gives each organization a list of models (`org_billing.allowed_models`,
+migration `035`) besides its default. An AI Chatbot (`data.model`), an automation's AI step
+(`config.model`) and an app (`app.json` `"ai": { "model" }`) may name one; `resolveApiConfig(settings,
+{ model })` uses it only while the list has it, and the default otherwise, so taking a model off
+the list moves its users back without touching them. The browser's test chat sends the draft's
+model to `/api/llm` the same way. `/api/models` gives a member the list with the organization's
+prices (OpenRouter's × the markup) for the pickers.
+
+`legs.ai(prompt | { system, prompt, messages, json, maxTokens })` lets an app call a model directly
+(`op: 'ai'` in `api/app-run.js`), only when its `app.json` has `"ai"`; it is charged to the app.
+
+`usage_limits` holds the organization admin's monthly caps, in charged USD, on an item (`agent`,
+`app`, `automation`, `number`) or a `member`. `gate()` in `api/_llm.js` reads the balance and both
+caps in one query before each call and refuses with `ITEM_LIMIT` (strangers get the stop message)
+or `MEMBER_LIMIT` (only that member is stopped). They are set in Settings › Model usage
+(`PUT /api/org/billing { kind, targetId, monthlyUsd }`).
+
 `OPENROUTER_BASE_URL` overrides where the gateway sends calls, for local testing against a
 stand-in; never set it in production.
 

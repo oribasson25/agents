@@ -199,7 +199,8 @@ export function createRouter(wa, numberId, { baseUrl }) {
     const branchId = await branchForSession(agentId, sessionId);
     if (branchId) {
       const chosen = await loadForConversation(agentId, branchId);
-      agent = { ...chosen.agent, apiConfig: agent.apiConfig };
+      // A branch may run another model than main.
+      agent = { ...chosen.agent, apiConfig: await resolveAgentApiConfig(agentRow, chosen.agent) };
     }
     agent.canEndConversation = true;
 

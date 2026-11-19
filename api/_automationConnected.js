@@ -166,7 +166,8 @@ function parseJsonReply(text) {
 
 /** One prompt to the organization's model, answered as text or as JSON. */
 async function ai(config, ctx) {
-  const cfg = resolveApiConfig(await getUserSettings(ctx.ownerId), null);
+  // The step's own model, if the organization's list has it; otherwise the organization's default.
+  const cfg = resolveApiConfig(await getUserSettings(ctx.ownerId), { model: config.model });
   if (!configUsable(cfg)) throw new Error('the platform has not finished setting up models for this organization');
   const prompt = String(config.prompt ?? '').trim();
   if (!prompt) throw new Error('has no prompt');

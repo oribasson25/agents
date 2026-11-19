@@ -1,9 +1,10 @@
 import { sql } from './_db.js';
 import { loadAppById, mayOpen } from './_apps.js';
-import { linkId } from './_appFiles.js';
+import { linkId, aiOf } from './_appFiles.js';
 import { getTable, listRows, addRow, updateRow, deleteRow } from './_tables.js';
 import { runAgentTurn, saveSession } from './_agentRunner.js';
-import { resolveAgentApiConfig } from './_settings.js';
+import { resolveAgentApiConfig, getUserSettings, resolveApiConfig, configUsable } from './_settings.js';
+import { llmFetch, replyText, isStopped, stopMessage } from './_llm.js';
 import { branchForSession, loadForConversation } from './_branches.js';
 import { logError } from './_errorLog.js';
 import { startRun, workRun } from './_automations.js';
@@ -35,6 +36,45 @@ export default async function handler(req, res) {
   const { app, ownerId, orgId } = found;
 
   try {
+    /* legs.ai — one call to a model, with no chatbot around it. Only for an
+       app whose app.json switched it on: anyone who can open the app can make
+       it call the model, at the organization's cost. */
+    if (op === 'ai') {
+      const ai = aiOf(app.ai);
+      if (!ai) return res.status(403).json({ error: 'This app may not call a model: add "ai": true to its app.json, or switch AI on in its Links.' });
+      const msgs = [];
+      if (typeof body.system === 'string' && body.system.trim()) msgs.push({ role: 'system', content: body.system.slice(0, 20000) });
+      if (Array.isArray(body.messages)) {
+        for (const m of body.messages.slice(-50)) {
+          if (m && ['user', 'assistant', 'system'].includes(m.role) && typeof m.content === 'string') msgs.push({ role: m.role, content: m.content.slice(0, 40000) });
+        }
+      }
+      if (typeof body.prompt === 'string' && body.prompt.trim()) msgs.push({ role: 'user', content: body.prompt.slice(0, 40000) });
+      if (!msgs.some((m) => m.role === 'user')) return res.status(400).json({ error: 'legs.ai needs a prompt or messages.' });
+      if (body.json) msgs.unshift({ role: 'system', content: 'Answer with a single JSON value and nothing else: no explanation, no code fence.' });
+      const cfg = resolveApiConfig(await getUserSettings(ownerId), { model: ai.model });
+      if (!configUsable(cfg)) return res.status(503).json({ error: 'The platform has not finished setting up models for this organization.' });
+      const maxTokens = Math.min(Math.max(Number(body.maxTokens) || 1500, 16), 4000);
+      try {
+        const { ok, status, data } = await llmFetch({
+          cfg, body: { messages: msgs, max_tokens: maxTokens },
+          meta: { orgId, ownerId, source: 'app', itemType: 'app', itemId: app.id },
+        });
+        if (!ok) return res.status(status >= 400 ? status : 502).json({ error: (data.error && data.error.message) || 'The model did not answer.' });
+        const text = replyText(data);
+        if (!body.json) return res.json({ text });
+        const clean = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+        try { return res.json({ json: JSON.parse(clean), text }); }
+        catch { return res.status(502).json({ error: `Asked for JSON, the model answered: ${text.slice(0, 200)}` }); }
+      } catch (err) {
+        if (isStopped(err)) {
+          const last = [...msgs].reverse().find((m) => m.role === 'user');
+          return res.status(402).json({ error: await stopMessage(last && last.content), code: err.code });
+        }
+        throw err;
+      }
+    }
+
     if (op === 'agent.info') {
       const agentId = linkId((app.agents || {})[name]);
       if (!agentId) return res.status(404).json({ error: `This app has no AI Chatbot linked as "${name}"` });
@@ -57,7 +97,7 @@ export default async function handler(req, res) {
 
       const branchId = await branchForSession(agentId, sessionId);
       const chosen = await loadForConversation(agentId, branchId);
-      const agent = { ...chosen.agent, apiConfig: await resolveAgentApiConfig(row) };
+      const agent = { ...chosen.agent, apiConfig: await resolveAgentApiConfig(row, chosen.agent) };
       const proto = req.headers['x-forwarded-proto'] || 'https';
       const baseUrl = `${proto}://${req.headers.host}`;
       try {
@@ -66,6 +106,11 @@ export default async function handler(req, res) {
                           'app', chosen.branchId);
         return res.json({ content: text });
       } catch (err) {
+        // Out of money or over its limit: the visitor reads the stop message, as on the widget.
+        if (isStopped(err)) {
+          const last = [...messages].reverse().find((m) => m && m.role === 'user');
+          return res.json({ content: await stopMessage(last && last.content), stopped: true });
+        }
         await logError({ agentId, source: 'app', message: err.message, context: { appId: app.id } });
         return res.status(err.code === 'NO_API_KEY' ? 503 : err.code === 'ORG_BALANCE' || err.code === 'BUDGET' ? 402 : 500)
           .json({ error: err.message, ...(err.code ? { code: err.code } : {}) });

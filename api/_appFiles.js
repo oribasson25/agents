@@ -21,7 +21,7 @@
 import { agentVersion, extrasOf, compact, json, parseJson } from './_agentFiles.js';
 
 const SERVER_OWNED = ['slug', 'access', 'createdAt'];
-const MAPPED = new Set(['id', 'name', 'description', 'entry', 'agents', 'tables', 'automations', 'files', ...SERVER_OWNED]);
+const MAPPED = new Set(['id', 'name', 'description', 'entry', 'agents', 'tables', 'automations', 'ai', 'files', ...SERVER_OWNED]);
 
 /* Files the platform writes into the folder; an app cannot have its own. */
 const GENERATED = new Set(['app.json', 'AGENTS.md', 'CLAUDE.md', '.gitignore']);
@@ -67,6 +67,18 @@ function checkLinks(value, label, errors) {
   return value;
 }
 
+/**
+ * Whether the app may call a model directly (legs.ai), and on which.
+ * app.json: "ai": true (the organization's default model), "ai": "<model id>",
+ * or "ai": { "model": "<model id>" }. Absent or false: legs.ai is refused.
+ */
+export function aiOf(value) {
+  if (value === true) return { model: '' };
+  if (typeof value === 'string') return { model: value.trim() };
+  if (value && typeof value === 'object' && !Array.isArray(value)) return { model: String(value.model || '').trim() };
+  return null;
+}
+
 /** The id behind a link, whichever of the two shapes it was written in. */
 export const linkId = (target) => (typeof target === 'string' ? target : (target && target.id) || '');
 
@@ -87,6 +99,7 @@ export function appToFiles(app) {
     /* Left out of app.json until an app links one, so an app that never did
        reads exactly as it always has. */
     ...(Object.keys(app.automations || {}).length ? { automations: app.automations } : {}),
+    ...(aiOf(app.ai) ? { ai: aiOf(app.ai).model ? { model: aiOf(app.ai).model } : true } : {}),
     extras: extrasOf(app, MAPPED),
   }));
   files['.gitignore'] = ['.8legs/', 'node_modules/', '*.log', '.DS_Store', ''].join('\n');
@@ -139,6 +152,7 @@ export function filesToApp(files, existing = {}) {
     agents,
     tables,
     ...(Object.keys(automations).length ? { automations } : {}),
+    ...(aiOf(config.ai) ? { ai: aiOf(config.ai) } : {}),
     files: own,
     ...(config.extras || {}),
   });
@@ -264,6 +278,11 @@ await leads.update(rowId, { status: 'won' });
 await leads.remove(rowId);
 
 const result = await legs.automation('new_lead').run({ name: 'Dana' });  // what its Output returned
+
+// A model directly, when app.json has "ai" (see below)
+const summary = await legs.ai('Summarise in one line: ' + text);
+const fields = await legs.ai({ system: 'You extract fields.', prompt: text, json: true });  // parsed JSON
+const answer = await legs.ai({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 500 });
 \`\`\`
 
 Link them in \`app.json\` by the name your code will use:
@@ -271,8 +290,15 @@ Link them in \`app.json\` by the name your code will use:
 \`\`\`json
 "agents": { "support": "<agent id>" },
 "tables": { "leads": "<table id>", "prices": { "id": "<table id>", "readonly": true } },
-"automations": { "new_lead": "<automation id>" }
+"automations": { "new_lead": "<automation id>" },
+"ai": { "model": "openai/gpt-4o-mini" }
 \`\`\`
+
+\`"ai": true\` runs \`legs.ai\` on the organization's default model; a model id
+runs it on that model if the organization's list has it, and on the default
+otherwise. Without \`ai\`, \`legs.ai\` is refused. Anyone who can open the app
+can make it call the model, and every call is charged to the organization —
+switch it on only for an app that needs it.
 
 ## Rules
 

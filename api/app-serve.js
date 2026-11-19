@@ -1,5 +1,5 @@
 import { loadAppBySlug, mayOpen } from './_apps.js';
-import { linkId } from './_appFiles.js';
+import { linkId, aiOf } from './_appFiles.js';
 
 const TYPES = {
   html: 'text/html', htm: 'text/html', js: 'text/javascript', mjs: 'text/javascript',
@@ -59,6 +59,11 @@ function sid(){return 'app-'+B.id.slice(0,8)+'-'+Date.now().toString(36)+Math.ra
 window.legs={
   app:{id:B.id,slug:B.slug,name:B.name},
   agents:B.agents,tables:B.tables,automations:B.automations||[],
+  ai:function(q){
+    var o=typeof q==='string'?{prompt:q}:(q||{});
+    return call('ai',{prompt:o.prompt,system:o.system,messages:o.messages,json:!!o.json,maxTokens:o.maxTokens})
+      .then(function(d){return o.json?d.json:d.text});
+  },
   automation:function(name){return{
     run:function(input){return call('automation.run',{name:name,input:input||{}}).then(function(d){return d.output})}
   }},
@@ -155,6 +160,7 @@ export default async function handler(req, res) {
       agents: Object.keys(app.agents || {}).filter(k => linkId(app.agents[k])),
       tables: Object.keys(app.tables || {}).filter(k => linkId(app.tables[k])),
       automations: Object.keys(app.automations || {}).filter(k => linkId(app.automations[k])),
+      ai: !!aiOf(app.ai),
     });
   }
 

@@ -22,9 +22,15 @@ let platformRow = { openrouter_key: seal('sk-or-v1-PLATFORM'), default_model: 'a
 let spent = 0;
 let settingsRow = null;
 let balanceRow = null;   // org_billing.balance_usd for the org under test; null: no limit
+let limits = { item: null, member: null };   // usage_limits for the item and member under test
+let used = { item: 0, member: 0 };           // what they were charged this month
 globalThis.__db = (text, params) => {
   if (/select openrouter_key, default_model, monthly_ceiling_usd/.test(text)) return platformRow ? [platformRow] : [];
+  if (/as balance,\s+\(select monthly_usd from usage_limits/.test(text)) {
+    return [{ balance: balanceRow === null ? null : String(balanceRow), item_limit: limits.item, member_limit: limits.member }];
+  }
   if (/select balance_usd from org_billing/.test(text)) return balanceRow === null ? [] : [{ balance_usd: String(balanceRow) }];
+  if (/sum\(charged_usd\) filter/.test(text)) return [{ item: String(used.item), member: String(used.member) }];
   if (/select coalesce\(sum\(cost_usd\), 0\) as usd from llm_usage/.test(text)) return [{ usd: String(spent) }];
   if (/insert into llm_usage/.test(text)) { writes.push(params); return []; }
   if (/insert into error_log/.test(text)) { errors.push(params); return []; }
@@ -139,6 +145,30 @@ await check('strangers get the stop message in their language, in the admin\'s w
   assert.equal(await again.stopMessage('hi'), STOP_MESSAGE_DEFAULT.en, 'an empty one falls back to the built-in text');
   platformRow = { ...platformRow, stop_message_he: '', stop_message_en: '' };
   assert.equal(isStopped({ code: 'ORG_BALANCE' }) && isStopped({ code: 'BUDGET' }) && !isStopped({ code: 'NO_MODEL' }), true);
+});
+
+await check('an item or a member at its monthly limit is refused; under it, the call goes through', async () => {
+  const { calls, fetchImpl } = recorder(chatAnswer());
+  const meta = { userId: 'u1', source: 'test-chat', itemType: 'agent', itemId: 'a1' };
+  limits = { item: '2', member: null }; used = { item: 2, member: 0 };
+  let gw = await fresh();
+  await assert.rejects(() => gw.llmFetch({ cfg: CFG, body: { messages: [] }, meta, fetchImpl }), (e) => e.code === 'ITEM_LIMIT' && gw.isStopped(e));
+  limits = { item: null, member: '0' }; used = { item: 0, member: 0 };
+  gw = await fresh();
+  await assert.rejects(() => gw.llmFetch({ cfg: CFG, body: { messages: [] }, meta, fetchImpl }), (e) => e.code === 'MEMBER_LIMIT' && !gw.isStopped(e),
+    'a member\'s limit of 0 stops them at once, and is not the stop message for strangers');
+  assert.equal(calls.length, 0);
+  limits = { item: '2', member: '5' }; used = { item: 1.99, member: 4.99 };
+  assert.equal((await (await fresh()).llmFetch({ cfg: CFG, body: { messages: [] }, meta, fetchImpl })).ok, true);
+  limits = { item: null, member: null }; used = { item: 0, member: 0 };
+});
+
+await check('an item runs on the model it chose only while the organization\'s list has it', async () => {
+  const s = { ...settingsRow, model: 'org/default', allowed_models: ['openai/gpt-4o-mini'], platform_ready: true, ready: true, org_id: 'org-9' };
+  assert.equal(resolveApiConfig(s, { model: 'openai/gpt-4o-mini' }).model, 'openai/gpt-4o-mini');
+  assert.equal(resolveApiConfig(s, { model: 'openai/gpt-5-pro' }).model, 'org/default', 'a model off the list falls back to the default');
+  assert.equal(resolveApiConfig(s, { model: '' }).model, 'org/default');
+  assert.equal(resolveApiConfig(s, { model: 'org/default' }).model, 'org/default', 'the default is always allowed');
 });
 
 await check('a ceiling of 0 means no ceiling', async () => {

@@ -5,7 +5,14 @@ import { sql } from './_db.js';
  * platform's OpenRouter key (api/_llm.js), on the model the platform admin
  * chose for it (org_billing.default_model) or, failing that, the platform's
  * default (platform_billing.default_model). Nobody in an organization holds or
- * sets a key, and an agent carries no model settings of its own.
+ * sets a key.
+ *
+ * An AI Chatbot, an app or an automation's AI step may name a model of its
+ * own. It runs on that model only while the model is in the list the platform
+ * admin gave the organization (org_billing.allowed_models); otherwise, and
+ * when it names none, on the organization's default. The list is checked
+ * here, on every call, so taking a model off it moves everything that used it
+ * back to the default without touching the items.
  *
  * What a person still sets is their own interface language (user_settings).
  */
@@ -31,6 +38,7 @@ export async function getUserSettings(userId) {
            coalesce(s.language_chosen, false)     as language_chosen,
            u.org_id                               as org_id,
            coalesce(nullif(b.default_model, ''), p.default_model, '') as model,
+           coalesce(b.allowed_models, '{}')        as allowed_models,
            coalesce(p.openrouter_key <> '', false) as platform_ready
     from users u
     left join user_settings    s on s.user_id = u.id
@@ -43,6 +51,7 @@ export async function getUserSettings(userId) {
     provider: 'openrouter',
     api_key: '',
     model: row.model || '',
+    allowed_models: Array.isArray(row.allowed_models) ? row.allowed_models : [],
     ollama_host: '',
     ready: !!row.platform_ready && !!row.model,
     org_id: row.org_id || null,
@@ -79,17 +88,32 @@ export function configUsable(cfg) {
   return !!cfg && cfg.provider === 'openrouter' && !!cfg.ready && !!cfg.model;
 }
 
-/** The config every call is made with, from a person's (or an owner's) settings. */
-export function resolveApiConfig(settings /* , agent — agents carry no model settings any more */) {
+/** The model an item asked for, if the organization may use it; otherwise its default. */
+export function pickModel(settings, wanted) {
   const s = settings || emptySettings();
-  return { provider: 'openrouter', apiKey: '', model: s.model || '', ollamaHost: '', ready: !!s.ready, orgId: s.org_id || null };
+  const w = typeof wanted === 'string' ? wanted.trim() : '';
+  if (w && (w === s.model || (Array.isArray(s.allowed_models) && s.allowed_models.includes(w)))) return w;
+  return s.model || '';
+}
+
+/**
+ * The config every call is made with, from a person's (or an owner's)
+ * settings, and the item being run when there is one: `{ model }` is the model
+ * it asked for. Nothing else an item carries is read — an agent's stored key
+ * from before models moved to the platform never comes back into play.
+ */
+export function resolveApiConfig(settings, item) {
+  const s = settings || emptySettings();
+  const model = pickModel(s, item && item.model);
+  return { provider: 'openrouter', apiKey: '', model, ollamaHost: '', ready: !!s.ready, orgId: s.org_id || null };
 }
 
 /**
  * The config an agent should actually run with, given who owns it. Used by the
- * public channels, which have no session to read settings from.
+ * public channels, which have no session to read settings from. `agent` is the
+ * version that answers (a branch may run another model than main).
  */
-export async function resolveAgentApiConfig(agentRow) {
+export async function resolveAgentApiConfig(agentRow, agent = agentRow && agentRow.data) {
   const settings = agentRow?.user_id ? await getUserSettings(agentRow.user_id) : null;
-  return resolveApiConfig(settings);
+  return resolveApiConfig(settings, { model: agent && agent.model });
 }
