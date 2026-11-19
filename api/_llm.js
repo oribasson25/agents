@@ -16,6 +16,7 @@
  */
 import { sql } from './_db.js';
 import { seal, unseal } from './_connections.js';
+import { logError } from './_errorLog.js';
 
 /* Overridable for local testing against a stand-in server; never set in production. */
 export const OPENROUTER_BASE = (process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/$/, '');
@@ -212,11 +213,19 @@ export async function llmFetch({ cfg, body, meta = {}, fetchImpl = fetch }) {
     return { ok, status: r.status, data };
   }
   const status = r.ok ? 502 : r.status;
-  /* 402: out of credit; 403: a guardrail (the workspace budget) refused it.
-     Either way it is the platform's budget, and the people using a chatbot
-     should read that, not OpenRouter's wording. */
-  if (status === 402 || (status === 403 && /budget|limit|credit/i.test(JSON.stringify(data)))) {
-    data = { error: { message: BUDGET_MESSAGE, code: 'BUDGET', upstream: data && data.error } };
+  const said = (data && data.error && (data.error.message || data.error.code)) || `HTTP ${status}`;
+  /* OpenRouter's own words go to the error log, where the platform admin and
+     the assistants can read why, whatever the person on screen was told. */
+  await logError({
+    source: 'openrouter',
+    message: `OpenRouter answered ${status}: ${String(said).slice(0, 500)}`,
+    context: { model: request.model, from: meta.source || null, org: meta.orgId || cfg.orgId || null, metadata: (data && data.error && data.error.metadata) || null },
+  });
+  /* 402 (credit) and 403 (a guardrail) are OpenRouter refusing the
+     platform's account, not this request being wrong. Say so, in OpenRouter's
+     words: "Insufficient credits" and "budget exceeded" need different fixes. */
+  if (status === 402 || status === 403) {
+    data = { error: { message: `The platform's model account was refused: ${said}`, code: 'PROVIDER_REFUSED', upstream: data && data.error } };
   }
   return { ok: false, status, data };
 }

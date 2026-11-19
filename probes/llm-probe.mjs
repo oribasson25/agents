@@ -17,6 +17,7 @@ const check = async (name, fn) => {
 
 /* ── the database stub ── */
 const writes = [];
+const errors = [];
 let platformRow = { openrouter_key: seal('sk-or-v1-PLATFORM'), default_model: 'anthropic/claude-sonnet-4.5', monthly_ceiling_usd: '50' };
 let spent = 0;
 let settingsRow = null;
@@ -24,6 +25,7 @@ globalThis.__db = (text, params) => {
   if (/select openrouter_key, default_model, monthly_ceiling_usd from platform_billing/.test(text)) return platformRow ? [platformRow] : [];
   if (/select coalesce\(sum\(cost_usd\), 0\) as usd from llm_usage/.test(text)) return [{ usd: String(spent) }];
   if (/insert into llm_usage/.test(text)) { writes.push(params); return []; }
+  if (/insert into error_log/.test(text)) { errors.push(params); return []; }
   if (/select org_id from users/.test(text)) return [{ org_id: 'org-from-user' }];
   if (/from users u\s+left join user_settings/.test(text)) return settingsRow ? [settingsRow] : [];
   return [];
@@ -80,15 +82,18 @@ await check('a 200 with an error inside is not a success and is not counted', as
   assert.equal(writes.length, 0);
 });
 
-await check('OpenRouter refusing for money reads as the platform\'s budget, not its own words', async () => {
-  const { llmFetch, BUDGET_MESSAGE } = await fresh();
-  for (const [status, json] of [[402, { error: { code: 402, message: 'Insufficient credits' } }], [403, { error: { code: 403, message: 'Workspace budget limit exceeded' } }]]) {
+await check('OpenRouter refusing the platform\'s account says so in OpenRouter\'s words, and is logged', async () => {
+  const { llmFetch } = await fresh();
+  for (const [status, json, words] of [[402, { error: { code: 402, message: 'Insufficient credits' } }, 'Insufficient credits'],
+                                       [403, { error: { code: 403, message: 'Workspace budget limit exceeded' } }, 'Workspace budget limit exceeded']]) {
+    errors.length = 0;
     const { fetchImpl } = recorder({ status, json });
-    const out = await llmFetch({ cfg: CFG, body: { messages: [] }, fetchImpl });
+    const out = await llmFetch({ cfg: CFG, body: { messages: [] }, meta: { source: 'assistant' }, fetchImpl });
     assert.equal(out.ok, false);
     assert.equal(out.status, status);
-    assert.equal(out.data.error.code, 'BUDGET');
-    assert.equal(out.data.error.message, BUDGET_MESSAGE);
+    assert.equal(out.data.error.code, 'PROVIDER_REFUSED');
+    assert.ok(out.data.error.message.includes(words), out.data.error.message);
+    assert.ok(errors.some((e) => e[1] === 'openrouter' && e[2].includes(words)), 'written to the error log');
   }
 });
 
