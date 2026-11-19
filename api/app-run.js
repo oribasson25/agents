@@ -67,7 +67,8 @@ export default async function handler(req, res) {
         return res.json({ content: text });
       } catch (err) {
         await logError({ agentId, source: 'app', message: err.message, context: { appId: app.id } });
-        return res.status(err.code === 'NO_API_KEY' ? 503 : 500).json({ error: err.message });
+        return res.status(err.code === 'NO_API_KEY' ? 503 : err.code === 'ORG_BALANCE' || err.code === 'BUDGET' ? 402 : 500)
+          .json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
       }
     }
 

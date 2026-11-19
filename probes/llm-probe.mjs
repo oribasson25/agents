@@ -21,8 +21,10 @@ const errors = [];
 let platformRow = { openrouter_key: seal('sk-or-v1-PLATFORM'), default_model: 'anthropic/claude-sonnet-4.5', monthly_ceiling_usd: '50' };
 let spent = 0;
 let settingsRow = null;
+let balanceRow = null;   // org_billing.balance_usd for the org under test; null: no limit
 globalThis.__db = (text, params) => {
-  if (/select openrouter_key, default_model, monthly_ceiling_usd from platform_billing/.test(text)) return platformRow ? [platformRow] : [];
+  if (/select openrouter_key, default_model, monthly_ceiling_usd/.test(text)) return platformRow ? [platformRow] : [];
+  if (/select balance_usd from org_billing/.test(text)) return balanceRow === null ? [] : [{ balance_usd: String(balanceRow) }];
   if (/select coalesce\(sum\(cost_usd\), 0\) as usd from llm_usage/.test(text)) return [{ usd: String(spent) }];
   if (/insert into llm_usage/.test(text)) { writes.push(params); return []; }
   if (/insert into error_log/.test(text)) { errors.push(params); return []; }
@@ -65,7 +67,9 @@ await check('a call goes to OpenRouter with the platform key, on the organizatio
 await check('the call is written to llm_usage with the tokens and the cost OpenRouter reported', async () => {
   const row = writes[0];
   assert.ok(row, 'a row was written');
-  const [org, user, source, itemType, itemId, model, input, output, read, write, cost] = row;
+  // The statement first reads the markup and takes the charge from the balance, then writes the row.
+  const [markupOrg, chargeCost, balanceOrg, org, user, source, itemType, itemId, model, input, output, read, write, cost] = row;
+  assert.deepEqual([markupOrg, chargeCost, balanceOrg], ['org-1', 0.00213, 'org-1'], 'charged to the same organization, on OpenRouter\'s cost');
   assert.deepEqual([org, user, source, itemType, itemId], ['org-1', 'u1', 'test-chat', 'agent', 'a1']);
   assert.equal(model, 'anthropic/claude-sonnet-4.5');
   assert.deepEqual([input, output, read, write], [1200, 80, 1000, 0]);
@@ -110,6 +114,33 @@ await check('at the monthly ceiling every call is refused before anything is sen
   spent = 0;
 });
 
+await check('an organization whose balance is used up is refused before anything is sent; with money left it goes through', async () => {
+  const { calls, fetchImpl } = recorder(chatAnswer());
+  for (const left of [0, -0.02]) {
+    balanceRow = left;
+    const { llmFetch, pingConfig } = await fresh();
+    await assert.rejects(() => llmFetch({ cfg: CFG, body: { messages: [] }, fetchImpl }), (e) => e.code === 'ORG_BALANCE' && e.status === 402);
+    assert.equal((await pingConfig(CFG, { fetchImpl })).ok, false);
+  }
+  assert.equal(calls.length, 0);
+  balanceRow = 0.01;
+  assert.equal((await (await fresh()).llmFetch({ cfg: CFG, body: { messages: [] }, fetchImpl })).ok, true, 'a cent left is enough to try');
+  balanceRow = null;
+  assert.equal((await (await fresh()).llmFetch({ cfg: CFG, body: { messages: [] }, fetchImpl })).ok, true, 'no balance: no limit of its own');
+});
+
+await check('strangers get the stop message in their language, in the admin\'s words when written', async () => {
+  const { stopMessage, isStopped, STOP_MESSAGE_DEFAULT } = await fresh();
+  assert.equal(await stopMessage('מתי אתם פתוחים?'), STOP_MESSAGE_DEFAULT.he);
+  assert.equal(await stopMessage('when do you open?'), STOP_MESSAGE_DEFAULT.en);
+  platformRow = { ...platformRow, stop_message_he: 'נחזור בקרוב', stop_message_en: '' };
+  const again = await fresh();
+  assert.equal(await again.stopMessage('שלום'), 'נחזור בקרוב');
+  assert.equal(await again.stopMessage('hi'), STOP_MESSAGE_DEFAULT.en, 'an empty one falls back to the built-in text');
+  platformRow = { ...platformRow, stop_message_he: '', stop_message_en: '' };
+  assert.equal(isStopped({ code: 'ORG_BALANCE' }) && isStopped({ code: 'BUDGET' }) && !isStopped({ code: 'NO_MODEL' }), true);
+});
+
 await check('a ceiling of 0 means no ceiling', async () => {
   platformRow = { ...platformRow, monthly_ceiling_usd: '0' };
   spent = 999;
@@ -136,8 +167,8 @@ await check('an SDK-free caller with no org in meta is counted against the owner
   const { llmFetch } = await fresh();
   const { fetchImpl } = recorder(chatAnswer());
   await llmFetch({ cfg: { ...CFG, orgId: null }, body: { messages: [] }, meta: { ownerId: 'owner-1', source: 'jarvis', itemType: 'number', itemId: 'n1' }, fetchImpl });
-  assert.equal(writes[0][0], 'org-from-user');
-  assert.equal(writes[0][1], null, 'the owner paid; nobody in the browser set it off');
+  assert.equal(writes[0][3], 'org-from-user');
+  assert.equal(writes[0][4], null, 'the owner paid; nobody in the browser set it off');
 });
 
 await check('web search: OpenRouter\'s web plugin on the organization\'s model, with the sources back', async () => {

@@ -115,9 +115,30 @@ Every successful call is a row in `llm_usage`: organization, the member who set 
 widget or WhatsApp visitor), what it is charged to (`item_type`/`item_id`), tokens, and the cost
 OpenRouter reported. Before each call the month's spend (UTC calendar month) is compared with the
 ceiling, and once it is reached every call is refused with a message until the 1st — the platform
-stops itself rather than wait for OpenRouter's own budget to refuse. A 402 from OpenRouter, or a
-403 from a workspace budget, reads as the same message. `npm run probe:llm` checks the gateway and
-the settings resolution.
+stops itself rather than wait for OpenRouter's own budget to refuse. A 402 from OpenRouter (no
+credit) or a 403 (a workspace budget) is OpenRouter refusing the platform's account: the caller
+gets `PROVIDER_REFUSED` with OpenRouter's own words, and the error log keeps them (source
+`openrouter`). `npm run probe:llm` checks the gateway and the settings resolution.
+
+### Balances and markup
+
+The platform admin sells model use to organizations (migration `034`). An organization can have a
+balance in USD (`org_billing.balance_usd`; null means no limit of its own, which is how every
+organization starts) and a markup percentage. Every call costs it OpenRouter's cost × (1 + markup
+/ 100): one statement in `recordCall` writes the `llm_usage` row with `charged_usd` and takes the
+same amount off the balance, so calls finishing together all come off it. Before each call the
+gateway refuses with `ORG_BALANCE` once the balance is at or below zero (the last call may take it
+a little below). Top-ups, corrections and a limit being removed are rows in `org_topups`, with the
+balance after each; the admin types them in Admin › Billing (or an opening balance and markup when
+creating an organization), since organizations pay outside the platform.
+
+When an organization has run out, or the platform has reached its ceiling, strangers on the
+widget, WhatsApp and Jarvis get the platform's stop message (`stopMessage`, Hebrew when they wrote
+in Hebrew; set in Billing, with a built-in default), members see a banner, and the organization's
+admin sees the balance, top-ups and this month's charges by item in Settings › Model usage
+(`/api/org/billing`) — only what they were charged, never the cost or the markup. Billing shows
+the month's charges and profit (counting only calls made since balances existed), and warns when
+the balances handed out can buy more at OpenRouter than is left under the ceiling.
 
 `OPENROUTER_BASE_URL` overrides where the gateway sends calls, for local testing against a
 stand-in; never set it in production.

@@ -9,10 +9,13 @@
  * asked for.
  *
  * Every call that succeeds is written to llm_usage with the cost OpenRouter
- * reports. Before each call the month's spend is compared with the platform's
- * monthly ceiling, and once it is reached every call is refused with a
- * message: the platform stops itself rather than wait for OpenRouter's own
- * budget to refuse it. Nothing here throws over bookkeeping.
+ * reports, and with what the organization is charged for it: that cost plus
+ * the organization's markup, taken from its balance in the same statement.
+ * Before each call two things are checked, and either one refuses it with a
+ * message: the platform's spend this month against its monthly ceiling (the
+ * platform stops itself rather than wait for OpenRouter's own budget to refuse
+ * it), and the organization's balance, when it has one. Nothing here throws
+ * over bookkeeping.
  */
 import { sql } from './_db.js';
 import { seal, unseal } from './_connections.js';
@@ -25,14 +28,14 @@ const fail = (message, code, status) => Object.assign(new Error(message), { code
 
 /* ─────────────────── the platform's settings ─────────────────── */
 
-let platformCache = null;   // { at, key, defaultModel, ceiling }
+let platformCache = null;   // { at, key, defaultModel, ceiling, stopHe, stopEn }
 const PLATFORM_TTL_MS = 30_000;
 
 async function platform() {
   if (platformCache && Date.now() - platformCache.at < PLATFORM_TTL_MS) return platformCache;
   let row = null;
   try {
-    [row] = await sql`select openrouter_key, default_model, monthly_ceiling_usd from platform_billing where id = true`;
+    [row] = await sql`select openrouter_key, default_model, monthly_ceiling_usd, stop_message_he, stop_message_en from platform_billing where id = true`;
   } catch (err) {
     console.warn('[llm] could not read the platform settings:', err.message);
   }
@@ -45,6 +48,8 @@ async function platform() {
     key,
     defaultModel: (row && row.default_model) || '',
     ceiling: row && row.monthly_ceiling_usd != null ? Number(row.monthly_ceiling_usd) : 50,
+    stopHe: (row && row.stop_message_he) || '',
+    stopEn: (row && row.stop_message_en) || '',
   };
   return platformCache;
 }
@@ -66,8 +71,17 @@ export async function savePlatformKey(key, userId) {
   platformCache = null;
 }
 
-/** The platform's default model and monthly ceiling. */
-export async function savePlatformSettings({ defaultModel, monthlyCeilingUsd }, userId) {
+/** The platform's default model, monthly ceiling and stop message. */
+export async function savePlatformSettings({ defaultModel, monthlyCeilingUsd, stopMessageHe, stopMessageEn }, userId) {
+  if (stopMessageHe !== undefined || stopMessageEn !== undefined) {
+    await sql`
+      update platform_billing
+      set stop_message_he = coalesce(${stopMessageHe === undefined ? null : String(stopMessageHe).trim().slice(0, 500)}, stop_message_he),
+          stop_message_en = coalesce(${stopMessageEn === undefined ? null : String(stopMessageEn).trim().slice(0, 500)}, stop_message_en),
+          updated_by = ${userId || null}, updated_at = now()
+      where id = true
+    `;
+  }
   if (defaultModel !== undefined) {
     await sql`update platform_billing set default_model = ${String(defaultModel || '').trim()}, updated_by = ${userId || null}, updated_at = now() where id = true`;
   }
@@ -188,6 +202,66 @@ export async function monthSpendUsd({ fresh = false } = {}) {
 }
 
 export const BUDGET_MESSAGE = 'The platform\'s model budget for this month is used up. It starts again on the 1st.';
+export const ORG_BALANCE_MESSAGE = 'Your organization\'s model balance is used up. Ask the platform admin to top it up.';
+
+/* ─────────────────── the organization's balance ─────────────────── */
+
+/** The organization a call is charged to: the one named, or the person's. */
+async function orgFor(cfg, meta = {}) {
+  return meta.orgId || (cfg && cfg.orgId) || (await orgOf(meta.userId || meta.ownerId).catch(() => null)) || null;
+}
+
+/** What the organization has left in USD, or null when it has no limit of its own. */
+export async function orgBalanceUsd(orgId) {
+  if (!orgId) return null;
+  try {
+    const [row] = await sql`select balance_usd from org_billing where org_id = ${orgId}`;
+    return row && row.balance_usd !== null && row.balance_usd !== undefined ? Number(row.balance_usd) : null;
+  } catch (err) {
+    console.warn('[llm] could not read an organization\'s balance:', err.message);
+    return null;
+  }
+}
+
+/*
+ * Adds to an organization's balance and writes it down, in one statement.
+ * An organization with no limit yet starts from zero, so its first top-up is
+ * its balance.
+ */
+export async function topUpOrg(orgId, amount, note, userId) {
+  const [row] = await sql`
+    with b as (
+      insert into org_billing (org_id, balance_usd, updated_at) values (${orgId}, ${amount}, now())
+      on conflict (org_id) do update
+        set balance_usd = coalesce(org_billing.balance_usd, 0) + excluded.balance_usd, updated_at = now()
+      returning balance_usd
+    )
+    insert into org_topups (org_id, amount_usd, balance_after, note, by_user)
+    select ${orgId}, ${amount}, balance_usd, ${note || ''}, ${userId || null} from b
+    returning balance_after
+  `;
+  return row ? Number(row.balance_after) : null;
+}
+
+/** Whether an error is the platform or the organization being out of money. */
+export const isStopped = (err) => !!err && (err.code === 'BUDGET' || err.code === 'ORG_BALANCE');
+
+export const STOP_MESSAGE_DEFAULT = {
+  he: 'השירות לא זמין כרגע. נסו שוב מאוחר יותר.',
+  en: 'This service is not available right now. Please try again later.',
+};
+
+/**
+ * What a stranger on a widget or WhatsApp reads when the organization has run
+ * out or the platform reached its ceiling: the platform admin's message, in
+ * Hebrew when they wrote in Hebrew.
+ */
+export async function stopMessage(theirText) {
+  const p = await platform();
+  return /[\u0590-\u05FF]/.test(String(theirText || ''))
+    ? (p.stopHe || STOP_MESSAGE_DEFAULT.he)
+    : (p.stopEn || STOP_MESSAGE_DEFAULT.en);
+}
 
 /* ─────────────────── sending ─────────────────── */
 
@@ -195,7 +269,9 @@ export const BUDGET_MESSAGE = 'The platform\'s model budget for this month is us
  * Sends one chat-completions request on the platform's key and returns
  * `{ ok, status, data }` — `data` is OpenRouter's JSON (an error body when not
  * ok). Throws only when the call cannot be made at all; `err.code` is
- * NO_MODEL, NO_PLATFORM_KEY or BUDGET, and `err.status` says how to answer it.
+ * NO_MODEL, NO_PLATFORM_KEY, BUDGET (the platform's ceiling) or ORG_BALANCE
+ * (the organization's balance is used up), and `err.status` says how to
+ * answer it.
  *
  * @param {object} p
  * @param {object} p.cfg      what resolveApiConfig returns: { model, ready, orgId }
@@ -207,6 +283,9 @@ export async function llmFetch({ cfg, body, meta = {}, fetchImpl = fetch }) {
   if (!p.key) throw fail('The platform has no OpenRouter key yet.', 'NO_PLATFORM_KEY', 503);
   if (!cfg || !cfg.model) throw fail('The platform has not chosen a model for this organization yet.', 'NO_MODEL', 400);
   if (p.ceiling > 0 && (await monthSpendUsd()) >= p.ceiling) throw fail(BUDGET_MESSAGE, 'BUDGET', 402);
+  const orgId = await orgFor(cfg, meta);
+  const balance = await orgBalanceUsd(orgId);
+  if (balance !== null && balance <= 0) throw fail(ORG_BALANCE_MESSAGE, 'ORG_BALANCE', 402);
 
   const request = { ...body, model: cfg.model };
   const r = await fetchImpl(`${OPENROUTER_BASE}/chat/completions`, { method: 'POST', headers: orHeaders(p.key), body: JSON.stringify(request) });
@@ -217,7 +296,7 @@ export async function llmFetch({ cfg, body, meta = {}, fetchImpl = fetch }) {
   // OpenRouter can answer 200 with an error inside, when the upstream provider failed mid-way.
   const ok = r.ok && !!data && Array.isArray(data.choices) && !data.error;
   if (ok) {
-    await recordCall({ cfg, meta, model: data.model || request.model, usage: data.usage || {} });
+    await recordCall({ orgId, meta, model: data.model || request.model, usage: data.usage || {} });
     return { ok, status: r.status, data };
   }
   const status = r.ok ? 502 : r.status;
@@ -227,7 +306,7 @@ export async function llmFetch({ cfg, body, meta = {}, fetchImpl = fetch }) {
   await logError({
     source: 'openrouter',
     message: `OpenRouter answered ${status}: ${String(said).slice(0, 500)}`,
-    context: { model: request.model, from: meta.source || null, org: meta.orgId || cfg.orgId || null, metadata: (data && data.error && data.error.metadata) || null },
+    context: { model: request.model, from: meta.source || null, org: orgId, metadata: (data && data.error && data.error.metadata) || null },
   });
   /* 402 (credit) and 403 (a guardrail) are OpenRouter refusing the
      platform's account, not this request being wrong. Say so, in OpenRouter's
@@ -299,16 +378,30 @@ async function orgOf(userId) {
   return orgOfUser.get(userId);
 }
 
-async function recordCall({ cfg, meta, model, usage }) {
+/*
+ * One statement writes the call and takes what it is charged from the
+ * organization's balance, so two calls finishing at once both come off it.
+ * charged = OpenRouter's cost × (1 + markup / 100); an organization with no
+ * balance (null) is charged on paper only.
+ */
+async function recordCall({ orgId, meta, model, usage }) {
   try {
     const u = chatUsage(usage);
-    const org = meta.orgId || cfg.orgId || (await orgOf(meta.userId || meta.ownerId));
     await sql`
+      with pct as (
+        select coalesce((select markup_pct from org_billing where org_id = ${orgId}), 0) as markup
+      ), charge as (
+        select (${u.cost}::numeric * (1 + markup / 100)) as usd from pct
+      ), taken as (
+        update org_billing set balance_usd = balance_usd - (select usd from charge)
+        where org_id = ${orgId} and balance_usd is not null and (select usd from charge) is not null
+      )
       insert into llm_usage (org_id, user_id, via, source, item_type, item_id, model,
-                             input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd)
-      values (${org || null}, ${meta.userId || null}, 'openrouter', ${String(meta.source || 'other').slice(0, 40)},
+                             input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd, charged_usd)
+      values (${orgId || null}, ${meta.userId || null}, 'openrouter', ${String(meta.source || 'other').slice(0, 40)},
               ${meta.itemType ? String(meta.itemType).slice(0, 20) : null}, ${meta.itemId ? String(meta.itemId).slice(0, 80) : null},
-              ${String(model || 'unknown').slice(0, 120)}, ${u.input}, ${u.output}, ${u.read}, ${u.write}, ${u.cost})
+              ${String(model || 'unknown').slice(0, 120)}, ${u.input}, ${u.output}, ${u.read}, ${u.write}, ${u.cost},
+              (select usd from charge))
     `;
     if (spendCache && u.cost) spendCache.usd += u.cost;
   } catch (err) {
@@ -323,6 +416,8 @@ export async function pingConfig(cfg, { fetchImpl = fetch } = {}) {
   if (!cfg || !cfg.model) return { ok: false, why: 'The platform has not chosen a model for this organization yet.' };
   const p = await platform();
   if (p.ceiling > 0 && (await monthSpendUsd()) >= p.ceiling) return { ok: false, why: BUDGET_MESSAGE };
+  const balance = await orgBalanceUsd(cfg.orgId);
+  if (balance !== null && balance <= 0) return { ok: false, why: ORG_BALANCE_MESSAGE };
   const info = await describeOpenRouterKey(p.key, { fetchImpl });
   return info.ok ? { ok: true } : { ok: false, why: info.why };
 }

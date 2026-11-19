@@ -1,7 +1,7 @@
 import { sql } from './_db.js';
 import { nowBlock, PLATFORM_TZ } from './_now.js';
 import { getUserSettings, resolveApiConfig, configUsable } from './_settings.js';
-import { llmFetch, replyText, webSearch } from './_llm.js';
+import { llmFetch, replyText, webSearch, isStopped, stopMessage } from './_llm.js';
 
 /*
  * Jarvis: a private personal assistant for one person on a linked WhatsApp
@@ -305,8 +305,9 @@ export async function runJarvisTurn({ person, number, texts, attachments = [] })
     if (!reply) reply = 'Sorry, I got stuck on that one. Could you ask again?';
   } catch (err) {
     console.error(`[jarvis ${person.id}] turn failed:`, err.message);
-    reply = err.code === 'BUDGET'
-      ? 'I can\'t answer right now: this month\'s budget for the assistant is used up.'
+    // Out of money (the organization's balance, or the platform's month): the platform's stop message.
+    reply = isStopped(err)
+      ? await stopMessage((texts || []).join(' '))
       : 'Sorry, something went wrong on my side. Please try again in a moment.';
   }
 

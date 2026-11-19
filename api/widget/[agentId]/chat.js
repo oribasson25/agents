@@ -2,6 +2,7 @@ import { sql } from '../../_db.js';
 import { runAgentTurn, saveSession } from '../../_agentRunner.js';
 import { resolveAgentApiConfig } from '../../_settings.js';
 import { logError } from '../../_errorLog.js';
+import { isStopped, stopMessage } from '../../_llm.js';
 import { branchForSession, loadForConversation } from '../../_branches.js';
 
 export default async function handler(req, res) {
@@ -39,6 +40,13 @@ export default async function handler(req, res) {
     return res.json({ content: text });
 
   } catch (err) {
+    /* The organization ran out, or the platform reached its ceiling: the
+       visitor reads the platform's stop message, and the conversation is not
+       stored, so the next try after a top-up starts clean. */
+    if (isStopped(err)) {
+      const last = [...messages].reverse().find((m) => m && m.role === 'user');
+      return res.json({ content: await stopMessage(last && last.content), stopped: true });
+    }
     if (err.code === 'NO_API_KEY') {
       await logError({ agentId, source: 'widget', message: err.message, context: { code: 'NO_API_KEY' } });
       return res.status(503).json({ error: err.message });

@@ -3,6 +3,7 @@ import { sql } from '../_db.js';
 import { runAgentTurn, dlpMessages } from '../_agentRunner.js';
 import { resolveAgentApiConfig } from '../_settings.js';
 import { logError } from '../_errorLog.js';
+import { isStopped, stopMessage } from '../_llm.js';
 import { branchForSession, loadForConversation } from '../_branches.js';
 
 const GRAPH = 'https://graph.facebook.com/v20.0';
@@ -239,7 +240,8 @@ async function respond(agentId, agent, wa, msg, baseUrl) {
   } catch (err) {
     console.error(`[whatsapp webhook] agentId=${agentId} runAgentTurn error:`, err.message);
     await logError({ agentId, source: 'whatsapp', message: err.message, context: { code: err.code || null, from } });
-    reply = err.code === 'NO_API_KEY'
+    reply = isStopped(err) ? await stopMessage(text)
+      : err.code === 'NO_API_KEY'
       ? "This agent isn't fully configured yet. Please contact the owner."
       : 'Sorry, something went wrong. Please try again in a moment.';
   }

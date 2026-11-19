@@ -576,8 +576,19 @@
   /* Every call to a model goes through the server (api/llm.js), on the
      platform's OpenRouter key and the model chosen for the organization.
      `body` is a chat-completions request and the answer is OpenRouter's own. */
-  function llmFetch(body, meta = {}) {
-    return apiFetch('/api/llm', { method: 'POST', body: JSON.stringify({ body, ...meta }) });
+  async function llmFetch(body, meta = {}) {
+    const r = await apiFetch('/api/llm', { method: 'POST', body: JSON.stringify({ body, ...meta }) });
+    if (r.status !== 402) return r;
+    /* Out of money: say so in the interface's language, wherever the answer is shown. */
+    const d = await r.clone().json().catch(() => null);
+    const code = d && d.error && d.error.code;
+    const said = code === 'ORG_BALANCE'
+      ? L('The organization\'s model balance is used up. Ask the platform admin to top it up.', 'יתרת המודלים של הארגון נגמרה. בקשו מאדמין הפלטפורמה לטעון אותה.')
+      : code === 'BUDGET'
+      ? L('The platform\'s model budget for this month is used up. It starts again on the 1st.', 'תקציב המודלים של הפלטפורמה לחודש הזה נגמר. הוא מתחדש ב-1 לחודש.')
+      : null;
+    if (!said) return r;
+    return new Response(JSON.stringify({ error: { ...d.error, message: said } }), { status: 402, headers: { 'Content-Type': 'application/json' } });
   }
   /* Whether the organization's stored settings reach a model. The browser no
      longer holds the key to try it itself, so the server tries it. */
@@ -5770,6 +5781,7 @@ function markSvgString(color, size = 30) {
           <P>Every chatbot, channel and assistant runs on <strong>one model per organization</strong>, reached through the platform&rsquo;s own OpenRouter account. The platform admin chooses it (or leaves the organization on the platform&rsquo;s default); nobody in an organization sets or holds an API key, and there is no per-chatbot setting yet. Settings shows which model the organization runs on.</P>
           <P>The same screen carries the <strong>interface language</strong> — English or Hebrew — which is the same setting the first screen asks about.</P>
           <Warn>Until the platform has set up a model for the organization, no chatbot answers on any channel and the assistants are locked. The note in the top corner shows the state on every screen. When the platform&rsquo;s monthly budget is used up, everything stops with a message until the 1st.</Warn>
+          <P><strong>Balance.</strong> The platform admin may give the organization a balance in dollars and top it up. Every call to a model then comes off it, and when it reaches zero everything in the organization stops: chatbots, automations, Jarvis and the assistants. People writing to its chatbots on the website or WhatsApp get a short &ldquo;not available right now&rdquo; message instead of an answer, and a banner across the top tells everyone in the organization. The organization&rsquo;s admin sees the balance, every top-up, and what this month was charged for, item by item, in <strong>Settings › Model usage</strong>; a banner warns them when less than a fifth of the last top-up is left.</P>
 
           <H3>DLP — keeping sensitive data out</H3>
           <P>Two optional filters: <strong>credit card numbers</strong> (16 digits, with or without separators) and <strong>national ID numbers</strong> (9 digits). When they are on:</P>
@@ -16084,6 +16096,256 @@ npm run migrate            # run it`}</Block>
     );
   }
 
+  /* ── an organization's model money ── */
+
+  /** Dollars with cents, and a minus sign before the dollar sign: -$0.04. */
+  const usdMoney = (v) => (v === null || v === undefined ? '—' : `${Number(v) < 0 ? '-' : ''}$${Math.abs(Number(v)).toFixed(2)}`);
+  const moneyDate = (t) => new Date(t).toLocaleDateString(uiHe() ? 'he-IL' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  async function apiBillingTopups(orgId) {
+    const r = await apiFetch(`/api/admin/billing?topups=${encodeURIComponent(orgId)}`);
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `Billing answered ${r.status}`);
+    return d.topups || [];
+  }
+  async function apiOrgBilling() {
+    const r = await apiFetch('/api/org/billing');
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `Usage answered ${r.status}`);
+    return d;
+  }
+
+  /** Top-ups, newest first. */
+  function TopupList({ topups }) {
+    if (!topups) return <div style={{ color: 'var(--text-muted)', fontSize: 12.5 }}>{L('Loading…', 'טוען…')}</div>;
+    if (!topups.length) return <div style={{ color: 'var(--text-muted)', fontSize: 12.5 }}>{L('No top-ups yet.', 'עוד לא היו טעינות.')}</div>;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }} data-topups>
+        {topups.map((t, i) => (
+          <div key={t.id || i} style={{ display: 'flex', gap: 12, alignItems: 'baseline', padding: '7px 0', borderTop: i ? '1px solid var(--border)' : 'none', fontSize: 12.5 }}>
+            <span style={{ color: 'var(--text-muted)', minWidth: 92 }}>{moneyDate(t.at)}</span>
+            <span dir="ltr" style={{ fontWeight: 700, minWidth: 70, color: t.amountUsd < 0 ? 'var(--danger)' : t.amountUsd > 0 ? 'var(--success)' : 'var(--text-2)' }}>
+              {t.amountUsd > 0 ? '+' : ''}{t.amountUsd ? usdMoney(t.amountUsd) : '—'}
+            </span>
+            <span dir="auto" style={{ flex: 1, minWidth: 0, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.note || ''}</span>
+            <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+              {t.balanceAfter === null ? L('no limit', 'ללא הגבלה') : <>{L('left', 'נשאר')} <span dir="ltr">{usdMoney(t.balanceAfter)}</span></>}
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  /**
+   * One organization's money, for the platform admin: its balance and what it
+   * can still cost at OpenRouter, a top-up, its markup, removing its limit,
+   * and every top-up so far. Every change saves on its own and comes back in
+   * `org`, so what is shown is what is stored.
+   */
+  function OrgMoneyDialog({ org, onClose, put, busy, error }) {
+    const [amount, setAmount] = useState('');
+    const [note, setNote] = useState('');
+    const [markup, setMarkup] = useState(String(org.markupPct));
+    const [history, setHistory] = useState(null);
+    const [sure, setSure] = useState(false);
+    useEffect(() => { apiBillingTopups(org.id).then(setHistory).catch(() => setHistory([])); }, [org.id, org.balance]);
+    useEffect(() => { setMarkup(String(org.markupPct)); }, [org.markupPct]);
+    useEffect(() => {
+      const esc = (e) => { if (e.key === 'Escape') onClose(); };
+      window.addEventListener('keydown', esc);
+      return () => window.removeEventListener('keydown', esc);
+    }, [onClose]);
+
+    const amt = Number(amount);
+    const amtOk = amount.trim() !== '' && Number.isFinite(amt) && amt !== 0 && Math.abs(amt) <= 100000;
+    const after = amtOk ? Math.round(((org.balance === null ? 0 : org.balance) + amt) * 100) / 100 : null;
+    const pct = Number(markup);
+    const markupOk = markup.trim() !== '' && Number.isFinite(pct) && pct >= 0 && pct <= 1000;
+    const markupDirty = markupOk && pct !== org.markupPct;
+    const limited = org.balance !== null;
+    const tone = org.stopped ? 'var(--danger)' : org.low ? 'var(--warning)' : 'var(--text)';
+    const block = { padding: '14px 18px', borderTop: '1px solid var(--border)' };
+    const sub = { fontSize: 11.5, color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.6 };
+
+    return (
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(13,15,20,0.4)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'min(30px, 3vw)' }}>
+        <div className="fade-in" role="dialog" aria-label={org.name} data-org-money-dialog={org.id} onClick={e => e.stopPropagation()} dir={uiDir()} style={{
+          width: 'min(600px, 100%)', maxHeight: '100%', overflowY: 'auto',
+          background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--r-xl)', boxShadow: 'var(--shadow-lg)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px 12px' }}>
+            <div dir="auto" style={{ fontWeight: 800, fontSize: 16, flex: 1 }}>{org.name}</div>
+            <button type="button" onClick={onClose} aria-label={L('Close', 'סגירה')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--text-muted)', padding: 4, lineHeight: 1 }}>✕</button>
+          </div>
+
+          {/* what is left */}
+          <div style={{ padding: '0 18px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+              <span data-org-balance style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.02em', color: tone }}>{limited ? usdMoney(org.balance) : L('No limit', 'ללא הגבלה')}</span>
+              {org.stopped && <Chip tone="danger">{L('Stopped', 'עצור')}</Chip>}
+              {org.low && <Chip tone="draft">{L('Running low', 'מתקרב לסוף')}</Chip>}
+            </div>
+            <div style={sub}>
+              {limited
+                ? L(`At its ${org.markupPct}% markup, that is ${usdMoney(org.canStillCostUsd)} of OpenRouter. This month it was charged ${usdMoney(org.month.charged)} for ${usdMoney(org.month.usd)} of OpenRouter: ${usdMoney(org.month.profit)} to you.`,
+                    `לפי תוספת של ${org.markupPct}%, זה ${usdMoney(org.canStillCostUsd)} של OpenRouter. החודש הוא חויב ${usdMoney(org.month.charged)} על ${usdMoney(org.month.usd)} של OpenRouter: ${usdMoney(org.month.profit)} אצלך.`)
+                : L('Only the platform\'s monthly ceiling stops it. Its first top-up becomes its balance, and from then on every call comes off it.',
+                    'רק התקרה החודשית של הפלטפורמה עוצרת אותו. הטעינה הראשונה הופכת ליתרה שלו, ומאז כל קריאה יורדת ממנה.')}
+            </div>
+          </div>
+
+          {/* a top-up */}
+          <div style={block}>
+            <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 8 }}>{limited ? L('Top up', 'טעינה') : L('Set a balance', 'הגדרת יתרה')}</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <input data-topup-amount inputMode="decimal" dir="ltr" value={amount} onChange={e => setAmount(e.target.value)} placeholder="20" style={{ flex: '0 1 110px' }}
+                onKeyDown={e => { if (e.key === 'Enter' && amtOk) put('topup', { orgId: org.id, topupUsd: amt, note }, () => { setAmount(''); setNote(''); }); }} />
+              <input data-topup-note dir="auto" value={note} onChange={e => setNote(e.target.value)} placeholder={L('Note, e.g. invoice 1042', 'הערה, למשל חשבונית 1042')} style={{ flex: '1 1 200px' }} />
+              <Btn variant="primary" disabled={!amtOk || busy === 'topup'}
+                onClick={() => put('topup', { orgId: org.id, topupUsd: amt, note }, () => { setAmount(''); setNote(''); })}>
+                {busy === 'topup' ? L('Adding…', 'מוסיף…') : L('Add', 'הוספה')}
+              </Btn>
+            </div>
+            <div style={sub}>
+              {amtOk
+                ? <>{L('New balance', 'יתרה חדשה')}: <strong dir="ltr" style={{ color: after <= 0 ? 'var(--danger)' : 'var(--text)' }}>{usdMoney(after)}</strong>{after <= 0 ? L(' — everything in the organization stops.', ' — כל מה שבארגון ייעצר.') : ''}</>
+                : L('In dollars, as the organization pays you. A negative amount corrects a mistake.', 'בדולרים, כמו שהארגון משלם לך. סכום שלילי מתקן טעות.')}
+            </div>
+          </div>
+
+          {/* the markup */}
+          <div style={block}>
+            <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 8 }}>{L('Markup', 'תוספת')}</div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input data-markup inputMode="decimal" dir="ltr" value={markup} onChange={e => setMarkup(e.target.value)} style={{ width: 90 }} />
+              <span style={{ fontSize: 13, color: 'var(--text-2)' }}>%</span>
+              {markupDirty && <Btn size="sm" variant="primary" disabled={busy === 'markup'} onClick={() => put('markup', { orgId: org.id, markupPct: pct })}>{L('Save', 'שמור')}</Btn>}
+            </div>
+            <div style={sub}>
+              {markupOk
+                ? L(`A call that costs $1.00 at OpenRouter takes $${(1 + pct / 100).toFixed(2)} from the balance. So ${pct ? Math.round(pct / (100 + pct) * 1000) / 10 : 0}% of what the organization pays is yours.`,
+                    `קריאה שעולה $1.00 ב-OpenRouter מורידה $${(1 + pct / 100).toFixed(2)} מהיתרה. כלומר ${pct ? Math.round(pct / (100 + pct) * 1000) / 10 : 0}% ממה שהארגון משלם נשאר אצלך.`)
+                : L('A percentage from 0 to 1000.', 'אחוז בין 0 ל-1000.')}
+            </div>
+          </div>
+
+          {error && <div style={{ ...block, color: 'var(--danger)', fontSize: 12.5, unicodeBidi: 'plaintext' }}>{error}</div>}
+
+          {/* history */}
+          <div style={block}>
+            <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>{L('Top-ups', 'טעינות')}</div>
+            <TopupList topups={history} />
+          </div>
+
+          {limited && (
+            <div style={{ ...block, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              {!sure
+                ? <Btn size="sm" onClick={() => setSure(true)}>{L('Remove the limit', 'הסרת ההגבלה')}</Btn>
+                : <>
+                    <span style={{ fontSize: 12.5, color: 'var(--text-2)', flex: 1 }}>{L('Its balance is dropped and only the platform\'s ceiling applies. Sure?', 'היתרה נמחקת ורק התקרה של הפלטפורמה חלה. בטוח?')}</span>
+                    <Btn size="sm" onClick={() => setSure(false)}>{L('Cancel', 'ביטול')}</Btn>
+                    <Btn size="sm" danger disabled={busy === 'unlimited'} onClick={() => put('unlimited', { orgId: org.id, unlimited: true }, () => setSure(false))}>{L('Remove', 'הסרה')}</Btn>
+                  </>}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  /** The line across every screen when the organization ran out of model money, or is running low. */
+  function BalanceBanner({ settings, onOpenUsage }) {
+    const b = (settings || accountApi()).balance;
+    if (!b || !b.limited || (!b.stopped && !b.low)) return null;
+    const admin = isOrgAdminNow();
+    if (!b.stopped && !admin) return null;
+    const amount = typeof b.usd === 'number' ? usdMoney(b.usd) : '';
+    return (
+      <div data-balance-banner={b.stopped ? 'stopped' : 'low'} dir={uiDir()} style={{
+        display: 'flex', alignItems: 'center', gap: 10, padding: '9px 34px', fontSize: 12.5, lineHeight: 1.55,
+        background: b.stopped ? 'rgba(220,38,38,0.08)' : 'rgba(245,158,11,0.10)',
+        borderBottom: `1px solid ${b.stopped ? 'rgba(220,38,38,0.25)' : 'rgba(245,158,11,0.32)'}`, color: 'var(--text)',
+      }}>
+        <span style={{ flex: 1 }}>
+          <strong style={{ color: b.stopped ? 'var(--danger)' : 'var(--warning)' }}>
+            {b.stopped ? L('The model balance is used up.', 'יתרת המודלים נגמרה.') : L(`The model balance is running low${amount ? `: ${amount} left` : ''}.`, `יתרת המודלים מתקרבת לסוף${amount ? `: נשארו ${amount}` : ''}.`)}
+          </strong>{' '}
+          {b.stopped
+            ? session().isAdmin
+              ? L('Chatbots, automations and assistants in the organization are stopped until it is topped up in Admin › Billing.', 'הבוטים, האוטומציות והעוזרים בארגון עצורים עד שתטען אותה ב-Admin › Billing.')
+              : L('Chatbots, automations and assistants in the organization are stopped until the platform admin tops it up.', 'הבוטים, האוטומציות והעוזרים בארגון עצורים עד שאדמין הפלטפורמה יטען אותה.')
+            : session().isAdmin
+            ? L('Top it up in Admin › Billing before everything stops.', 'כדאי לטעון אותה ב-Admin › Billing לפני שהכל נעצר.')
+            : L('Ask the platform admin to top it up before everything stops.', 'כדאי לבקש מאדמין הפלטפורמה לטעון אותה לפני שהכל נעצר.')}
+        </span>
+        {admin && onOpenUsage && <Btn size="sm" onClick={onOpenUsage}>{L('Usage', 'שימוש')}</Btn>}
+      </div>
+    );
+  }
+
+  const USAGE_KIND = () => ({
+    agent: 'AI Chatbot', app: 'App', automation: L('Automation', 'אוטומציה'),
+    number: L('WhatsApp agent', 'סוכן WhatsApp'), platform: L('Platform', 'פלטפורמה'),
+  });
+
+  /** For the organization's admin: what is left, what this month was charged for, and the top-ups. */
+  function OrgUsageSection({ sectionStyle, sectionHeader }) {
+    const [d, setD] = useState(null);
+    const [error, setError] = useState('');
+    useEffect(() => { apiOrgBilling().then(setD).catch(e => setError(e.message)); }, []);
+    const kinds = USAGE_KIND();
+    const stat = (label, value, note, tone) => (
+      <div style={{ flex: '1 1 180px', padding: '12px 14px', borderRadius: 'var(--r-md)', background: 'var(--bg-panel)', border: '1px solid var(--border)' }}>
+        <div style={{ fontSize: 11.5, color: 'var(--text-muted)', fontWeight: 600 }}>{label}</div>
+        <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', marginTop: 2, color: tone || 'var(--text)' }}>{value}</div>
+        {note && <div style={{ fontSize: 11.5, color: 'var(--text-2)', marginTop: 2 }}>{note}</div>}
+      </div>
+    );
+    return (
+      <div id="set-usage" style={sectionStyle} data-org-usage>
+        <div style={sectionHeader}>{L('Model usage', 'שימוש במודלים')}</div>
+        <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {error && <div style={{ color: 'var(--danger)', fontSize: 12.5 }}>{error}</div>}
+          {!d && !error && <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{L('Loading…', 'טוען…')}</div>}
+          {d && <>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              {stat(L('Balance', 'יתרה'), d.balance === null ? L('No limit', 'ללא הגבלה') : usdMoney(d.balance),
+                d.stopped ? L('Used up: everything is stopped', 'נגמרה: הכל עצור') : d.low ? L('Running low', 'מתקרבת לסוף') : d.balance === null ? L('Set by the platform admin', 'נקבע על ידי אדמין הפלטפורמה') : '',
+                d.stopped ? 'var(--danger)' : d.low ? 'var(--warning)' : null)}
+              {stat(L('Charged this month', 'חויב החודש'), usdMoney(d.month.charged), `${d.month.calls} ${L('calls to a model', 'קריאות למודל')}`)}
+            </div>
+
+            <div>
+              <Eyebrow style={{ marginBottom: 6 }}>{L('This month, by what used it', 'החודש, לפי מה שהשתמש')}</Eyebrow>
+              {d.month.items.length === 0
+                ? <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{L('Nothing yet this month.', 'עוד כלום החודש.')}</div>
+                : <div style={{ overflowX: 'auto' }}>
+                    <table dir={uiDir()} style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                      <tbody>
+                        {d.month.items.slice(0, 40).map((it, i) => (
+                          <tr key={`${it.kind}:${it.id}`} style={{ borderTop: i ? '1px solid var(--border)' : 'none' }}>
+                            <td style={{ padding: '7px 8px 7px 0', fontWeight: 600 }}><span dir="auto">{it.name}</span></td>
+                            <td style={{ padding: '7px 8px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{kinds[it.kind] || it.kind}</td>
+                            <td style={{ padding: '7px 8px', color: 'var(--text-2)', whiteSpace: 'nowrap', textAlign: 'end' }}>{it.calls} {L('calls', 'קריאות')}</td>
+                            <td style={{ padding: '7px 0 7px 8px', fontWeight: 700, whiteSpace: 'nowrap', textAlign: 'end' }}><span dir="ltr">{usdFmt(it.charged)}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>}
+            </div>
+
+            <div>
+              <Eyebrow style={{ marginBottom: 6 }}>{L('Top-ups', 'טעינות')}</Eyebrow>
+              <TopupList topups={d.topups} />
+            </div>
+          </>}
+        </div>
+      </div>
+    );
+  }
+
   /**
    * The platform's models: the OpenRouter key, the default model, the monthly
    * ceiling, the model each organization runs on, and how much of the month's
@@ -16096,6 +16358,8 @@ npm run migrate            # run it`}</Block>
     const [busy, setBusy] = useState('');
     const [catalog, setCatalog] = useState(null);
     const [picker, setPicker] = useState(null);   // 'default' or an organization's id, while its picker is open
+    const [moneyFor, setMoneyFor] = useState(null);   // the organization whose balance dialog is open
+    const [stopDraft, setStopDraft] = useState(null);   // { he, en } while the stop message is being edited
     const [platformDraft, setPlatformDraft] = useState(null);   // { defaultModel, ceilingUsd } while editing
     const load = useCallback(() => apiBilling().then(d => { setData(d); setError(''); }).catch(e => setError(e.message)), []);
     useEffect(() => { load(); }, [load]);
@@ -16103,7 +16367,12 @@ npm run migrate            # run it`}</Block>
 
     async function put(what, body, after) {
       setBusy(what); setError('');
-      try { setData(await apiBilling('PUT', body)); if (after) after(); }
+      try {
+        setData(await apiBilling('PUT', body));
+        if (after) after();
+        // The banner across the top follows the admin's own organization's balance.
+        if (body && body.orgId) window.dispatchEvent(new Event('8legs:balance'));
+      }
       catch (e) { setError(e.message); }
       finally { setBusy(''); }
     }
@@ -16145,11 +16414,19 @@ npm run migrate            # run it`}</Block>
             <span>{tokensFmt(data.month.output)} {L('tokens out', 'טוקנים בפלט')}</span>
             <span>{data.month.calls} {L('calls', 'קריאות')}</span>
             {info && info.ok && info.usageMonthly !== null && <span>{L('OpenRouter counts', 'OpenRouter סופר')} {usdFmt(info.usageMonthly)}</span>}
+            <span data-month-charged>{L('Charged to organizations', 'חויב לארגונים')} <strong>{usdFmt(data.month.charged)}</strong></span>
+            <span data-month-profit>{L('Your profit', 'הרווח שלך')} <strong style={{ color: data.month.profit > 0 ? 'var(--success)' : 'inherit' }}>{usdFmt(data.month.profit)}</strong></span>
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.6 }}>
             {L('When the month reaches the ceiling, every chatbot, assistant and automation stops with a message until the 1st. Set it at or below the budget on OpenRouter.',
                'כשהחודש מגיע לתקרה, כל הבוטים, העוזרים והאוטומציות נעצרים עם הודעה עד ה-1 לחודש. כדאי שהתקרה תהיה שווה לתקציב ב-OpenRouter או נמוכה ממנו.')}
           </div>
+          {data.balances && data.balances.over && (
+            <div data-balances-over style={{ marginTop: 10, padding: '9px 12px', borderRadius: 'var(--r-md)', background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.32)', fontSize: 12.5, lineHeight: 1.6 }}>
+              {L(`The balances you gave out can still buy ${usdFmt(data.balances.promisedCostUsd)} of OpenRouter, but only ${usdFmt(data.balances.leftUnderCeilingUsd)} is left under this month's ceiling. The ceiling will stop everyone before their balances run out: raise it, and the budget on OpenRouter with it.`,
+                 `היתרות שחילקת יכולות לקנות עוד ${usdFmt(data.balances.promisedCostUsd)} של OpenRouter, אבל מתחת לתקרה החודש נשארו רק ${usdFmt(data.balances.leftUnderCeilingUsd)}. התקרה תעצור את כולם לפני שהיתרות שלהם ייגמרו: כדאי להעלות אותה, ואיתה את התקציב ב-OpenRouter.`)}
+            </div>
+          )}
         </div>
 
         {/* the platform's settings */}
@@ -16189,10 +16466,10 @@ npm run migrate            # run it`}</Block>
           <div style={{ fontWeight: 700, fontSize: 15, flex: 1 }}>{L('Organizations this month', 'ארגונים החודש')}</div>
         </div>
         <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
-          <table dir={uiDir()} style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
+          <table dir={uiDir()} style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1060 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                {[L('Organization', 'ארגון'), L('Model', 'מודל'), L('Tokens in', 'טוקנים בקלט'), L('Tokens out', 'טוקנים בפלט'), L('Calls', 'קריאות'), L('Cost', 'עלות'), L(`Share of ${usdFmt(data.ceilingUsd)}`, `חלק מתוך ${usdFmt(data.ceilingUsd)}`)].map(h => (
+                {[L('Organization', 'ארגון'), L('Model', 'מודל'), L('Balance', 'יתרה'), L('Markup', 'תוספת'), L('Tokens in / out', 'טוקנים קלט / פלט'), L('Calls', 'קריאות'), L('Cost', 'עלות'), L('Charged', 'חויב'), L(`Share of ${usdFmt(data.ceilingUsd)}`, `חלק מתוך ${usdFmt(data.ceilingUsd)}`)].map(h => (
                   <th key={h} style={th}><Eyebrow>{h}</Eyebrow></th>
                 ))}
               </tr>
@@ -16206,10 +16483,25 @@ npm run migrate            # run it`}</Block>
                       <ModelField catalog={catalog} value={o.model} defaultModel={data.defaultModel} testId={o.id}
                         busy={busy === o.id} onOpen={() => setPicker(o.id)} />
                     </td>
-                    <td style={td}>{tokensFmt(o.month.input)}</td>
-                    <td style={td}>{tokensFmt(o.month.output)}</td>
+                    <td style={{ ...td, minWidth: 110 }}>
+                      <button type="button" data-org-money={o.id} onClick={() => setMoneyFor(o.id)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'start', color: 'inherit' }}>
+                        <span style={{ display: 'block', fontWeight: 700, color: o.stopped ? 'var(--danger)' : o.low ? 'var(--warning)' : 'var(--text)' }}>
+                          {o.balance === null ? L('No limit', 'ללא הגבלה') : <span dir="ltr">{usdMoney(o.balance)}</span>}
+                        </span>
+                        <span style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: 'var(--primary)', marginTop: 2 }}>
+                          {o.balance === null ? L('Set a balance', 'הגדרת יתרה') : L('Top up', 'טעינה')}
+                        </span>
+                      </button>
+                    </td>
+                    <td style={td}>
+                      <button type="button" onClick={() => setMoneyFor(o.id)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', color: 'inherit', fontSize: 13 }}>
+                        <span dir="ltr">{o.markupPct}%</span>
+                      </button>
+                    </td>
+                    <td style={td}><span dir="ltr">{tokensFmt(o.month.input)} / {tokensFmt(o.month.output)}</span></td>
                     <td style={td}>{o.month.calls}</td>
                     <td style={{ ...td, fontWeight: 600 }}>{usdFmt(o.month.usd)}</td>
+                    <td style={{ ...td, fontWeight: 600 }}>{usdFmt(o.month.charged)}</td>
                     <td style={{ ...td, minWidth: 120 }}>
                       {o.month.share === null ? '—' : (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -16224,6 +16516,39 @@ npm run migrate            # run it`}</Block>
             </tbody>
           </table>
         </div>
+
+        {/* what strangers read once an organization has run out */}
+        {(() => {
+          const sm = data.stopMessage || { he: '', en: '', defaults: { he: '', en: '' } };
+          const sd = stopDraft || { he: sm.he, en: sm.en };
+          const sdDirty = !!stopDraft && (sd.he.trim() !== sm.he || sd.en.trim() !== sm.en);
+          return (
+            <div style={card} data-stop-message>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{L('When an organization runs out', 'כשלארגון נגמרת היתרה')}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.6, marginBottom: 12 }}>
+                {L('Everything in it stops. People writing to its chatbots on the website or WhatsApp get this message instead of an answer, in Hebrew when they wrote in Hebrew. The same goes for every organization once the platform reaches its monthly ceiling. Its own people see a banner in the platform.',
+                   'כל מה שבו נעצר. מי שכותב לבוטים שלו באתר או בוואטסאפ מקבל את ההודעה הזו במקום תשובה, בעברית אם כתב בעברית. כך גם בכל הארגונים כשהפלטפורמה מגיעה לתקרה החודשית. האנשים של הארגון רואים באנר בפלטפורמה.')}
+              </div>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 260px' }}>
+                  <label className="field-label">{L('In Hebrew', 'בעברית')}</label>
+                  <textarea dir="rtl" rows={2} value={sd.he} placeholder={sm.defaults.he} onChange={e => setStopDraft({ ...sd, he: e.target.value })} />
+                </div>
+                <div style={{ flex: '1 1 260px' }}>
+                  <label className="field-label">{L('In English', 'באנגלית')}</label>
+                  <textarea dir="ltr" rows={2} value={sd.en} placeholder={sm.defaults.en} onChange={e => setStopDraft({ ...sd, en: e.target.value })} />
+                </div>
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 6 }}>{L('Empty: the grey text is used.', 'ריק: הטקסט האפור נשלח.')}</div>
+              {sdDirty && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  <Btn size="sm" variant="primary" disabled={busy === 'stop'} onClick={() => put('stop', { stopMessage: { he: sd.he.trim(), en: sd.en.trim() } }, () => setStopDraft(null))}>{busy === 'stop' ? L('Saving…', 'שומר…') : L('Save', 'שמור')}</Btn>
+                  <Btn size="sm" onClick={() => setStopDraft(null)}>{L('Discard', 'בטל')}</Btn>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* the key */}
         <div style={card}>
@@ -16252,6 +16577,10 @@ npm run migrate            # run it`}</Block>
           </div>
         </div>
 
+        {moneyFor && data.orgs.some(o => o.id === moneyFor) && (
+          <OrgMoneyDialog org={data.orgs.find(o => o.id === moneyFor)} put={put} busy={busy} error={error}
+            onClose={() => setMoneyFor(null)} />
+        )}
         {picker && (() => {
           const org = picker === 'default' ? null : data.orgs.find(o => o.id === picker);
           return (
@@ -16276,6 +16605,8 @@ npm run migrate            # run it`}</Block>
     const [creating, setCreating] = useState(false);
     const [name, setName] = useState('');
     const [adminName, setAdminName] = useState('');
+    const [opening, setOpening] = useState('');
+    const [markup, setMarkup] = useState('');
     const [busy, setBusy] = useState(false);
     const [fresh, setFresh] = useState(null);
     const [openId, setOpenId] = useState(null);
@@ -16290,8 +16621,8 @@ npm run migrate            # run it`}</Block>
       if (!name.trim() || !adminName.trim() || busy) return;
       setBusy(true); setError('');
       try {
-        const made = await apiCreateOrg({ name: name.trim(), adminUsername: adminName.trim() });
-        setFresh(made.admin); setCreating(false); setName(''); setAdminName(''); await load();
+        const made = await apiCreateOrg({ name: name.trim(), adminUsername: adminName.trim(), openingBalanceUsd: opening.trim(), markupPct: markup.trim() });
+        setFresh(made.admin); setCreating(false); setName(''); setAdminName(''); setOpening(''); setMarkup(''); await load();
       } catch (e) { setError(e.message); }
       finally { setBusy(false); }
     }
@@ -16316,13 +16647,22 @@ npm run migrate            # run it`}</Block>
                 <label className="field-label">{L('Its admin\'s username', 'שם המשתמש של האדמין שלו')}</label>
                 <input value={adminName} dir="ltr" onChange={e => setAdminName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') create(); }} placeholder="acme-admin" />
               </div>
+              <div style={{ flex: '0 1 150px' }}>
+                <label className="field-label">{L('Opening balance ($)', 'יתרת פתיחה ($)')}</label>
+                <input data-opening-balance value={opening} dir="ltr" inputMode="decimal" onChange={e => setOpening(e.target.value)} placeholder={L('no limit', 'ללא הגבלה')} />
+              </div>
+              <div style={{ flex: '0 1 110px' }}>
+                <label className="field-label">{L('Markup (%)', 'תוספת (%)')}</label>
+                <input data-opening-markup value={markup} dir="ltr" inputMode="decimal" onChange={e => setMarkup(e.target.value)} placeholder="0" />
+              </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <Btn onClick={() => setCreating(false)}>{L('Cancel', 'ביטול')}</Btn>
                 <Btn variant="primary" disabled={!name.trim() || !adminName.trim() || busy} onClick={create}>{busy ? L('Creating…', 'יוצר…') : L('Create', 'יצירה')}</Btn>
               </div>
             </div>
             <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8 }}>
-              {L('The organization starts with the starter AI Chatbots and the Chat app, like a sign-up does.', 'הארגון מתחיל עם בוטי הפתיחה ואפליקציית ה-Chat, כמו בהרשמה.')}
+              {L('The organization starts with the starter AI Chatbots and the Chat app, like a sign-up does. With an opening balance, its calls to models come off it (OpenRouter\'s cost plus the markup) and it stops at zero; without one, only the platform\'s monthly ceiling stops it. Both can be changed later in Billing.',
+                 'הארגון מתחיל עם בוטי הפתיחה ואפליקציית ה-Chat, כמו בהרשמה. עם יתרת פתיחה, הקריאות שלו למודלים יורדות ממנה (העלות ב-OpenRouter ועוד התוספת) והוא נעצר באפס; בלי יתרה, רק התקרה החודשית של הפלטפורמה עוצרת אותו. אפשר לשנות את שניהם אחר כך ב-Billing.')}
             </div>
           </div>
         )}
@@ -19026,6 +19366,7 @@ npm run migrate            # run it`}</Block>
     };
     const SECTIONS = [
       { id: 'set-model',      label: L('Model & language', 'מודל ושפה') },
+      ...(isOrgAdminNow() ? [{ id: 'set-usage', label: L('Model usage', 'שימוש במודלים') }] : []),
       { id: 'set-tokens',     label: 'Access tokens' },
       { id: 'set-password',   label: L('Password', 'סיסמה') },
       { id: 'set-account',    label: 'Account' },
@@ -19110,6 +19451,8 @@ npm run migrate            # run it`}</Block>
             </div>
           </div>
         </div>
+
+        {isOrgAdminNow() && <OrgUsageSection sectionStyle={sectionStyle} sectionHeader={sectionHeader} />}
 
         <div id="set-tokens">
           <TokensSection sectionStyle={sectionStyle} sectionHeader={sectionHeader}
@@ -20039,6 +20382,14 @@ npm run migrate            # run it`}</Block>
       apiGetSettings()
         .then(s => { setAccountApi(s); setSettings(s); })
         .catch(() => setSettings(accountApi()));
+      /* The balance changes while the page is open: a top-up, or the last
+         call that used it up. The banner follows within a few minutes. */
+      const reread = () => {
+        apiGetSettings().then(s => { setAccountApi({ balance: s.balance }); setSettings(prev => ({ ...(prev || {}), balance: s.balance })); }).catch(() => {});
+      };
+      const t = setInterval(reread, 3 * 60 * 1000);
+      window.addEventListener('8legs:balance', reread);
+      return () => { clearInterval(t); window.removeEventListener('8legs:balance', reread); };
     }, []);
 
     async function handleSaveSettings(patch) {
@@ -20408,6 +20759,7 @@ npm run migrate            # run it`}</Block>
           onNewChat={newHomeChat} language={assistantLanguage} />
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg-app)' }}>
         <Crumbs trail={trail} />
+        <BalanceBanner settings={settings} onOpenUsage={() => handleNav('settings')} />
         {/* Home fills the frame and scrolls its own thread; every other screen
             is a page in the padded column below. */}
         {nav === 'home' ? (

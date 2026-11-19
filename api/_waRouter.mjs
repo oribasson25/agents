@@ -3,6 +3,7 @@ import { runAgentTurn, dlpMessages } from './_agentRunner.js';
 import { resolveAgentApiConfig } from './_settings.js';
 import { branchForSession, loadForConversation } from './_branches.js';
 import { logError } from './_errorLog.js';
+import { isStopped, stopMessage } from './_llm.js';
 import { getNumber } from './_waControl.js';
 import { runJarvisTurn, capabilityOn, recordAssistantMessage } from './_jarvis.js';
 import { createGroupRouter } from './_waGroupRouter.mjs';
@@ -218,7 +219,8 @@ export function createRouter(wa, numberId, { baseUrl }) {
       // "fetch failed" alone says nothing: the reason is on err.cause.
       const cause = err.cause ? ` (${err.cause.code || err.cause.message || err.cause})` : '';
       await logError({ agentId, source: 'whatsapp-linked', message: `${err.message}${cause}`, context: { code: err.code || null, numberId, baseUrl } });
-      reply = err.code === 'NO_API_KEY'
+      reply = isStopped(err) ? await stopMessage(userMsg.content)
+        : err.code === 'NO_API_KEY'
         ? "This agent isn't fully configured yet. Please contact the owner."
         : 'Sorry, something went wrong. Please try again in a moment.';
     }
